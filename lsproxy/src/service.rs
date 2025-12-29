@@ -1,12 +1,12 @@
 // ABOUTME: Domain service layer for LSP-backed code navigation operations.
 // ABOUTME: Provides async methods for symbol lookup, references, and file access.
 use crate::api_types::{
-    CallHierarchyItemInfo, CodeContext, Diagnostic, DiagnosticsResponse, FileDiagnostics,
-    FilePosition, FileRange, HoverContents, HoverResponse, Identifier, ImplementationResponse,
-    IncomingCallInfo, IncomingCallsResponse, LspStatus, OutgoingCallInfo, OutgoingCallsResponse,
-    Position, PrepareCallHierarchyResponse, Range, ReferenceWithSymbolDefinitions,
-    ReferencedSymbolsResponse, SupportedLanguages, Symbol, WorkspaceSymbolInfo,
-    WorkspaceSymbolResponse,
+    CallHierarchyDirection, CallHierarchyItemInfo, CallHierarchyResponse, CallInfo, CodeContext,
+    Diagnostic, DiagnosticsResponse, FileDiagnostics, FilePosition, FileRange, HoverContents,
+    HoverResponse, Identifier, ImplementationResponse, IncomingCallInfo, IncomingCallsResponse,
+    LspStatus, OutgoingCallInfo, OutgoingCallsResponse, Position, PrepareCallHierarchyResponse,
+    Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse, SupportedLanguages, Symbol,
+    WorkspaceSymbolInfo, WorkspaceSymbolResponse,
 };
 use crate::lsp::manager::{LspManagerError, Manager};
 use crate::mcp_response::normalize_kind;
@@ -1177,6 +1177,111 @@ impl LspService {
         Ok(OutgoingCallsResponse {
             raw_response,
             calls: converted_calls,
+        })
+    }
+
+    /// Unified method for call hierarchy traversal in either direction.
+    ///
+    /// This method handles both incoming (callers) and outgoing (callees) call hierarchy
+    /// requests based on the `direction` parameter.
+    ///
+    /// # Arguments
+    /// * `file_path` - Path to the file containing the function/method
+    /// * `position` - Position within the file (1-indexed)
+    /// * `direction` - Whether to find incoming (callers) or outgoing (callees) calls
+    ///
+    /// # Returns
+    /// A `CallHierarchyResponse` containing the calls found and the direction.
+    /// The `raw_response` field is always `None` (MCP layer handles verbose mode).
+    pub async fn call_hierarchy(
+        &self,
+        file_path: &str,
+        position: Position,
+        direction: CallHierarchyDirection,
+    ) -> Result<CallHierarchyResponse, ServiceError> {
+        // First prepare the call hierarchy to get the item
+        let items = self
+            .manager
+            .prepare_call_hierarchy(
+                file_path,
+                LspPosition {
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
+                },
+            )
+            .await?;
+
+        let item = items
+            .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
+            .ok_or_else(|| {
+                ServiceError::Lsp(LspManagerError::InternalError(
+                    "No call hierarchy item at position".to_string(),
+                ))
+            })?;
+
+        let workspace_files = self.manager.list_files().await?;
+
+        let calls = match direction {
+            CallHierarchyDirection::Incoming => {
+                let lsp_calls = self.manager.incoming_calls(file_path, &item).await?;
+                lsp_calls
+                    .into_iter()
+                    .filter(|call| {
+                        let path = uri_to_relative_path_string(&call.from.uri);
+                        workspace_files.contains(&path)
+                    })
+                    .map(|call| CallInfo {
+                        item: call_hierarchy_item_to_info(&call.from),
+                        call_ranges: call
+                            .from_ranges
+                            .into_iter()
+                            .map(|r| Range {
+                                start: Position {
+                                    line: r.start.line + 1,
+                                    character: r.start.character + 1,
+                                },
+                                end: Position {
+                                    line: r.end.line + 1,
+                                    character: r.end.character + 1,
+                                },
+                            })
+                            .collect(),
+                    })
+                    .collect()
+            }
+            CallHierarchyDirection::Outgoing => {
+                let lsp_calls = self.manager.outgoing_calls(file_path, &item).await?;
+                lsp_calls
+                    .into_iter()
+                    .filter(|call| {
+                        let path = uri_to_relative_path_string(&call.to.uri);
+                        workspace_files.contains(&path)
+                    })
+                    .map(|call| CallInfo {
+                        item: call_hierarchy_item_to_info(&call.to),
+                        call_ranges: call
+                            .from_ranges
+                            .into_iter()
+                            .map(|r| Range {
+                                start: Position {
+                                    line: r.start.line + 1,
+                                    character: r.start.character + 1,
+                                },
+                                end: Position {
+                                    line: r.end.line + 1,
+                                    character: r.end.character + 1,
+                                },
+                            })
+                            .collect(),
+                    })
+                    .collect()
+            }
+        };
+
+        Ok(CallHierarchyResponse {
+            direction,
+            raw_response: None, // MCP layer handles verbose mode
+            calls,
         })
     }
 }
