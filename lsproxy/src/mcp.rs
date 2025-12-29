@@ -1,6 +1,6 @@
 // ABOUTME: MCP server tools and handler for exposing LSP-based code navigation.
 // ABOUTME: Provides stdio MCP tool definitions and request handling for a workspace manager.
-use crate::api_types::{HealthResponse, Position, Range};
+use crate::api_types::{CallHierarchyDirection, HealthResponse, Position, Range};
 use crate::config::{LspMcpConfig, OutputMode};
 use crate::lsp::manager::Manager;
 use crate::mcp_response::{format_error, success_response, tool_disabled_message};
@@ -32,16 +32,16 @@ impl LspMcpServer {
     version = "0.4.4"
 )]
 impl LspMcpServer {
-    #[tool(description = "Returns symbols defined in a file relative to the workspace root")]
+    #[tool(description = "Symbols defined in a file")]
     async fn definitions_in_file(
         &self,
-        file_path: String,
+        path: String,
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> ToolOutput {
         match self
             .service
-            .definitions_in_file(&file_path, limit, offset)
+            .definitions_in_file(&path, limit, offset)
             .await
         {
             Ok(response) => {
@@ -66,14 +66,13 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Finds the definition of a symbol at a given file position")]
+    #[tool(description = "Definition of symbol at position")]
     async fn find_definition(
         &self,
         path: String,
         line: u32,
         character: u32,
         include_source_code: Option<bool>,
-        include_raw_response: Option<bool>,
         context_lines: Option<u32>,
         limit: Option<u32>,
         offset: Option<u32>,
@@ -85,7 +84,7 @@ impl LspMcpServer {
                 &path,
                 pos,
                 include_source_code.unwrap_or(false),
-                include_raw_response.unwrap_or(false),
+                self.output_mode == OutputMode::Verbose,
                 context_lines,
                 limit,
                 offset,
@@ -109,27 +108,24 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Finds references to a symbol at a given file position")]
+    #[tool(description = "References to symbol at position")]
     async fn find_references(
         &self,
         path: String,
         line: u32,
         character: u32,
-        include_raw_response: Option<bool>,
-        include_code_context_lines: Option<u32>,
         context_lines: Option<u32>,
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> ToolOutput {
         let pos = Position { line, character };
-        let effective_context_lines = context_lines.or(include_code_context_lines);
         match self
             .service
             .find_references(
                 &path,
                 pos,
-                include_raw_response.unwrap_or(false),
-                effective_context_lines,
+                self.output_mode == OutputMode::Verbose,
+                context_lines,
                 limit,
                 offset,
             )
@@ -152,18 +148,17 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Get hover information (documentation, type info) for a symbol at a position")]
+    #[tool(description = "Hover info at position")]
     async fn hover(
         &self,
         path: String,
         line: u32,
         character: u32,
-        include_raw_response: Option<bool>,
     ) -> ToolOutput {
         let pos = Position { line, character };
         match self
             .service
-            .hover(&path, pos, include_raw_response.unwrap_or(false))
+            .hover(&path, pos, self.output_mode == OutputMode::Verbose)
             .await
         {
             Ok(response) => {
@@ -182,11 +177,10 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Search for symbols by name across the entire workspace")]
+    #[tool(description = "Search symbols by name")]
     async fn workspace_symbol(
         &self,
         query: String,
-        include_raw_response: Option<bool>,
         exact: Option<bool>,
         limit: Option<u32>,
         offset: Option<u32>,
@@ -195,7 +189,7 @@ impl LspMcpServer {
             .service
             .workspace_symbol(
                 &query,
-                include_raw_response.unwrap_or(false),
+                self.output_mode == OutputMode::Verbose,
                 exact.unwrap_or(false),
                 limit,
                 offset,
@@ -219,18 +213,17 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Find implementations of an interface, trait, or abstract method")]
+    #[tool(description = "Implementations of interface/trait")]
     async fn go_to_implementation(
         &self,
         path: String,
         line: u32,
         character: u32,
-        include_raw_response: Option<bool>,
     ) -> ToolOutput {
         let pos = Position { line, character };
         match self
             .service
-            .find_implementation(&path, pos, include_raw_response.unwrap_or(false))
+            .find_implementation(&path, pos, self.output_mode == OutputMode::Verbose)
             .await
         {
             Ok(response) => {
@@ -250,51 +243,26 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Get call hierarchy item at a position (functions/methods)")]
-    async fn prepare_call_hierarchy(
+    #[tool(description = "Incoming or outgoing calls at position")]
+    async fn call_hierarchy(
         &self,
         path: String,
         line: u32,
         character: u32,
-        include_raw_response: Option<bool>,
+        direction: String,
     ) -> ToolOutput {
-        let pos = Position { line, character };
-        match self
-            .service
-            .prepare_call_hierarchy(&path, pos, include_raw_response.unwrap_or(false))
-            .await
-        {
-            Ok(response) => {
-                let data = match serde_json::to_value(&response) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let err = ServiceError::Serialization(e.to_string());
-                        return ToolOutput::error(format_error(&err));
-                    }
-                };
-                let mut counts = HashMap::new();
-                counts.insert("items".to_string(), response.items.len());
-                let resp = success_response("prepare_call_hierarchy", data, self.output_mode, Some(counts));
-                ToolOutput::text(resp)
+        let dir = match direction.to_lowercase().as_str() {
+            "incoming" => CallHierarchyDirection::Incoming,
+            "outgoing" => CallHierarchyDirection::Outgoing,
+            _ => {
+                return ToolOutput::error(format!(
+                    "Invalid direction '{}': must be 'incoming' or 'outgoing'",
+                    direction
+                ));
             }
-            Err(e) => ToolOutput::error(format_error(&e)),
-        }
-    }
-
-    #[tool(description = "Find all functions/methods that call the function at a position")]
-    async fn incoming_calls(
-        &self,
-        path: String,
-        line: u32,
-        character: u32,
-        include_raw_response: Option<bool>,
-    ) -> ToolOutput {
+        };
         let pos = Position { line, character };
-        match self
-            .service
-            .incoming_calls(&path, pos, include_raw_response.unwrap_or(false))
-            .await
-        {
+        match self.service.call_hierarchy(&path, pos, dir).await {
             Ok(response) => {
                 let data = match serde_json::to_value(&response) {
                     Ok(v) => v,
@@ -305,45 +273,14 @@ impl LspMcpServer {
                 };
                 let mut counts = HashMap::new();
                 counts.insert("calls".to_string(), response.calls.len());
-                let resp = success_response("incoming_calls", data, self.output_mode, Some(counts));
+                let resp = success_response("call_hierarchy", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
             Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
-    #[tool(description = "Find all functions/methods called by the function at a position")]
-    async fn outgoing_calls(
-        &self,
-        path: String,
-        line: u32,
-        character: u32,
-        include_raw_response: Option<bool>,
-    ) -> ToolOutput {
-        let pos = Position { line, character };
-        match self
-            .service
-            .outgoing_calls(&path, pos, include_raw_response.unwrap_or(false))
-            .await
-        {
-            Ok(response) => {
-                let data = match serde_json::to_value(&response) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let err = ServiceError::Serialization(e.to_string());
-                        return ToolOutput::error(format_error(&err));
-                    }
-                };
-                let mut counts = HashMap::new();
-                counts.insert("calls".to_string(), response.calls.len());
-                let resp = success_response("outgoing_calls", data, self.output_mode, Some(counts));
-                ToolOutput::text(resp)
-            }
-            Err(e) => ToolOutput::error(format_error(&e)),
-        }
-    }
-
-    #[tool(description = "Finds symbols referenced by a symbol definition at a given position")]
+    #[tool(description = "Symbols referenced by definition")]
     async fn find_referenced_symbols(
         &self,
         path: String,
@@ -376,7 +313,7 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Finds identifiers by name in a file with an optional position")]
+    #[tool(description = "Identifiers by name in file")]
     async fn find_identifier(
         &self,
         path: String,
@@ -415,7 +352,7 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Lists files in the workspace")]
+    #[tool(description = "List workspace files")]
     async fn list_files(&self, limit: Option<u32>, offset: Option<u32>) -> ToolOutput {
         match self.service.list_files(limit, offset).await {
             Ok(response) => {
@@ -435,7 +372,7 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Reads source code from a file with an optional range")]
+    #[tool(description = "Read source code from file")]
     async fn read_source_code(
         &self,
         path: String,
@@ -469,7 +406,7 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Returns service status and supported language availability")]
+    #[tool(description = "Service status")]
     async fn health(&self) -> ToolOutput {
         let response = HealthResponse {
             status: "ok".to_string(),
@@ -489,7 +426,7 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Returns diagnostics (errors, warnings, hints) for a file or the entire workspace. Diagnostics are pushed by language servers and cached. Pass a file path for single file diagnostics, or omit for all workspace diagnostics.")]
+    #[tool(description = "Diagnostics for file or workspace")]
     async fn get_diagnostics(&self, file_path: Option<String>) -> ToolOutput {
         match self.service.get_diagnostics(file_path.as_deref()).await {
             Ok(response) => {
