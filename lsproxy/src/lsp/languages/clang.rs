@@ -10,7 +10,7 @@ use crate::lsp::{ExpectedMessageKey, JsonRpc, Process};
 use crate::utils::file_utils::{search_directories, search_files};
 use crate::utils::workspace_documents::DidOpenConfiguration;
 use crate::{
-    lsp::{JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
+    lsp::{DiagnosticsStore, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
     utils::workspace_documents::{
         WorkspaceDocumentsHandler, CPP_ROOT_FILES, C_AND_CPP_FILE_PATTERNS,
         DEFAULT_EXCLUDE_PATTERNS,
@@ -29,6 +29,7 @@ pub struct ClangdClient {
     json_rpc: JsonRpcHandler,
     workspace_documents: WorkspaceDocumentsHandler,
     pending_requests: PendingRequests,
+    diagnostics_store: DiagnosticsStore,
 }
 
 #[async_trait]
@@ -51,6 +52,10 @@ impl LspClient for ClangdClient {
 
     fn get_pending_requests(&mut self) -> &mut PendingRequests {
         &mut self.pending_requests
+    }
+
+    fn get_diagnostics_store(&self) -> &DiagnosticsStore {
+        &self.diagnostics_store
     }
 
     async fn setup_workspace(
@@ -174,6 +179,7 @@ impl ClangdClient {
             json_rpc: json_rpc_handler,
             workspace_documents,
             pending_requests,
+            diagnostics_store: DiagnosticsStore::new(),
         })
     }
 }

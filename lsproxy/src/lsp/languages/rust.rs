@@ -10,7 +10,7 @@ use tokio::process::Command;
 use tokio::sync::broadcast::Receiver;
 use url::Url;
 
-use crate::lsp::{JsonRpcHandler, LspClient, PendingRequests, ProcessHandler};
+use crate::lsp::{DiagnosticsStore, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler};
 
 use crate::utils::workspace_documents::{
     DidOpenConfiguration, WorkspaceDocumentsHandler, DEFAULT_EXCLUDE_PATTERNS, RUST_FILE_PATTERNS,
@@ -22,6 +22,7 @@ pub struct RustAnalyzerClient {
     json_rpc: JsonRpcHandler,
     workspace_documents: WorkspaceDocumentsHandler,
     pending_requests: PendingRequests,
+    diagnostics_store: DiagnosticsStore,
 }
 
 #[async_trait]
@@ -83,6 +84,10 @@ impl LspClient for RustAnalyzerClient {
         &mut self.pending_requests
     }
 
+    fn get_diagnostics_store(&self) -> &DiagnosticsStore {
+        &self.diagnostics_store
+    }
+
     async fn setup_workspace(
         &mut self,
         _root_path: &str,
@@ -132,6 +137,7 @@ impl RustAnalyzerClient {
             json_rpc: json_rpc_handler,
             workspace_documents,
             pending_requests: PendingRequests::new(),
+            diagnostics_store: DiagnosticsStore::new(),
         })
     }
 }

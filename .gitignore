@@ -44,3 +44,7 @@ node_modules
 # macOS specific files
 .DS_Store
 **/.DS_Store
+
+#coding againes
+.claude/
+.ai_agents/session_context/

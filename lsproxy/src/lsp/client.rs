@@ -1,15 +1,19 @@
+// ABOUTME: LSP client trait definition for language server communication
+// ABOUTME: Provides async methods for initialization, document operations, and diagnostics handling
+
 use crate::lsp::json_rpc::JsonRpc;
 use crate::lsp::process::Process;
-use crate::lsp::{ExpectedMessageKey, JsonRpcHandler, ProcessHandler};
+use crate::lsp::{DiagnosticsStore, ExpectedMessageKey, JsonRpcHandler, ProcessHandler};
 use crate::utils::file_utils::{detect_language_string, search_directories};
 use async_trait::async_trait;
 use log::{debug, error, warn};
 use lsp_types::{
-    ClientCapabilities, DidOpenTextDocumentParams, DocumentSymbolClientCapabilities,
+    ClientCapabilities, DiagnosticTag, DidOpenTextDocumentParams, DocumentSymbolClientCapabilities,
     GotoDefinitionParams, GotoDefinitionResponse, InitializeParams, InitializeResult, Location,
-    PartialResultParams, Position, PublishDiagnosticsClientCapabilities, ReferenceContext,
-    ReferenceParams, TagSupport, TextDocumentClientCapabilities, TextDocumentIdentifier,
-    TextDocumentItem, TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
+    PartialResultParams, Position, PublishDiagnosticsClientCapabilities,
+    PublishDiagnosticsParams, ReferenceContext, ReferenceParams, TagSupport,
+    TextDocumentClientCapabilities, TextDocumentIdentifier, TextDocumentItem,
+    TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -28,6 +32,7 @@ pub trait LspClient: Send {
     ) -> Result<InitializeResult, Box<dyn Error + Send + Sync>> {
         debug!("Initializing LSP client with root path: {:?}", root_path);
         self.start_response_listener().await?;
+        self.start_diagnostics_handler().await?;
 
         let params = self.get_initialize_params(root_path).await?;
 
@@ -48,13 +53,14 @@ pub trait LspClient: Send {
                 hierarchical_document_symbol_support: Some(true),
                 ..Default::default()
             }),
-            // Turn off diagnostics for performance, we don't use them at the moment
             publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
-                related_information: Some(false),
-                tag_support: Some(TagSupport { value_set: vec![] }),
-                code_description_support: Some(false),
+                related_information: Some(true),
+                tag_support: Some(TagSupport {
+                    value_set: vec![DiagnosticTag::UNNECESSARY, DiagnosticTag::DEPRECATED],
+                }),
+                code_description_support: Some(true),
                 data_support: Some(false),
-                version_support: Some(false),
+                version_support: Some(true),
             }),
             ..Default::default()
         });
@@ -139,16 +145,24 @@ pub trait LspClient: Send {
                                     );
                                     let _ = process.send(&message).await;
                                 }
-                            } else if let (Some(params), Some(method)) = (message.params.clone(), message.method.clone()) {
-                                let message_key = ExpectedMessageKey {
-                                    method,
-                                    params,
-                                };
-                                if let Some(sender) =
-                                    pending_requests.remove_notification(message_key).await
+                            } else if let Some(method) = message.method.as_ref() {
+                                if pending_requests
+                                    .route_to_method_handler(method, message.clone())
+                                    .await
                                 {
-                                    if sender.send(message).is_err() {
-                                        warn!("Failed to send notification: receiver dropped");
+                                    continue;
+                                }
+                                if let Some(params) = message.params.clone() {
+                                    let message_key = ExpectedMessageKey {
+                                        method: method.clone(),
+                                        params,
+                                    };
+                                    if let Some(sender) =
+                                        pending_requests.remove_notification(message_key).await
+                                    {
+                                        if sender.send(message).is_err() {
+                                            warn!("Failed to send notification: receiver dropped");
+                                        }
                                     }
                                 }
                             }
@@ -332,6 +346,43 @@ pub trait LspClient: Send {
     fn get_pending_requests(&mut self) -> &mut PendingRequests;
 
     fn get_workspace_documents(&mut self) -> &mut WorkspaceDocumentsHandler;
+
+    fn get_diagnostics_store(&self) -> &DiagnosticsStore;
+
+    /// Start the diagnostics handler that listens for publishDiagnostics notifications
+    async fn start_diagnostics_handler(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let pending_requests = self.get_pending_requests().clone();
+        let diagnostics_store = self.get_diagnostics_store().clone();
+
+        let mut receiver = pending_requests
+            .register_method_handler("textDocument/publishDiagnostics".to_string())
+            .await;
+
+        tokio::spawn(async move {
+            while let Some(message) = receiver.recv().await {
+                if let Some(params) = message.params {
+                    match serde_json::from_value::<PublishDiagnosticsParams>(params) {
+                        Ok(diag_params) => {
+                            debug!(
+                                "Received {} diagnostics for {}",
+                                diag_params.diagnostics.len(),
+                                diag_params.uri
+                            );
+                            diagnostics_store
+                                .update(diag_params.uri, diag_params.diagnostics)
+                                .await;
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse publishDiagnostics params: {}", e);
+                        }
+                    }
+                }
+            }
+            debug!("Diagnostics handler exiting");
+        });
+
+        Ok(())
+    }
     /// Sets up the workspace for the language server.
     ///
     /// Some language servers require specific commands to be run before

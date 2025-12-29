@@ -38,6 +38,12 @@ Run one MCP server per project root. The server uses the current working directo
 cargo run --bin lsp-mcp -- --workspace-root /path/to/project
 ```
 
+Source builds need ast-grep rules installed under `/usr/src/ast_grep`:
+
+```bash
+bash scripts/install-ast-grep-rules.sh
+```
+
 Configure your MCP client to launch the server with the project root as the working directory. The server communicates over stdio.
 
 ### MCP client configuration

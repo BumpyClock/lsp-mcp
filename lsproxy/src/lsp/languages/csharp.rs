@@ -1,5 +1,5 @@
 use crate::{
-    lsp::{JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
+    lsp::{DiagnosticsStore, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
     utils::workspace_documents::{
         DidOpenConfiguration, WorkspaceDocumentsHandler, CSHARP_FILE_PATTERNS, CSHARP_ROOT_FILES,
         DEFAULT_EXCLUDE_PATTERNS,
@@ -16,6 +16,7 @@ pub struct CSharpClient {
     json_rpc: JsonRpcHandler,
     workspace_documents: WorkspaceDocumentsHandler,
     pending_requests: PendingRequests,
+    diagnostics_store: DiagnosticsStore,
 }
 #[async_trait]
 impl LspClient for CSharpClient {
@@ -33,6 +34,10 @@ impl LspClient for CSharpClient {
     }
     fn get_pending_requests(&mut self) -> &mut PendingRequests {
         &mut self.pending_requests
+    }
+
+    fn get_diagnostics_store(&self) -> &DiagnosticsStore {
+        &self.diagnostics_store
     }
 
     async fn get_initialize_params(
@@ -91,6 +96,7 @@ impl CSharpClient {
             json_rpc: json_rpc_handler,
             workspace_documents,
             pending_requests,
+            diagnostics_store: DiagnosticsStore::new(),
         })
     }
 }
