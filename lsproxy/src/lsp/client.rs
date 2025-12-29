@@ -9,12 +9,14 @@ use crate::utils::file_utils::{detect_language_string, search_directories};
 use async_trait::async_trait;
 use log::{debug, error, warn};
 use lsp_types::{
-    ClientCapabilities, DiagnosticTag, DidOpenTextDocumentParams, DocumentSymbolClientCapabilities,
-    GotoDefinitionParams, GotoDefinitionResponse, InitializeParams, InitializeResult, Location,
-    PartialResultParams, Position, PublishDiagnosticsClientCapabilities,
-    PublishDiagnosticsParams, ReferenceContext, ReferenceParams, TagSupport,
-    TextDocumentClientCapabilities, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
+    ClientCapabilities, CodeActionClientCapabilities, CodeActionContext, CodeActionKindLiteralSupport,
+    CodeActionLiteralSupport, CodeActionOrCommand, CodeActionParams, DiagnosticTag,
+    DidOpenTextDocumentParams, DocumentSymbolClientCapabilities, GotoDefinitionParams,
+    GotoDefinitionResponse, InitializeParams, InitializeResult, Location, PartialResultParams,
+    Position, PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, Range,
+    ReferenceContext, ReferenceParams, TagSupport, TextDocumentClientCapabilities,
+    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
+    WorkDoneProgressParams, WorkspaceFolder,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -87,6 +89,23 @@ pub trait LspClient: Send {
                 code_description_support: Some(true),
                 data_support: Some(false),
                 version_support: Some(true),
+            }),
+            code_action: Some(CodeActionClientCapabilities {
+                dynamic_registration: Some(false),
+                code_action_literal_support: Some(CodeActionLiteralSupport {
+                    code_action_kind: CodeActionKindLiteralSupport {
+                        value_set: vec![
+                            lsp_types::CodeActionKind::QUICKFIX.as_str().to_string(),
+                            lsp_types::CodeActionKind::REFACTOR.as_str().to_string(),
+                            lsp_types::CodeActionKind::SOURCE.as_str().to_string(),
+                        ],
+                    },
+                }),
+                is_preferred_support: Some(true),
+                disabled_support: Some(true),
+                data_support: Some(true),
+                resolve_support: None,
+                honors_change_annotations: None,
             }),
             ..Default::default()
         });
@@ -435,6 +454,75 @@ pub trait LspClient: Send {
 
         debug!("Received hover response");
         Ok(hover_resp)
+    }
+
+    async fn text_document_code_action(
+        &mut self,
+        file_path: &str,
+        range: Range,
+        diagnostics: Vec<lsp_types::Diagnostic>,
+    ) -> Result<Option<Vec<CodeActionOrCommand>>, Box<dyn Error + Send + Sync>> {
+        debug!(
+            "Requesting code actions for {}, range {:?}",
+            file_path, range
+        );
+
+        let needs_open = {
+            let workspace_documents = self.get_workspace_documents();
+            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
+                && !workspace_documents.is_did_open_document(file_path)
+        };
+
+        if needs_open {
+            let document_text = self
+                .get_workspace_documents()
+                .read_text_document(&PathBuf::from(file_path), None)
+                .await?;
+
+            self.text_document_did_open(TextDocumentItem {
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+                language_id: detect_language_string(file_path)?,
+                version: 1,
+                text: document_text,
+            })
+            .await?;
+
+            self.get_workspace_documents()
+                .add_did_open_document(file_path);
+        }
+
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier {
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+            },
+            range,
+            context: CodeActionContext {
+                diagnostics,
+                only: None,
+                trigger_kind: None,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+
+        let result = self
+            .send_request(
+                "textDocument/codeAction",
+                Some(serde_json::to_value(params)?),
+            )
+            .await?;
+
+        let code_actions: Option<Vec<CodeActionOrCommand>> = if result.is_null() {
+            None
+        } else {
+            serde_json::from_value(result)?
+        };
+
+        debug!(
+            "Received code action response: {:?} actions",
+            code_actions.as_ref().map(|a| a.len())
+        );
+        Ok(code_actions)
     }
 
     async fn workspace_symbol(

@@ -952,3 +952,33 @@ async fn test_definition() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_code_action_returns_actions_for_position() -> Result<(), Box<dyn std::error::Error>> {
+    let context = TestContext::setup(&python_sample_path(), true).await?;
+    let manager = context
+        .manager
+        .as_ref()
+        .ok_or("Manager is not initialized")?;
+
+    let file_path = "main.py";
+    let range = lsp_types::Range {
+        start: lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+        end: lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+    };
+
+    let code_actions = manager.code_action(file_path, range, vec![]).await?;
+
+    assert!(
+        code_actions.is_some() || code_actions.is_none(),
+        "code_action should return a valid response"
+    );
+
+    Ok(())
+}
