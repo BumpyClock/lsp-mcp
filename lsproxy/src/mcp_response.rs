@@ -222,13 +222,13 @@ pub fn tool_disabled_error(tool_name: &str, output_mode: OutputMode) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{distributions::Alphanumeric, Rng};
+    use rand::{distr::Alphanumeric, Rng};
     use serde_json::json;
     use std::thread;
 
     fn random_irregular_string() -> String {
-        let mut rng = rand::thread_rng();
-        let len: usize = rng.gen_range(6..20);
+        let mut rng = rand::rng();
+        let len: usize = rng.random_range(6..20);
         let mut value: String = rng
             .sample_iter(&Alphanumeric)
             .take(len)
@@ -243,8 +243,8 @@ mod tests {
     where
         F: FnMut() -> Option<T>,
     {
-        let mut rng = rand::thread_rng();
-        let attempts: usize = rng.gen_range(2..5);
+        let mut rng = rand::rng();
+        let attempts: usize = rng.random_range(2..5);
         for _ in 0..attempts {
             let result = op();
             if result.is_some() {

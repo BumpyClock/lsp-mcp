@@ -37,6 +37,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_open"),
@@ -61,6 +62,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_closed"),
@@ -85,6 +87,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_path"),
@@ -109,6 +112,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_maze"),
@@ -133,6 +137,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_current"),
@@ -157,6 +162,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_xStart"),
@@ -181,6 +187,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_yStart"),
@@ -205,6 +212,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_xEnd"),
@@ -229,6 +237,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_yEnd"),
@@ -253,6 +262,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_diag"),
@@ -277,6 +287,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("maze"),
@@ -301,6 +312,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("xStart"),
@@ -325,6 +337,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("yStart"),
@@ -349,6 +362,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("diag"),
@@ -373,6 +387,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_maze"),
@@ -397,6 +412,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_current"),
@@ -421,6 +437,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_xStart"),
@@ -445,6 +462,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_yStart"),
@@ -469,6 +487,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_diag"),
@@ -493,6 +512,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("FindPathTo"),
@@ -517,6 +537,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("xEnd"),
@@ -541,6 +562,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("yEnd"),
@@ -565,6 +587,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_xEnd"),
@@ -589,6 +612,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_yEnd"),
@@ -613,6 +637,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_current"),
@@ -637,6 +662,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_current"),
@@ -661,6 +687,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("AddNeighborsToOpenList"),
@@ -685,6 +712,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("x"),
@@ -709,6 +737,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("y"),
@@ -733,6 +762,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("node"),
@@ -757,6 +787,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("Distance"),
@@ -781,6 +812,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("x"),
@@ -805,6 +837,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("y"),
@@ -829,6 +862,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("FindNeighborInList"),
@@ -853,6 +887,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("list"),
@@ -877,6 +912,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("node"),
@@ -901,6 +937,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
     ];
     // Sort definitions
@@ -920,11 +957,6 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     .cmp(&b.identifier_position.position.character)
             } else {
                 line_cmp
-            signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
-            line_count: None,
             }
         } else {
             path_cmp

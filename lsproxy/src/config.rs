@@ -221,12 +221,12 @@ impl LspMcpConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::distributions::Alphanumeric;
+    use rand::distr::Alphanumeric;
     use rand::Rng;
     use tempfile::TempDir;
 
     fn random_suffix() -> String {
-        rand::thread_rng()
+        rand::rng()
             .sample_iter(&Alphanumeric)
             .take(8)
             .map(char::from)

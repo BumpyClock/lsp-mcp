@@ -1420,13 +1420,13 @@ mod tests {
         CallHierarchyItem, Location, Position as LspPosition, Range as LspRange, SymbolInformation,
         SymbolKind, Url,
     };
-    use rand::{distributions::Alphanumeric, Rng};
+    use rand::{distr::Alphanumeric, Rng};
     use std::thread;
     use tempfile::TempDir;
 
     fn random_irregular_string() -> String {
-        let mut rng = rand::thread_rng();
-        let len: usize = rng.gen_range(6..20);
+        let mut rng = rand::rng();
+        let len: usize = rng.random_range(6..20);
         let mut value: String = rng
             .sample_iter(&Alphanumeric)
             .take(len)
@@ -1441,8 +1441,8 @@ mod tests {
     where
         F: FnMut() -> Option<T>,
     {
-        let mut rng = rand::thread_rng();
-        let attempts: usize = rng.gen_range(2..5);
+        let mut rng = rand::rng();
+        let attempts: usize = rng.random_range(2..5);
         for _ in 0..attempts {
             let result = op();
             if result.is_some() {
@@ -1515,7 +1515,7 @@ mod tests {
     async fn it_reports_language_servers_unavailable_without_startup(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = TempDir::new()?;
-        let random_suffix: String = rand::thread_rng()
+        let random_suffix: String = rand::rng()
             .sample_iter(&Alphanumeric)
             .take(10)
             .map(char::from)
@@ -1554,12 +1554,12 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let temp_left = TempDir::new()?;
         let temp_right = TempDir::new()?;
-        let random_left: String = rand::thread_rng()
+        let random_left: String = rand::rng()
             .sample_iter(&Alphanumeric)
             .take(9)
             .map(char::from)
             .collect();
-        let random_right: String = rand::thread_rng()
+        let random_right: String = rand::rng()
             .sample_iter(&Alphanumeric)
             .take(9)
             .map(char::from)
@@ -1578,7 +1578,7 @@ mod tests {
         let path_override_dir = TempDir::new()?;
         let path_override = path_override_dir
             .path()
-            .join(format!("path_{}", rand::thread_rng().gen::<u32>()));
+            .join(format!("path_{}", rand::rng().random::<u32>()));
         tokio::fs::create_dir_all(&path_override).await?;
         let original_path = std::env::var_os("PATH");
         std::env::set_var("PATH", &path_override);
@@ -1611,10 +1611,10 @@ mod tests {
 
     #[test]
     fn it_paginates_items_with_offset_and_truncation() {
-        let mut rng = rand::thread_rng();
-        let total_len: usize = rng.gen_range(6..20);
-        let offset: u32 = rng.gen_range(0..(total_len as u32 / 2 + 1));
-        let limit: u32 = rng.gen_range(1..(total_len as u32 / 2 + 2));
+        let mut rng = rand::rng();
+        let total_len: usize = rng.random_range(6..20);
+        let offset: u32 = rng.random_range(0..(total_len as u32 / 2 + 1));
+        let limit: u32 = rng.random_range(1..(total_len as u32 / 2 + 2));
         let mut items = Vec::with_capacity(total_len);
         for _ in 0..total_len {
             items.push(random_irregular_string());
@@ -1645,9 +1645,9 @@ mod tests {
 
     #[test]
     fn it_scores_prefix_matches_for_workspace_symbols() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let base = random_irregular_string();
-        let prefix_len = rng.gen_range(1..(base.len().saturating_sub(1).max(2)));
+        let prefix_len = rng.random_range(1..(base.len().saturating_sub(1).max(2)));
         let query: String = base.chars().take(prefix_len).collect();
         let name = format!("{}{}", base, random_irregular_string());
         let response = retry_with(|| {
@@ -1671,11 +1671,11 @@ mod tests {
         let file_name = format!("file_{}.rs", random_irregular_string());
         let file_path = temp_dir.path().join(file_name);
         let uri = Url::from_file_path(&file_path).expect("negative: uri creation failed");
-        let mut rng = rand::thread_rng();
-        let start_line: u32 = rng.gen_range(1..100);
-        let start_char: u32 = rng.gen_range(0..20);
-        let end_line: u32 = start_line + rng.gen_range(0..5);
-        let end_char: u32 = start_char + rng.gen_range(1..5);
+        let mut rng = rand::rng();
+        let start_line: u32 = rng.random_range(1..100);
+        let start_char: u32 = rng.random_range(0..20);
+        let end_line: u32 = start_line + rng.random_range(0..5);
+        let end_char: u32 = start_char + rng.random_range(1..5);
         let location = Location {
             uri,
             range: LspRange {
@@ -1772,11 +1772,11 @@ mod tests {
         let file_name = format!("ref_{}.rs", random_irregular_string());
         let file_path = temp_dir.path().join(file_name);
         let uri = Url::from_file_path(&file_path).expect("negative: uri creation failed");
-        let mut rng = rand::thread_rng();
-        let start_line: u32 = rng.gen_range(1..100);
-        let start_char: u32 = rng.gen_range(0..20);
-        let end_line: u32 = start_line + rng.gen_range(0..5);
-        let end_char: u32 = start_char + rng.gen_range(1..5);
+        let mut rng = rand::rng();
+        let start_line: u32 = rng.random_range(1..100);
+        let start_char: u32 = rng.random_range(0..20);
+        let end_line: u32 = start_line + rng.random_range(0..5);
+        let end_char: u32 = start_char + rng.random_range(1..5);
         let location = Location {
             uri,
             range: LspRange {

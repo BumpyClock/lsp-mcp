@@ -67,6 +67,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("main"),
@@ -91,6 +92,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("graph"),
@@ -115,15 +117,11 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
     ];
     assert_eq!(symbol_response, expected);
     Ok(())
-            signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
-            line_count: None,
 }
 
 #[tokio::test]
@@ -163,6 +161,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("CostStrategy"),
@@ -187,6 +186,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("BARRIER"),
@@ -211,6 +211,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("DISTANCE"),
@@ -235,6 +236,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("COMBINED"),
@@ -259,6 +261,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("AStarGraph"),
@@ -283,6 +286,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("__init__"),
@@ -307,6 +311,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("barriers"),
@@ -331,6 +336,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_barrier_cost"),
@@ -355,6 +361,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_distance_cost"),
@@ -379,6 +386,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_combined_cost"),
@@ -403,6 +411,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("barrier_cost"),
@@ -427,6 +436,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("distance_cost"),
@@ -451,6 +461,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("move_cost"),
@@ -475,6 +486,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("cost_function"),
@@ -499,6 +511,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("cost_function"),
@@ -523,6 +536,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("cost_function"),
@@ -547,6 +561,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("heuristic"),
@@ -571,6 +586,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("D"),
@@ -595,6 +611,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("D2"),
@@ -619,6 +636,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("dx"),
@@ -643,6 +661,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("dy"),
@@ -667,6 +686,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("get_vertex_neighbours"),
@@ -691,6 +711,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("n"),
@@ -715,6 +736,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("x2"),
@@ -739,6 +761,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("y2"),
@@ -763,15 +786,11 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
     ];
     assert_eq!(symbol_response, expected);
     Ok(())
-            signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
-            line_count: None,
 }
 
 #[tokio::test]

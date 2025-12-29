@@ -102,7 +102,7 @@ pub enum SupportedLanguages {
 }
 
 /// A position within a text document, using 1-based indexing (matching editor display)
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Position {
     /// 1-indexed line number (first line is 1).
     #[schema(example = 10)]
@@ -113,7 +113,7 @@ pub struct Position {
 }
 
 /// A position within a specific file in the workspace
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FilePosition {
     /// Path to the file, relative to the workspace root
     #[schema(example = "src/main.py")]
@@ -123,7 +123,7 @@ pub struct FilePosition {
 }
 
 /// A range within a specific file, defined by start and end positions
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FileRange {
     /// The path to the file.
     #[schema(example = "src/main.py")]
@@ -194,7 +194,7 @@ pub struct CodeContext {
     pub source_code: String,
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Symbol {
     /// The name of the symbol.
     #[schema(example = "User")]
@@ -441,7 +441,7 @@ pub struct IdentifierResponse {
     pub identifiers: Vec<Identifier>,
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Range {
     /// The start position of the range.
     pub start: Position,

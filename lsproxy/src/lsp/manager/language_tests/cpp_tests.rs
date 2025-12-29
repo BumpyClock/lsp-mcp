@@ -37,6 +37,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("aStar"),
@@ -61,6 +62,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("calcDist"),
@@ -85,6 +87,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("isValid"),
@@ -109,6 +112,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("existPoint"),
@@ -133,6 +137,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("fillOpen"),
@@ -157,6 +162,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("search"),
@@ -181,6 +187,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("path"),
@@ -205,14 +212,10 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
     ];
 
     assert_eq!(symbol_response, expected);
     Ok(())
-            signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
-            line_count: None,
 }

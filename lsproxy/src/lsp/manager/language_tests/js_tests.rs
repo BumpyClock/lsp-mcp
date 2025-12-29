@@ -165,6 +165,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("aStar"),
@@ -189,6 +190,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("lambda"),
@@ -213,6 +215,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("board"),
@@ -237,6 +240,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
     ];
 
@@ -245,11 +249,6 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
     expected.sort_by_key(|s| s.name.clone());
     assert_eq!(symbol_response, expected);
     Ok(())
-            signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
-            line_count: None,
 }
 
 #[tokio::test]
@@ -288,6 +287,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "propFuncExpr".to_string(),
@@ -312,6 +312,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "objWithArrowFunc".to_string(),
@@ -336,6 +337,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "propArrowFunc".to_string(),
@@ -360,6 +362,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "topLevelStandardFunction".to_string(),
@@ -384,6 +387,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "topLevelArrowConst".to_string(),
@@ -409,6 +413,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "namedInnerFuncExpr".to_string(),
@@ -433,6 +438,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "topLevelFuncExprConst".to_string(),
@@ -457,6 +463,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "assignedArrowLet".to_string(),
@@ -482,6 +489,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "assignedArrowLet".to_string(),
@@ -507,6 +515,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "exampleFunc".to_string(),
@@ -531,6 +540,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "exampleFunc".to_string(),
@@ -555,6 +565,7 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                     },
                 },
             },
+            ..Default::default()
         },
     ];
 
@@ -570,11 +581,6 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                 eprintln!("Actual:   {:?}", symbol_response[i]);
             } else {
                 eprintln!("Actual:   None");
-            signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
-            line_count: None,
             }
             if i < expected.len() {
                 eprintln!("Expected: {:?}", expected[i]);
@@ -627,6 +633,7 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "classMethodRegular".to_string(),
@@ -651,6 +658,7 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "staticClassMethod".to_string(),
@@ -675,6 +683,7 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "getterMethod".to_string(),
@@ -699,6 +708,7 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "setterMethod".to_string(),
@@ -723,6 +733,7 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "objWithShorthand".to_string(),
@@ -747,6 +758,7 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "shorthandObjMethod".to_string(),
@@ -771,6 +783,7 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "generatorShorthandMethod".to_string(),
@@ -795,6 +808,7 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: "asyncShorthandMethod".to_string(),
@@ -819,6 +833,7 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
     ];
 
@@ -834,11 +849,6 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                 eprintln!("Actual:   {:?}", symbol_response[i]);
             } else {
                 eprintln!("Actual:   None");
-            signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
-            line_count: None,
             }
             if i < expected.len() {
                 eprintln!("Expected: {:?}", expected[i]);

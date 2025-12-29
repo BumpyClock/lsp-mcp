@@ -37,6 +37,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("Map"),
@@ -61,6 +62,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("get"),
@@ -85,6 +87,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("new"),
@@ -109,6 +112,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
     ];
     // sort symbols by name
@@ -116,11 +120,6 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
     expected.sort_by_key(|s| s.name.clone());
     assert_eq!(symbol_response, expected);
     Ok(())
-            signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
-            line_count: None,
 }
 
 #[tokio::test]

@@ -47,4 +47,4 @@ node_modules
 
 #coding againes
 .claude/
-.ai_agents/session_context/
+.ai_agents/
