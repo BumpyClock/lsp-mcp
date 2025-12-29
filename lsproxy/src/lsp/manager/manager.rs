@@ -563,6 +563,31 @@ impl Manager {
             .map_err(|e| LspManagerError::InternalError(format!("Hover retrieval failed: {}", e)))
     }
 
+    pub async fn workspace_symbol(
+        &self,
+        query: &str,
+    ) -> Result<Vec<lsp_types::SymbolInformation>, LspManagerError> {
+        let mut all_symbols = Vec::new();
+        let clients = self.lsp_clients.read().await;
+
+        // Query all available language servers
+        for client in clients.values() {
+            let mut locked_client = client.lock().await;
+            match locked_client.workspace_symbol(query).await {
+                Ok(symbols) => all_symbols.extend(symbols),
+                Err(e) => {
+                    log::warn!("Workspace symbol query failed for a client: {}", e);
+                    // Continue with other clients
+                }
+            }
+        }
+
+        // Sort by name for consistent results
+        all_symbols.sort_by(|a, b| a.name.cmp(&b.name));
+
+        Ok(all_symbols)
+    }
+
     pub async fn find_referenced_symbols(
         &self,
         file_path: &str,

@@ -130,6 +130,28 @@ impl LspMcpServer {
         }
     }
 
+    #[tool(description = "Search for symbols by name across the entire workspace")]
+    async fn workspace_symbol(
+        &self,
+        query: String,
+        include_raw_response: Option<bool>,
+    ) -> ToolOutput {
+        match self
+            .service
+            .workspace_symbol(&query, include_raw_response.unwrap_or(false))
+            .await
+        {
+            Ok(response) => {
+                let summary = format!("Found {} symbols matching '{}'", response.symbols.len(), query);
+                match serde_json::to_string_pretty(&response) {
+                    Ok(json) => ToolOutput::text(format!("{}\n\n{}", summary, json)),
+                    Err(e) => ToolOutput::error(format!("Serialization error: {}", e)),
+                }
+            }
+            Err(e) => ToolOutput::error(format!("Error: {}", e)),
+        }
+    }
+
     #[tool(description = "Finds symbols referenced by a symbol definition at a given position")]
     async fn find_referenced_symbols(
         &self,

@@ -437,6 +437,33 @@ pub trait LspClient: Send {
         Ok(hover_resp)
     }
 
+    async fn workspace_symbol(
+        &mut self,
+        query: &str,
+    ) -> Result<Vec<lsp_types::SymbolInformation>, Box<dyn Error + Send + Sync>> {
+        debug!("Requesting workspace symbols for query: {}", query);
+
+        let params = lsp_types::WorkspaceSymbolParams {
+            query: query.to_string(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+
+        let result = self
+            .send_request("workspace/symbol", Some(serde_json::to_value(params)?))
+            .await?;
+
+        // workspace/symbol can return null or SymbolInformation[]
+        let symbols: Vec<lsp_types::SymbolInformation> = if result.is_null() {
+            Vec::new()
+        } else {
+            serde_json::from_value(result)?
+        };
+
+        debug!("Received {} workspace symbols", symbols.len());
+        Ok(symbols)
+    }
+
     fn get_process(&mut self) -> &mut ProcessHandler;
 
     fn get_json_rpc(&mut self) -> &mut JsonRpcHandler;

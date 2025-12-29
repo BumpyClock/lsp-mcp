@@ -4,7 +4,7 @@ use crate::api_types::{
     CodeContext, DefinitionResponse, Diagnostic, DiagnosticsResponse, FileDiagnostics,
     FilePosition, FileRange, HoverContents, HoverResponse, Identifier, IdentifierResponse,
     LspStatus, Position, Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse,
-    ReferencesResponse, SupportedLanguages, Symbol,
+    ReferencesResponse, SupportedLanguages, Symbol, WorkspaceSymbolInfo, WorkspaceSymbolResponse,
 };
 use crate::lsp::manager::{LspManagerError, Manager};
 use crate::utils::file_utils::uri_to_relative_path_string;
@@ -473,6 +473,51 @@ impl LspService {
             raw_response,
             contents,
             range,
+        })
+    }
+
+    pub async fn workspace_symbol(
+        &self,
+        query: &str,
+        include_raw_response: bool,
+    ) -> Result<WorkspaceSymbolResponse, ServiceError> {
+        let symbols = self.manager.workspace_symbol(query).await?;
+
+        let workspace_files = self.manager.list_files().await?;
+
+        let filtered_symbols: Vec<WorkspaceSymbolInfo> = symbols
+            .into_iter()
+            .filter_map(|sym| {
+                let path = uri_to_relative_path_string(&sym.location.uri);
+                // Only include symbols from workspace files
+                if workspace_files.contains(&path) {
+                    Some(WorkspaceSymbolInfo {
+                        name: sym.name,
+                        kind: format!("{:?}", sym.kind),
+                        location: FilePosition {
+                            path,
+                            position: Position {
+                                line: sym.location.range.start.line,
+                                character: sym.location.range.start.character,
+                            },
+                        },
+                        container_name: sym.container_name,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let raw_response = if include_raw_response {
+            serde_json::to_value(&filtered_symbols).ok()
+        } else {
+            None
+        };
+
+        Ok(WorkspaceSymbolResponse {
+            raw_response,
+            symbols: filtered_symbols,
         })
     }
 }

@@ -540,6 +540,30 @@ pub enum HoverContents {
     Array(Vec<String>),
 }
 
+/// Response to a workspace symbol request
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct WorkspaceSymbolResponse {
+    /// The raw response from the langserver
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<Value>,
+    /// The symbols found matching the query
+    pub symbols: Vec<WorkspaceSymbolInfo>,
+}
+
+/// Information about a workspace symbol
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct WorkspaceSymbolInfo {
+    /// The name of the symbol
+    pub name: String,
+    /// The kind of the symbol (function, class, etc.)
+    pub kind: String,
+    /// The location of the symbol
+    pub location: FilePosition,
+    /// The containing symbol name (e.g., class name for a method)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub container_name: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
