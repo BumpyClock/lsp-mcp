@@ -116,4 +116,9 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
     expected.sort_by_key(|s| s.name.clone());
     assert_eq!(symbol_response, expected);
     Ok(())
+            signature: None,
+            exported: None,
+            jsdoc_summary: None,
+            dependencies: None,
+            line_count: None,
 }

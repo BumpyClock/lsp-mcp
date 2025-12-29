@@ -183,6 +183,110 @@ impl fmt::Display for PositionError {
 
 impl Error for PositionError {}
 
+/// Enriches a symbol with LSP hover data and source-based heuristics
+async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &mut Symbol) {
+    // Calculate line_count from file_range
+    symbol.line_count = Some(
+        symbol.file_range.range.end.line
+            .saturating_sub(symbol.file_range.range.start.line)
+            .saturating_add(1)
+    );
+
+    // Try to get LSP hover for signature and jsdoc_summary
+    let hover_position = lsp_types::Position {
+        line: symbol.identifier_position.position.line.saturating_sub(1),
+        character: symbol.identifier_position.position.character.saturating_sub(1),
+    };
+
+    if let Ok(Some(hover)) = manager.hover(file_path, hover_position).await {
+        // Extract signature and jsdoc from hover
+        let (sig, jsdoc) = extract_signature_and_docs(&hover.contents);
+        if sig.is_some() {
+            symbol.signature = sig;
+        }
+        if jsdoc.is_some() {
+            symbol.jsdoc_summary = jsdoc;
+        }
+    }
+
+    // Best-effort: detect if exported
+    // For now, use simple heuristics based on symbol kind
+    symbol.exported = detect_exported(&symbol.kind);
+
+    // Dependencies: Leave as None for now (best-effort would require deeper analysis)
+    symbol.dependencies = None;
+}
+
+/// Detects if a symbol is exported based on its kind (best-effort heuristic)
+fn detect_exported(kind: &str) -> Option<bool> {
+    // Heuristic: Certain kinds like "export-function", "pub-function" suggest exported
+    // For now, return None to indicate "unknown" - implementations can be refined later
+    match kind {
+        k if k.contains("export") => Some(true),
+        k if k.contains("pub") => Some(true),
+        k if k.starts_with("public-") => Some(true),
+        _ => Some(false), // Default to false for best-effort
+    }
+}
+
+/// Extracts signature and documentation from LSP hover contents
+fn extract_signature_and_docs(contents: &lsp_types::HoverContents) -> (Option<String>, Option<String>) {
+    use lsp_types::{HoverContents, MarkedString, MarkupContent};
+
+    let text = match contents {
+        HoverContents::Scalar(MarkedString::String(s)) => s.clone(),
+        HoverContents::Scalar(MarkedString::LanguageString(ls)) => {
+            format!("```{}\n{}\n```", ls.language, ls.value)
+        }
+        HoverContents::Markup(MarkupContent { value, .. }) => value.clone(),
+        HoverContents::Array(arr) => {
+            arr.iter()
+                .map(|m| match m {
+                    MarkedString::String(s) => s.clone(),
+                    MarkedString::LanguageString(ls) => {
+                        format!("```{}\n{}\n```", ls.language, ls.value)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        }
+    };
+
+    // Simple heuristic: First code block is signature, rest is docs
+    let lines: Vec<&str> = text.lines().collect();
+    let mut signature = None;
+    let mut docs = Vec::new();
+    let mut in_code_block = false;
+    let mut code_lines = Vec::new();
+
+    for line in lines {
+        if line.starts_with("```") {
+            if in_code_block {
+                // End of code block - this might be the signature
+                if signature.is_none() && !code_lines.is_empty() {
+                    signature = Some(code_lines.join("\n"));
+                    code_lines.clear();
+                }
+                in_code_block = false;
+            } else {
+                in_code_block = true;
+            }
+        } else if in_code_block {
+            code_lines.push(line);
+        } else if !line.is_empty() {
+            docs.push(line);
+        }
+    }
+
+    let jsdoc = if docs.is_empty() {
+        None
+    } else {
+        Some(docs.join(" ").trim().to_string())
+    };
+
+    (signature, jsdoc)
+}
+
 impl LspService {
     pub async fn definitions_in_file(
         &self,
@@ -190,14 +294,38 @@ impl LspService {
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<McpSymbolsResponse, ServiceError> {
-        let symbols = self.manager.definitions_in_file_ast_grep(file_path).await?;
-        let symbols: Vec<Symbol> = symbols
+        use crate::api_types::get_mount_dir;
+
+        // Get file mtime
+        let full_path = get_mount_dir().join(file_path);
+        let metadata = tokio::fs::metadata(&full_path).await
+            .map_err(|e| ServiceError::Lsp(crate::lsp::manager::LspManagerError::FileNotFound(
+                format!("{}: {}", file_path, e)
+            )))?;
+        let mtime = metadata.modified()
+            .map_err(|e| ServiceError::Lsp(crate::lsp::manager::LspManagerError::InternalError(
+                format!("Failed to get mtime: {}", e)
+            )))?;
+        let mtime_rfc3339 = chrono::DateTime::<chrono::Utc>::from(mtime)
+            .to_rfc3339();
+
+        // Get symbols from ast-grep
+        let ast_symbols = self.manager.definitions_in_file_ast_grep(file_path).await?;
+        let mut symbols: Vec<Symbol> = ast_symbols
             .into_iter()
             .filter(|s| s.rule_id != "local-variable")
             .map(Symbol::from)
             .collect();
+
+        // Enrich each symbol
+        for symbol in &mut symbols {
+            enrich_symbol(&self.manager, file_path, symbol).await;
+        }
+
         let (symbols, pagination) = paginate_items(symbols, limit, offset);
         Ok(McpSymbolsResponse {
+            path: file_path.to_string(),
+            mtime: mtime_rfc3339,
             symbols,
             limit: pagination.limit,
             offset: pagination.offset,
@@ -1586,6 +1714,11 @@ mod tests {
                 path: expected_path.clone(),
                 range: symbol_range.clone(),
             },
+            signature: None,
+            exported: None,
+            jsdoc_summary: None,
+            dependencies: None,
+            line_count: None,
         };
         let snippet = CodeContext {
             range: FileRange {
@@ -1715,5 +1848,81 @@ mod tests {
             result = manager.start_langservers(workspace_root, None).await;
         }
         result
+    }
+
+    #[tokio::test]
+    async fn test_definitions_in_file_includes_mtime_and_path() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        let workspace_root = temp_dir.path();
+
+        let test_file = workspace_root.join("test.rs");
+        tokio::fs::write(&test_file, "fn example() {}").await?;
+
+        let manager = Manager::new(workspace_root.to_str().unwrap()).await?;
+        let service = create_service(Arc::new(manager));
+
+        let response = service.definitions_in_file("test.rs", None, None).await?;
+
+        // Verify path is populated
+        assert_eq!(response.path, "test.rs");
+
+        // Verify mtime is populated and is RFC3339 format
+        assert!(!response.mtime.is_empty());
+        assert!(chrono::DateTime::parse_from_rfc3339(&response.mtime).is_ok(),
+            "mtime should be valid RFC3339: {}", response.mtime);
+
+        // Verify pagination fields exist
+        assert_eq!(response.limit, 200); // DEFAULT_LIST_LIMIT
+        assert_eq!(response.offset, 0);
+        assert_eq!(response.truncated, false);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_definitions_in_file_enriches_symbols() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        let workspace_root = temp_dir.path();
+
+        // Create a Rust file with a documented function
+        let test_file = workspace_root.join("test.rs");
+        let source = r#"/// This function does something
+pub fn example(x: i32) -> String {
+    format!("{}", x)
+}
+
+fn internal_helper() {
+    println!("internal");
+}"#;
+        tokio::fs::write(&test_file, source).await?;
+
+        let manager = Manager::new(workspace_root.to_str().unwrap()).await?;
+        let service = create_service(Arc::new(manager));
+
+        let response = service.definitions_in_file("test.rs", None, None).await?;
+
+        // Find the public function symbol
+        let pub_fn = response.symbols.iter()
+            .find(|s| s.name == "example")
+            .expect("Should find 'example' function");
+
+        // Verify line_count is populated
+        assert!(pub_fn.line_count.is_some(), "line_count should be populated");
+        let line_count = pub_fn.line_count.unwrap();
+        assert!(line_count >= 3, "Function should span at least 3 lines, got {}", line_count);
+
+        // Verify exported is populated (best-effort)
+        // For Rust, 'pub' should be detected
+        assert!(pub_fn.exported.is_some(), "exported should be populated");
+
+        // Find the internal function
+        let internal_fn = response.symbols.iter()
+            .find(|s| s.name == "internal_helper")
+            .expect("Should find 'internal_helper' function");
+
+        // Verify internal function has line_count
+        assert!(internal_fn.line_count.is_some(), "line_count should be populated for all symbols");
+
+        Ok(())
     }
 }

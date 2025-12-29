@@ -920,6 +920,11 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     .cmp(&b.identifier_position.position.character)
             } else {
                 line_cmp
+            signature: None,
+            exported: None,
+            jsdoc_summary: None,
+            dependencies: None,
+            line_count: None,
             }
         } else {
             path_cmp

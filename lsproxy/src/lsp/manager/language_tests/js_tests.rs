@@ -245,6 +245,11 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
     expected.sort_by_key(|s| s.name.clone());
     assert_eq!(symbol_response, expected);
     Ok(())
+            signature: None,
+            exported: None,
+            jsdoc_summary: None,
+            dependencies: None,
+            line_count: None,
 }
 
 #[tokio::test]
@@ -565,6 +570,11 @@ async fn test_file_symbols_functions_js() -> Result<(), Box<dyn std::error::Erro
                 eprintln!("Actual:   {:?}", symbol_response[i]);
             } else {
                 eprintln!("Actual:   None");
+            signature: None,
+            exported: None,
+            jsdoc_summary: None,
+            dependencies: None,
+            line_count: None,
             }
             if i < expected.len() {
                 eprintln!("Expected: {:?}", expected[i]);
@@ -824,6 +834,11 @@ async fn test_file_symbols_methods_js() -> Result<(), Box<dyn std::error::Error>
                 eprintln!("Actual:   {:?}", symbol_response[i]);
             } else {
                 eprintln!("Actual:   None");
+            signature: None,
+            exported: None,
+            jsdoc_summary: None,
+            dependencies: None,
+            line_count: None,
             }
             if i < expected.len() {
                 eprintln!("Expected: {:?}", expected[i]);
