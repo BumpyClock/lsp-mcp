@@ -144,6 +144,26 @@ command = "lsp-mcp"
 args = ["--workspace-root", "/path/to/project"]
 ```
 
+## Configuration
+
+You can customize `lsp-mcp` behavior with a `.lsp-mcp.json` file in your workspace root.
+See `CONFIGURATION.md` for the full schema and examples.
+
+### Output Mode
+
+Control the verbosity of tool outputs:
+
+```json
+{
+  "output": {
+    "mode": "verbose"
+  }
+}
+```
+
+- `"default"` (default): Compact output format
+- `"verbose"`: Detailed output with full information
+
 ## <a name="contributing">Building products with lsproxy</a>
 
 If you're building AI coding agents or code RAG, or would like to use `lsproxy` in a commercial product, please reach out!

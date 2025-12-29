@@ -548,6 +548,9 @@ pub struct WorkspaceSymbolResponse {
     pub raw_response: Option<Value>,
     /// The symbols found matching the query
     pub symbols: Vec<WorkspaceSymbolInfo>,
+    pub limit: u32,
+    pub offset: u32,
+    pub truncated: bool,
 }
 
 /// Response to a go-to-implementation request
@@ -574,6 +577,10 @@ pub struct WorkspaceSymbolInfo {
     /// The containing symbol name (e.g., class name for a method)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub container_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_score: Option<f32>,
 }
 
 /// A call hierarchy item representing a function/method

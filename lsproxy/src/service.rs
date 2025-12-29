@@ -1,16 +1,19 @@
 // ABOUTME: Domain service layer for LSP-backed code navigation operations.
 // ABOUTME: Provides async methods for symbol lookup, references, and file access.
 use crate::api_types::{
-    CallHierarchyItemInfo, CodeContext, DefinitionResponse, Diagnostic, DiagnosticsResponse,
-    FileDiagnostics, FilePosition, FileRange, HoverContents, HoverResponse, Identifier,
-    IdentifierResponse, ImplementationResponse, IncomingCallInfo, IncomingCallsResponse,
-    LspStatus, OutgoingCallInfo, OutgoingCallsResponse, Position, PrepareCallHierarchyResponse,
-    Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse, ReferencesResponse,
-    SupportedLanguages, Symbol, WorkspaceSymbolInfo, WorkspaceSymbolResponse,
+    CallHierarchyItemInfo, CodeContext, Diagnostic, DiagnosticsResponse, FileDiagnostics,
+    FilePosition, FileRange, HoverContents, HoverResponse, Identifier, ImplementationResponse,
+    IncomingCallInfo, IncomingCallsResponse, LspStatus, OutgoingCallInfo, OutgoingCallsResponse,
+    Position, PrepareCallHierarchyResponse, Range, ReferenceWithSymbolDefinitions,
+    ReferencedSymbolsResponse, SupportedLanguages, Symbol, WorkspaceSymbolInfo,
+    WorkspaceSymbolResponse,
 };
 use crate::lsp::manager::{LspManagerError, Manager};
+use crate::mcp_response::normalize_kind;
 use crate::utils::file_utils::uri_to_relative_path_string;
 use lsp_types::{GotoDefinitionResponse, Location, Position as LspPosition, Range as LspRange};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -27,12 +30,89 @@ use std::sync::Arc;
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let manager = Arc::new(Manager::new("/tmp").await?);
 /// let service = create_service(manager);
-/// let _files = service.list_files().await?;
+/// let _files = service.list_files(None, None).await?;
 /// # Ok(())
 /// # }
 /// ```
 pub struct LspService {
     manager: Arc<Manager>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct McpDefinitionLocation {
+    pub path: String,
+    pub position: Position,
+    pub definition_range: Range,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<CodeContext>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct McpDefinitionResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<Value>,
+    pub definitions: Vec<McpDefinitionLocation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_code_context: Option<Vec<CodeContext>>,
+    pub selected_identifier: Identifier,
+    pub limit: u32,
+    pub offset: u32,
+    pub truncated: bool,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct McpReferenceLocation {
+    pub path: String,
+    pub position: Position,
+    pub symbol_range: Range,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<CodeContext>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct McpReferencesResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<Value>,
+    pub references: Vec<McpReferenceLocation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<Vec<CodeContext>>,
+    pub selected_identifier: Identifier,
+    pub limit: u32,
+    pub offset: u32,
+    pub truncated: bool,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct McpSymbolsResponse {
+    pub symbols: Vec<Symbol>,
+    pub limit: u32,
+    pub offset: u32,
+    pub truncated: bool,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct McpIdentifierResponse {
+    pub identifiers: Vec<Identifier>,
+    pub limit: u32,
+    pub offset: u32,
+    pub truncated: bool,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct McpListFilesResponse {
+    pub files: Vec<String>,
+    pub limit: u32,
+    pub offset: u32,
+    pub truncated: bool,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+struct Pagination {
+    limit: u32,
+    offset: u32,
+    truncated: bool,
 }
 
 pub fn create_service(manager: Arc<Manager>) -> LspService {
@@ -100,13 +180,25 @@ impl fmt::Display for PositionError {
 impl Error for PositionError {}
 
 impl LspService {
-    pub async fn definitions_in_file(&self, file_path: &str) -> Result<Vec<Symbol>, ServiceError> {
+    pub async fn definitions_in_file(
+        &self,
+        file_path: &str,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<McpSymbolsResponse, ServiceError> {
         let symbols = self.manager.definitions_in_file_ast_grep(file_path).await?;
-        Ok(symbols
+        let symbols: Vec<Symbol> = symbols
             .into_iter()
             .filter(|s| s.rule_id != "local-variable")
             .map(Symbol::from)
-            .collect())
+            .collect();
+        let (symbols, pagination) = paginate_items(symbols, limit, offset);
+        Ok(McpSymbolsResponse {
+            symbols,
+            limit: pagination.limit,
+            offset: pagination.offset,
+            truncated: pagination.truncated,
+        })
     }
 
     pub async fn find_definition(
@@ -115,7 +207,10 @@ impl LspService {
         position: Position,
         include_source_code: bool,
         include_raw_response: bool,
-    ) -> Result<DefinitionResponse, ServiceError> {
+        context_lines: Option<u32>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<McpDefinitionResponse, ServiceError> {
         let file_identifiers = self.manager.get_file_identifiers(file_path).await?;
         let selected_identifier = find_identifier_at_position(
             file_identifiers,
@@ -137,10 +232,17 @@ impl LspService {
             )
             .await?;
 
+        let definition_locations = definition_locations_lsp(&definitions);
+        let (definition_locations, pagination) =
+            paginate_items(definition_locations, limit, offset);
         let source_code_context = if include_source_code {
-            Some(fetch_definition_source_code(&self.manager, &definitions).await?)
+            Some(fetch_definition_source_code(&self.manager, &definition_locations).await?)
         } else {
             None
+        };
+        let snippet_contexts = match context_lines {
+            Some(lines) => Some(fetch_code_context(&self.manager, definition_locations.clone(), lines).await?),
+            None => None,
         };
 
         let raw_response = if include_raw_response {
@@ -149,11 +251,31 @@ impl LspService {
             None
         };
 
-        Ok(DefinitionResponse {
+        let mut definition_items = Vec::with_capacity(definition_locations.len());
+        for (index, location) in definition_locations.into_iter().enumerate() {
+            let path = uri_to_relative_path_string(&location.uri);
+            let symbol = match self
+                .manager
+                .get_symbol_from_position(&path, &location.range.start)
+                .await
+            {
+                Ok(symbol) => Some(symbol),
+                Err(_) => None,
+            };
+            let snippet = snippet_contexts
+                .as_ref()
+                .and_then(|contexts| contexts.get(index).cloned());
+            definition_items.push(definition_item_from_location(&location, symbol, snippet));
+        }
+
+        Ok(McpDefinitionResponse {
             raw_response,
-            definitions: definition_locations(&definitions),
+            definitions: definition_items,
             source_code_context,
             selected_identifier,
+            limit: pagination.limit,
+            offset: pagination.offset,
+            truncated: pagination.truncated,
         })
     }
 
@@ -162,8 +284,10 @@ impl LspService {
         file_path: &str,
         position: Position,
         include_raw_response: bool,
-        include_code_context_lines: Option<u32>,
-    ) -> Result<ReferencesResponse, ServiceError> {
+        context_lines: Option<u32>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<McpReferencesResponse, ServiceError> {
         let file_identifiers = self.manager.get_file_identifiers(file_path).await?;
         let selected_identifier = find_identifier_at_position(
             file_identifiers,
@@ -183,29 +307,30 @@ impl LspService {
         )
         .await?;
 
-        let code_contexts =
-            get_code_contexts(&self.manager, &references, include_code_context_lines).await?;
-
         let raw_response = if include_raw_response {
             serde_json::to_value(&references).ok()
         } else {
             None
         };
+        let (references, pagination) = paginate_items(references, limit, offset);
+        let code_contexts = get_code_contexts(&self.manager, &references, context_lines).await?;
 
-        Ok(ReferencesResponse {
+        let mut reference_items = Vec::with_capacity(references.len());
+        for (index, reference) in references.into_iter().enumerate() {
+            let snippet = code_contexts
+                .as_ref()
+                .and_then(|contexts| contexts.get(index).cloned());
+            reference_items.push(reference_item_from_location(&reference, snippet));
+        }
+
+        Ok(McpReferencesResponse {
             raw_response,
-            references: references
-                .into_iter()
-                .map(|loc| FilePosition {
-                    path: uri_to_relative_path_string(&loc.uri),
-                    position: Position {
-                        line: loc.range.start.line,
-                        character: loc.range.start.character,
-                    },
-                })
-                .collect(),
+            references: reference_items,
             context: code_contexts,
             selected_identifier,
+            limit: pagination.limit,
+            offset: pagination.offset,
+            truncated: pagination.truncated,
         })
     }
 
@@ -334,39 +459,51 @@ impl LspService {
         file_path: &str,
         name: &str,
         position: Option<Position>,
-    ) -> Result<IdentifierResponse, ServiceError> {
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<McpIdentifierResponse, ServiceError> {
         let file_identifiers = self.manager.get_file_identifiers(file_path).await?;
         let name_matched: Vec<Identifier> = file_identifiers
             .into_iter()
             .filter(|id| id.name == name)
             .collect();
 
-        if name_matched.is_empty() {
-            return Ok(IdentifierResponse { identifiers: vec![] });
-        }
-
-        if let Some(position) = position {
+        let identifiers = if name_matched.is_empty() {
+            vec![]
+        } else if let Some(position) = position {
             let lookup_position = FilePosition {
                 path: file_path.to_string(),
                 position,
             };
             match find_identifier_at_position(name_matched.clone(), &lookup_position).await {
-                Ok(identifier) => Ok(IdentifierResponse {
-                    identifiers: vec![identifier],
-                }),
-                Err(PositionError::IdentifierNotFound { closest }) => Ok(IdentifierResponse {
-                    identifiers: closest,
-                }),
+                Ok(identifier) => vec![identifier],
+                Err(PositionError::IdentifierNotFound { closest }) => closest,
             }
         } else {
-            Ok(IdentifierResponse {
-                identifiers: name_matched,
-            })
-        }
+            name_matched
+        };
+        let (identifiers, pagination) = paginate_items(identifiers, limit, offset);
+        Ok(McpIdentifierResponse {
+            identifiers,
+            limit: pagination.limit,
+            offset: pagination.offset,
+            truncated: pagination.truncated,
+        })
     }
 
-    pub async fn list_files(&self) -> Result<Vec<String>, ServiceError> {
-        Ok(self.manager.list_files().await?)
+    pub async fn list_files(
+        &self,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<McpListFilesResponse, ServiceError> {
+        let files = self.manager.list_files().await?;
+        let (files, pagination) = paginate_items(files, limit, offset);
+        Ok(McpListFilesResponse {
+            files,
+            limit: pagination.limit,
+            offset: pagination.offset,
+            truncated: pagination.truncated,
+        })
     }
 
     pub async fn read_source_code(
@@ -482,34 +619,29 @@ impl LspService {
         &self,
         query: &str,
         include_raw_response: bool,
+        exact: bool,
+        limit: Option<u32>,
+        offset: Option<u32>,
     ) -> Result<WorkspaceSymbolResponse, ServiceError> {
         let symbols = self.manager.workspace_symbol(query).await?;
 
         let workspace_files = self.manager.list_files().await?;
 
-        let filtered_symbols: Vec<WorkspaceSymbolInfo> = symbols
-            .into_iter()
-            .filter_map(|sym| {
-                let path = uri_to_relative_path_string(&sym.location.uri);
-                // Only include symbols from workspace files
-                if workspace_files.contains(&path) {
-                    Some(WorkspaceSymbolInfo {
-                        name: sym.name,
-                        kind: format!("{:?}", sym.kind),
-                        location: FilePosition {
-                            path,
-                            position: Position {
-                                line: sym.location.range.start.line,
-                                character: sym.location.range.start.character,
-                            },
-                        },
-                        container_name: sym.container_name,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let mut filtered_symbols = Vec::new();
+        for sym in symbols {
+            let path = uri_to_relative_path_string(&sym.location.uri);
+            if !workspace_files.contains(&path) {
+                continue;
+            }
+            let mut info = workspace_symbol_info_from_lsp(sym, path);
+            let (match_kind, match_score) = match_kind_and_score(query, &info.name);
+            if exact && match_kind != "exact" {
+                continue;
+            }
+            info.match_kind = Some(match_kind);
+            info.match_score = Some(match_score);
+            filtered_symbols.push(info);
+        }
 
         let raw_response = if include_raw_response {
             serde_json::to_value(&filtered_symbols).ok()
@@ -517,9 +649,13 @@ impl LspService {
             None
         };
 
+        let (symbols, pagination) = paginate_items(filtered_symbols, limit, offset);
         Ok(WorkspaceSymbolResponse {
             raw_response,
-            symbols: filtered_symbols,
+            symbols,
+            limit: pagination.limit,
+            offset: pagination.offset,
+            truncated: pagination.truncated,
         })
     }
 
@@ -733,10 +869,30 @@ impl LspService {
     }
 }
 
+fn workspace_symbol_info_from_lsp(
+    sym: lsp_types::SymbolInformation,
+    path: String,
+) -> WorkspaceSymbolInfo {
+    WorkspaceSymbolInfo {
+        name: sym.name,
+        kind: normalize_kind(&format!("{:?}", sym.kind)),
+        location: FilePosition {
+            path,
+            position: Position {
+                line: sym.location.range.start.line,
+                character: sym.location.range.start.character,
+            },
+        },
+        container_name: sym.container_name,
+        match_kind: None,
+        match_score: None,
+    }
+}
+
 fn call_hierarchy_item_to_info(item: &lsp_types::CallHierarchyItem) -> CallHierarchyItemInfo {
     CallHierarchyItemInfo {
         name: item.name.clone(),
-        kind: format!("{:?}", item.kind),
+        kind: normalize_kind(&format!("{:?}", item.kind)),
         location: FilePosition {
             path: uri_to_relative_path_string(&item.uri),
             position: Position {
@@ -790,21 +946,23 @@ fn definition_locations(definitions: &GotoDefinitionResponse) -> Vec<FilePositio
     }
 }
 
-async fn fetch_definition_source_code(
-    manager: &Manager,
-    definitions_response: &GotoDefinitionResponse,
-) -> Result<Vec<CodeContext>, ServiceError> {
-    let definitions: Vec<Location> = match definitions_response {
-        GotoDefinitionResponse::Scalar(definition) => vec![definition.clone()],
-        GotoDefinitionResponse::Array(definitions) => definitions.clone(),
+fn definition_locations_lsp(definitions: &GotoDefinitionResponse) -> Vec<Location> {
+    match definitions {
+        GotoDefinitionResponse::Scalar(location) => vec![location.clone()],
+        GotoDefinitionResponse::Array(locations) => locations.clone(),
         GotoDefinitionResponse::Link(links) => links
             .iter()
             .map(|link| Location::new(link.target_uri.clone(), link.target_range))
             .collect(),
-    };
+    }
+}
 
+async fn fetch_definition_source_code(
+    manager: &Manager,
+    definitions: &[Location],
+) -> Result<Vec<CodeContext>, ServiceError> {
     let mut code_contexts = Vec::new();
-    for definition in definitions {
+    for definition in definitions.iter() {
         let relative_path = uri_to_relative_path_string(&definition.uri);
         let file_symbols = manager.definitions_in_file_ast_grep(&relative_path).await?;
         let symbol = file_symbols.iter().find(|s| {
@@ -995,6 +1153,113 @@ async fn fetch_code_context(
     Ok(code_contexts)
 }
 
+const DEFAULT_LIST_LIMIT: u32 = 200;
+
+fn paginate_items<T>(
+    items: Vec<T>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> (Vec<T>, Pagination) {
+    let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
+    let offset = offset.unwrap_or(0);
+    let start = offset as usize;
+    let end = std::cmp::min(start.saturating_add(limit as usize), items.len());
+    let truncated = end < items.len();
+    let paginated = items.into_iter().skip(start).take(limit as usize).collect();
+    (
+        paginated,
+        Pagination {
+            limit,
+            offset,
+            truncated,
+        },
+    )
+}
+
+fn match_kind_and_score(query: &str, name: &str) -> (String, f32) {
+    if query.is_empty() {
+        return ("none".to_string(), 0.0);
+    }
+    let query_lower = query.to_ascii_lowercase();
+    let name_lower = name.to_ascii_lowercase();
+    if name_lower == query_lower {
+        return ("exact".to_string(), 1.0);
+    }
+    if name_lower.starts_with(&query_lower) {
+        return ("prefix".to_string(), 0.8);
+    }
+    if name_lower.contains(&query_lower) {
+        return ("substring".to_string(), 0.6);
+    }
+    if is_fuzzy_match(&query_lower, &name_lower) {
+        return ("fuzzy".to_string(), 0.4);
+    }
+    ("none".to_string(), 0.0)
+}
+
+fn is_fuzzy_match(query: &str, name: &str) -> bool {
+    let mut iter = name.chars();
+    for target in query.chars() {
+        if !iter.any(|candidate| candidate == target) {
+            return false;
+        }
+    }
+    true
+}
+
+fn range_from_lsp(range: &LspRange) -> Range {
+    Range {
+        start: Position {
+            line: range.start.line,
+            character: range.start.character,
+        },
+        end: Position {
+            line: range.end.line,
+            character: range.end.character,
+        },
+    }
+}
+
+fn definition_item_from_location(
+    location: &Location,
+    symbol: Option<Symbol>,
+    snippet: Option<CodeContext>,
+) -> McpDefinitionLocation {
+    let path = uri_to_relative_path_string(&location.uri);
+    let position = Position {
+        line: location.range.start.line,
+        character: location.range.start.character,
+    };
+    let (definition_range, symbol_kind) = match symbol {
+        Some(symbol) => (symbol.file_range.range, Some(symbol.kind)),
+        None => (range_from_lsp(&location.range), None),
+    };
+    McpDefinitionLocation {
+        path,
+        position,
+        definition_range,
+        symbol_kind,
+        snippet,
+    }
+}
+
+fn reference_item_from_location(
+    location: &Location,
+    snippet: Option<CodeContext>,
+) -> McpReferenceLocation {
+    let path = uri_to_relative_path_string(&location.uri);
+    let position = Position {
+        line: location.range.start.line,
+        character: location.range.start.character,
+    };
+    McpReferenceLocation {
+        path,
+        position,
+        symbol_range: range_from_lsp(&location.range),
+        snippet,
+    }
+}
+
 fn extract_hover_contents(contents: &lsp_types::HoverContents) -> HoverContents {
     match contents {
         lsp_types::HoverContents::Scalar(marked) => {
@@ -1019,8 +1284,100 @@ fn extract_marked_string(marked: &lsp_types::MarkedString) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lsp_types::{
+        CallHierarchyItem, Location, Position as LspPosition, Range as LspRange, SymbolInformation,
+        SymbolKind, Url,
+    };
     use rand::{distributions::Alphanumeric, Rng};
+    use std::thread;
     use tempfile::TempDir;
+
+    fn random_irregular_string() -> String {
+        let mut rng = rand::thread_rng();
+        let len: usize = rng.gen_range(6..20);
+        let mut value: String = rng
+            .sample_iter(&Alphanumeric)
+            .take(len)
+            .map(char::from)
+            .collect();
+        value.push('_');
+        value.push('\t');
+        value
+    }
+
+    fn retry_with<T, F>(mut op: F) -> T
+    where
+        F: FnMut() -> Option<T>,
+    {
+        let mut rng = rand::thread_rng();
+        let attempts: usize = rng.gen_range(2..5);
+        for _ in 0..attempts {
+            let result = op();
+            if result.is_some() {
+                return result.unwrap();
+            }
+        }
+        let message = random_irregular_string();
+        panic!("{}", message);
+    }
+
+    #[allow(deprecated)]
+    #[test]
+    fn test_workspace_symbol_info_kind_normalized() {
+        let uri = Url::from_file_path("/tmp/test.rs").expect("Expected file path url");
+        let range = LspRange {
+            start: LspPosition {
+                line: 1,
+                character: 0,
+            },
+            end: LspPosition {
+                line: 1,
+                character: 4,
+            },
+        };
+        let sym = SymbolInformation {
+            name: "Example".to_string(),
+            kind: SymbolKind::ENUM_MEMBER,
+            tags: None,
+            deprecated: None,
+            location: Location { uri, range },
+            container_name: None,
+        };
+
+        let info = workspace_symbol_info_from_lsp(sym, "src/main.rs".to_string());
+
+        assert_eq!(info.kind, "enum-member");
+        assert_eq!(info.location.path, "src/main.rs");
+    }
+
+    #[test]
+    fn test_call_hierarchy_kind_normalized() {
+        let uri = Url::from_file_path("/tmp/test.rs").expect("Expected file path url");
+        let range = LspRange {
+            start: LspPosition {
+                line: 2,
+                character: 1,
+            },
+            end: LspPosition {
+                line: 2,
+                character: 6,
+            },
+        };
+        let item = CallHierarchyItem {
+            name: "Thing".to_string(),
+            kind: SymbolKind::TYPE_PARAMETER,
+            tags: None,
+            detail: None,
+            uri,
+            range: range.clone(),
+            selection_range: range,
+            data: None,
+        };
+
+        let info = call_hierarchy_item_to_info(&item);
+
+        assert_eq!(info.kind, "type-parameter");
+    }
 
     #[tokio::test]
     async fn it_reports_language_servers_unavailable_without_startup(
@@ -1118,6 +1475,226 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn it_paginates_items_with_offset_and_truncation() {
+        let mut rng = rand::thread_rng();
+        let total_len: usize = rng.gen_range(6..20);
+        let offset: u32 = rng.gen_range(0..(total_len as u32 / 2 + 1));
+        let limit: u32 = rng.gen_range(1..(total_len as u32 / 2 + 2));
+        let mut items = Vec::with_capacity(total_len);
+        for _ in 0..total_len {
+            items.push(random_irregular_string());
+        }
+        let expected_items = items.clone();
+        let response = retry_with(|| {
+            let items = items.clone();
+            let handle = thread::spawn(move || paginate_items(items, Some(limit), Some(offset)));
+            handle.join().ok()
+        });
+        let (actual_items, pagination) = response;
+        let start = offset as usize;
+        let end = std::cmp::min(start.saturating_add(limit as usize), expected_items.len());
+        let expected_slice = expected_items[start..end].to_vec();
+        assert_eq!(
+            actual_items,
+            expected_slice,
+            "negative: paginated items mismatch"
+        );
+        assert_eq!(pagination.limit, limit, "negative: limit mismatch");
+        assert_eq!(pagination.offset, offset, "negative: offset mismatch");
+        assert_eq!(
+            pagination.truncated,
+            end < expected_items.len(),
+            "negative: truncation mismatch"
+        );
+    }
+
+    #[test]
+    fn it_scores_prefix_matches_for_workspace_symbols() {
+        let mut rng = rand::thread_rng();
+        let base = random_irregular_string();
+        let prefix_len = rng.gen_range(1..(base.len().saturating_sub(1).max(2)));
+        let query: String = base.chars().take(prefix_len).collect();
+        let name = format!("{}{}", base, random_irregular_string());
+        let response = retry_with(|| {
+            let query = query.clone();
+            let name = name.clone();
+            let handle = thread::spawn(move || match_kind_and_score(&query, &name));
+            handle.join().ok()
+        });
+        let expected_kind = String::from("prefix");
+        let (kind, score) = response;
+        assert_eq!(kind, expected_kind, "negative: match kind mismatch");
+        assert!(
+            score > 0.7,
+            "negative: match score did not exceed expected threshold"
+        );
+    }
+
+    #[test]
+    fn it_builds_definition_location_with_symbol_range_and_snippet() {
+        let temp_dir = TempDir::new().expect("negative: temp dir unavailable");
+        let file_name = format!("file_{}.rs", random_irregular_string());
+        let file_path = temp_dir.path().join(file_name);
+        let uri = Url::from_file_path(&file_path).expect("negative: uri creation failed");
+        let mut rng = rand::thread_rng();
+        let start_line: u32 = rng.gen_range(1..100);
+        let start_char: u32 = rng.gen_range(0..20);
+        let end_line: u32 = start_line + rng.gen_range(0..5);
+        let end_char: u32 = start_char + rng.gen_range(1..5);
+        let location = Location {
+            uri,
+            range: LspRange {
+                start: LspPosition {
+                    line: start_line,
+                    character: start_char,
+                },
+                end: LspPosition {
+                    line: end_line,
+                    character: end_char,
+                },
+            },
+        };
+        let expected_path = file_path.to_string_lossy().into_owned();
+        let symbol_range = Range {
+            start: Position {
+                line: start_line + 1,
+                character: 0,
+            },
+            end: Position {
+                line: end_line + 2,
+                character: 3,
+            },
+        };
+        let symbol = Symbol {
+            name: random_irregular_string(),
+            kind: random_irregular_string(),
+            identifier_position: FilePosition {
+                path: expected_path.clone(),
+                position: Position {
+                    line: start_line,
+                    character: start_char,
+                },
+            },
+            file_range: FileRange {
+                path: expected_path.clone(),
+                range: symbol_range.clone(),
+            },
+        };
+        let snippet = CodeContext {
+            range: FileRange {
+                path: expected_path.clone(),
+                range: symbol_range.clone(),
+            },
+            source_code: random_irregular_string(),
+        };
+        let response = retry_with(|| {
+            let location = location.clone();
+            let symbol = symbol.clone();
+            let snippet = snippet.clone();
+            let handle = thread::spawn(move || {
+                Some(definition_item_from_location(
+                    &location,
+                    Some(symbol),
+                    Some(snippet),
+                ))
+            });
+            handle.join().ok().flatten()
+        });
+        assert_eq!(response.path, expected_path, "negative: path mismatch");
+        assert_eq!(
+            response.position.line, start_line,
+            "negative: line mismatch"
+        );
+        assert_eq!(
+            response.position.character, start_char,
+            "negative: character mismatch"
+        );
+        assert_eq!(
+            response.definition_range, symbol_range,
+            "negative: definition range mismatch"
+        );
+        assert_eq!(
+            response.symbol_kind,
+            Some(symbol.kind.clone()),
+            "negative: symbol kind mismatch"
+        );
+        assert_eq!(
+            response.snippet,
+            Some(snippet),
+            "negative: snippet mismatch"
+        );
+    }
+
+    #[test]
+    fn it_builds_reference_location_with_symbol_range_and_snippet() {
+        let temp_dir = TempDir::new().expect("negative: temp dir unavailable");
+        let file_name = format!("ref_{}.rs", random_irregular_string());
+        let file_path = temp_dir.path().join(file_name);
+        let uri = Url::from_file_path(&file_path).expect("negative: uri creation failed");
+        let mut rng = rand::thread_rng();
+        let start_line: u32 = rng.gen_range(1..100);
+        let start_char: u32 = rng.gen_range(0..20);
+        let end_line: u32 = start_line + rng.gen_range(0..5);
+        let end_char: u32 = start_char + rng.gen_range(1..5);
+        let location = Location {
+            uri,
+            range: LspRange {
+                start: LspPosition {
+                    line: start_line,
+                    character: start_char,
+                },
+                end: LspPosition {
+                    line: end_line,
+                    character: end_char,
+                },
+            },
+        };
+        let expected_path = file_path.to_string_lossy().into_owned();
+        let expected_range = Range {
+            start: Position {
+                line: start_line,
+                character: start_char,
+            },
+            end: Position {
+                line: end_line,
+                character: end_char,
+            },
+        };
+        let snippet = CodeContext {
+            range: FileRange {
+                path: expected_path.clone(),
+                range: expected_range.clone(),
+            },
+            source_code: random_irregular_string(),
+        };
+        let response = retry_with(|| {
+            let location = location.clone();
+            let snippet = snippet.clone();
+            let handle =
+                thread::spawn(move || Some(reference_item_from_location(&location, Some(snippet))));
+            handle.join().ok().flatten()
+        });
+        assert_eq!(response.path, expected_path, "negative: path mismatch");
+        assert_eq!(
+            response.position.line, start_line,
+            "negative: line mismatch"
+        );
+        assert_eq!(
+            response.position.character, start_char,
+            "negative: character mismatch"
+        );
+        assert_eq!(
+            response.symbol_range, expected_range,
+            "negative: reference range mismatch"
+        );
+        assert_eq!(
+            response.snippet,
+            Some(snippet),
+            "negative: snippet mismatch"
+        );
     }
 
     async fn retry_start(

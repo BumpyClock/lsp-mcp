@@ -12,6 +12,7 @@ pub mod api_types;
 pub mod config;
 pub mod lsp;
 pub mod mcp;
+pub mod mcp_response;
 pub mod service;
 pub mod tool_registry;
 mod ast_grep;
