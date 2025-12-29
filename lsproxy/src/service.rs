@@ -1,11 +1,12 @@
 // ABOUTME: Domain service layer for LSP-backed code navigation operations.
 // ABOUTME: Provides async methods for symbol lookup, references, and file access.
 use crate::api_types::{
-    CodeContext, DefinitionResponse, Diagnostic, DiagnosticsResponse, FileDiagnostics,
-    FilePosition, FileRange, HoverContents, HoverResponse, Identifier, IdentifierResponse,
-    ImplementationResponse, LspStatus, Position, Range, ReferenceWithSymbolDefinitions,
-    ReferencedSymbolsResponse, ReferencesResponse, SupportedLanguages, Symbol, WorkspaceSymbolInfo,
-    WorkspaceSymbolResponse,
+    CallHierarchyItemInfo, CodeContext, DefinitionResponse, Diagnostic, DiagnosticsResponse,
+    FileDiagnostics, FilePosition, FileRange, HoverContents, HoverResponse, Identifier,
+    IdentifierResponse, ImplementationResponse, IncomingCallInfo, IncomingCallsResponse,
+    LspStatus, OutgoingCallInfo, OutgoingCallsResponse, Position, PrepareCallHierarchyResponse,
+    Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse, ReferencesResponse,
+    SupportedLanguages, Symbol, WorkspaceSymbolInfo, WorkspaceSymbolResponse,
 };
 use crate::lsp::manager::{LspManagerError, Manager};
 use crate::utils::file_utils::uri_to_relative_path_string;
@@ -560,6 +561,200 @@ impl LspService {
             implementations: definition_locations(&implementations),
             selected_identifier,
         })
+    }
+
+    pub async fn prepare_call_hierarchy(
+        &self,
+        file_path: &str,
+        position: Position,
+        include_raw_response: bool,
+    ) -> Result<PrepareCallHierarchyResponse, ServiceError> {
+        let items = self
+            .manager
+            .prepare_call_hierarchy(
+                file_path,
+                LspPosition {
+                    line: position.line,
+                    character: position.character,
+                },
+            )
+            .await?;
+
+        let converted_items: Vec<CallHierarchyItemInfo> = items
+            .unwrap_or_default()
+            .iter()
+            .map(call_hierarchy_item_to_info)
+            .collect();
+
+        let raw_response = if include_raw_response {
+            serde_json::to_value(&converted_items).ok()
+        } else {
+            None
+        };
+
+        Ok(PrepareCallHierarchyResponse {
+            raw_response,
+            items: converted_items,
+        })
+    }
+
+    pub async fn incoming_calls(
+        &self,
+        file_path: &str,
+        position: Position,
+        include_raw_response: bool,
+    ) -> Result<IncomingCallsResponse, ServiceError> {
+        // First prepare the call hierarchy to get the item
+        let items = self
+            .manager
+            .prepare_call_hierarchy(
+                file_path,
+                LspPosition {
+                    line: position.line,
+                    character: position.character,
+                },
+            )
+            .await?;
+
+        let item = items
+            .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
+            .ok_or_else(|| {
+                ServiceError::Lsp(LspManagerError::InternalError(
+                    "No call hierarchy item at position".to_string(),
+                ))
+            })?;
+
+        let calls = self.manager.incoming_calls(file_path, &item).await?;
+
+        let workspace_files = self.manager.list_files().await?;
+
+        let converted_calls: Vec<IncomingCallInfo> = calls
+            .into_iter()
+            .filter(|call| {
+                let path = uri_to_relative_path_string(&call.from.uri);
+                workspace_files.contains(&path)
+            })
+            .map(|call| IncomingCallInfo {
+                from: call_hierarchy_item_to_info(&call.from),
+                from_ranges: call
+                    .from_ranges
+                    .into_iter()
+                    .map(|r| Range {
+                        start: Position {
+                            line: r.start.line,
+                            character: r.start.character,
+                        },
+                        end: Position {
+                            line: r.end.line,
+                            character: r.end.character,
+                        },
+                    })
+                    .collect(),
+            })
+            .collect();
+
+        let raw_response = if include_raw_response {
+            serde_json::to_value(&converted_calls).ok()
+        } else {
+            None
+        };
+
+        Ok(IncomingCallsResponse {
+            raw_response,
+            calls: converted_calls,
+        })
+    }
+
+    pub async fn outgoing_calls(
+        &self,
+        file_path: &str,
+        position: Position,
+        include_raw_response: bool,
+    ) -> Result<OutgoingCallsResponse, ServiceError> {
+        // First prepare the call hierarchy to get the item
+        let items = self
+            .manager
+            .prepare_call_hierarchy(
+                file_path,
+                LspPosition {
+                    line: position.line,
+                    character: position.character,
+                },
+            )
+            .await?;
+
+        let item = items
+            .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
+            .ok_or_else(|| {
+                ServiceError::Lsp(LspManagerError::InternalError(
+                    "No call hierarchy item at position".to_string(),
+                ))
+            })?;
+
+        let calls = self.manager.outgoing_calls(file_path, &item).await?;
+
+        let workspace_files = self.manager.list_files().await?;
+
+        let converted_calls: Vec<OutgoingCallInfo> = calls
+            .into_iter()
+            .filter(|call| {
+                let path = uri_to_relative_path_string(&call.to.uri);
+                workspace_files.contains(&path)
+            })
+            .map(|call| OutgoingCallInfo {
+                to: call_hierarchy_item_to_info(&call.to),
+                from_ranges: call
+                    .from_ranges
+                    .into_iter()
+                    .map(|r| Range {
+                        start: Position {
+                            line: r.start.line,
+                            character: r.start.character,
+                        },
+                        end: Position {
+                            line: r.end.line,
+                            character: r.end.character,
+                        },
+                    })
+                    .collect(),
+            })
+            .collect();
+
+        let raw_response = if include_raw_response {
+            serde_json::to_value(&converted_calls).ok()
+        } else {
+            None
+        };
+
+        Ok(OutgoingCallsResponse {
+            raw_response,
+            calls: converted_calls,
+        })
+    }
+}
+
+fn call_hierarchy_item_to_info(item: &lsp_types::CallHierarchyItem) -> CallHierarchyItemInfo {
+    CallHierarchyItemInfo {
+        name: item.name.clone(),
+        kind: format!("{:?}", item.kind),
+        location: FilePosition {
+            path: uri_to_relative_path_string(&item.uri),
+            position: Position {
+                line: item.selection_range.start.line,
+                character: item.selection_range.start.character,
+            },
+        },
+        range: Range {
+            start: Position {
+                line: item.range.start.line,
+                character: item.range.start.character,
+            },
+            end: Position {
+                line: item.range.end.line,
+                character: item.range.end.character,
+            },
+        },
+        detail: item.detail.clone(),
     }
 }
 

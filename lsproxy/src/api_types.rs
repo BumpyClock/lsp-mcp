@@ -576,6 +576,70 @@ pub struct WorkspaceSymbolInfo {
     pub container_name: Option<String>,
 }
 
+/// A call hierarchy item representing a function/method
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct CallHierarchyItemInfo {
+    /// The name of the function/method
+    pub name: String,
+    /// The kind (function, method, constructor, etc.)
+    pub kind: String,
+    /// Location of the function/method identifier
+    pub location: FilePosition,
+    /// The full range of the function/method
+    pub range: Range,
+    /// Detail information (e.g., signature)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// Response to prepareCallHierarchy request
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PrepareCallHierarchyResponse {
+    /// The raw response from the langserver
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<Value>,
+    /// The call hierarchy items at the position
+    pub items: Vec<CallHierarchyItemInfo>,
+}
+
+/// An incoming call (caller) in the call hierarchy
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct IncomingCallInfo {
+    /// The calling function/method
+    pub from: CallHierarchyItemInfo,
+    /// The ranges where the call occurs within the calling function
+    pub from_ranges: Vec<Range>,
+}
+
+/// Response to incomingCalls request
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct IncomingCallsResponse {
+    /// The raw response from the langserver
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<Value>,
+    /// The incoming calls (callers)
+    pub calls: Vec<IncomingCallInfo>,
+}
+
+/// An outgoing call (callee) in the call hierarchy
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct OutgoingCallInfo {
+    /// The called function/method
+    pub to: CallHierarchyItemInfo,
+    /// The ranges where the call occurs
+    pub from_ranges: Vec<Range>,
+}
+
+/// Response to outgoingCalls request
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct OutgoingCallsResponse {
+    /// The raw response from the langserver
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<Value>,
+    /// The outgoing calls (callees)
+    pub calls: Vec<OutgoingCallInfo>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

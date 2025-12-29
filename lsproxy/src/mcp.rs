@@ -177,6 +177,81 @@ impl LspMcpServer {
         }
     }
 
+    #[tool(description = "Get call hierarchy item at a position (functions/methods)")]
+    async fn prepare_call_hierarchy(
+        &self,
+        path: String,
+        line: u32,
+        character: u32,
+        include_raw_response: Option<bool>,
+    ) -> ToolOutput {
+        let pos = Position { line, character };
+        match self
+            .service
+            .prepare_call_hierarchy(&path, pos, include_raw_response.unwrap_or(false))
+            .await
+        {
+            Ok(response) => {
+                let summary = format!("Found {} call hierarchy items", response.items.len());
+                match serde_json::to_string_pretty(&response) {
+                    Ok(json) => ToolOutput::text(format!("{}\n\n{}", summary, json)),
+                    Err(e) => ToolOutput::error(format!("Serialization error: {}", e)),
+                }
+            }
+            Err(e) => ToolOutput::error(format!("Error: {}", e)),
+        }
+    }
+
+    #[tool(description = "Find all functions/methods that call the function at a position")]
+    async fn incoming_calls(
+        &self,
+        path: String,
+        line: u32,
+        character: u32,
+        include_raw_response: Option<bool>,
+    ) -> ToolOutput {
+        let pos = Position { line, character };
+        match self
+            .service
+            .incoming_calls(&path, pos, include_raw_response.unwrap_or(false))
+            .await
+        {
+            Ok(response) => {
+                let summary = format!("Found {} incoming calls", response.calls.len());
+                match serde_json::to_string_pretty(&response) {
+                    Ok(json) => ToolOutput::text(format!("{}\n\n{}", summary, json)),
+                    Err(e) => ToolOutput::error(format!("Serialization error: {}", e)),
+                }
+            }
+            Err(e) => ToolOutput::error(format!("Error: {}", e)),
+        }
+    }
+
+    #[tool(description = "Find all functions/methods called by the function at a position")]
+    async fn outgoing_calls(
+        &self,
+        path: String,
+        line: u32,
+        character: u32,
+        include_raw_response: Option<bool>,
+    ) -> ToolOutput {
+        let pos = Position { line, character };
+        match self
+            .service
+            .outgoing_calls(&path, pos, include_raw_response.unwrap_or(false))
+            .await
+        {
+            Ok(response) => {
+                let summary = format!("Found {} outgoing calls", response.calls.len());
+                match serde_json::to_string_pretty(&response) {
+                    Ok(json) => ToolOutput::text(format!("{}\n\n{}", summary, json)),
+                    Err(e) => ToolOutput::error(format!("Serialization error: {}", e)),
+                }
+            }
+            Err(e) => ToolOutput::error(format!("Error: {}", e)),
+        }
+    }
+
     #[tool(description = "Finds symbols referenced by a symbol definition at a given position")]
     async fn find_referenced_symbols(
         &self,
