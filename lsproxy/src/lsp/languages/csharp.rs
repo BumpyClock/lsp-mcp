@@ -1,3 +1,4 @@
+use crate::lsp::client::LspClientConfig;
 use crate::{
     lsp::{DiagnosticsStore, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
     utils::workspace_documents::{
@@ -17,6 +18,7 @@ pub struct CSharpClient {
     workspace_documents: WorkspaceDocumentsHandler,
     pending_requests: PendingRequests,
     diagnostics_store: DiagnosticsStore,
+    config: LspClientConfig,
 }
 #[async_trait]
 impl LspClient for CSharpClient {
@@ -38,6 +40,10 @@ impl LspClient for CSharpClient {
 
     fn get_diagnostics_store(&self) -> &DiagnosticsStore {
         &self.diagnostics_store
+    }
+
+    fn get_config(&self) -> &LspClientConfig {
+        &self.config
     }
 
     async fn get_initialize_params(
@@ -97,6 +103,7 @@ impl CSharpClient {
             workspace_documents,
             pending_requests,
             diagnostics_store: DiagnosticsStore::new(),
+            config: LspClientConfig::default(),
         })
     }
 }

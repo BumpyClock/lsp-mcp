@@ -7,8 +7,9 @@ use lsp_types::InitializeResult;
 use notify_debouncer_mini::DebouncedEvent;
 use tokio::{process::Command, sync::broadcast::Receiver};
 
+use crate::lsp::client::LspClientConfig;
 use crate::{
-    lsp::{ExpectedMessageKey, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
+    lsp::{DiagnosticsStore, ExpectedMessageKey, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
     utils::workspace_documents::{
         DidOpenConfiguration, WorkspaceDocumentsHandler, DEFAULT_EXCLUDE_PATTERNS,
         JAVA_FILE_PATTERNS, JAVA_ROOT_FILES,
@@ -20,6 +21,8 @@ pub struct JdtlsClient {
     json_rpc: JsonRpcHandler,
     workspace_documents: WorkspaceDocumentsHandler,
     pending_requests: PendingRequests,
+    diagnostics_store: DiagnosticsStore,
+    config: LspClientConfig,
 }
 
 #[async_trait]
@@ -42,6 +45,14 @@ impl LspClient for JdtlsClient {
 
     fn get_pending_requests(&mut self) -> &mut PendingRequests {
         &mut self.pending_requests
+    }
+
+    fn get_diagnostics_store(&self) -> &DiagnosticsStore {
+        &self.diagnostics_store
+    }
+
+    fn get_config(&self) -> &LspClientConfig {
+        &self.config
     }
 
     async fn initialize(
@@ -161,6 +172,8 @@ impl JdtlsClient {
             json_rpc: json_rpc_handler,
             workspace_documents,
             pending_requests: PendingRequests::new(),
+            diagnostics_store: DiagnosticsStore::new(),
+            config: LspClientConfig::default(),
         })
     }
 }

@@ -5,7 +5,8 @@ use notify_debouncer_mini::DebouncedEvent;
 use tokio::process::Command;
 use tokio::sync::broadcast::Receiver;
 
-use crate::lsp::{JsonRpcHandler, LspClient, PendingRequests, ProcessHandler};
+use crate::lsp::client::LspClientConfig;
+use crate::lsp::{DiagnosticsStore, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler};
 
 use crate::utils::workspace_documents::{
     DidOpenConfiguration, WorkspaceDocumentsHandler, DEFAULT_EXCLUDE_PATTERNS,
@@ -17,6 +18,8 @@ pub struct JediClient {
     json_rpc: JsonRpcHandler,
     workspace_documents: WorkspaceDocumentsHandler,
     pending_requests: PendingRequests,
+    diagnostics_store: DiagnosticsStore,
+    config: LspClientConfig,
 }
 
 #[async_trait]
@@ -39,6 +42,14 @@ impl LspClient for JediClient {
 
     fn get_pending_requests(&mut self) -> &mut PendingRequests {
         &mut self.pending_requests
+    }
+
+    fn get_diagnostics_store(&self) -> &DiagnosticsStore {
+        &self.diagnostics_store
+    }
+
+    fn get_config(&self) -> &LspClientConfig {
+        &self.config
     }
 }
 
@@ -84,6 +95,8 @@ impl JediClient {
             json_rpc: json_rpc_handler,
             workspace_documents,
             pending_requests: PendingRequests::new(),
+            diagnostics_store: DiagnosticsStore::new(),
+            config: LspClientConfig::default(),
         })
     }
 }

@@ -1,5 +1,6 @@
+use crate::lsp::client::LspClientConfig;
 use crate::{
-    lsp::{JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
+    lsp::{DiagnosticsStore, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
     utils::workspace_documents::{
         DidOpenConfiguration, WorkspaceDocumentsHandler, DEFAULT_EXCLUDE_PATTERNS,
         RUBY_FILE_PATTERNS, RUBY_ROOT_FILES,
@@ -16,6 +17,8 @@ pub struct RubyClient {
     json_rpc: JsonRpcHandler,
     workspace_documents: WorkspaceDocumentsHandler,
     pending_requests: PendingRequests,
+    diagnostics_store: DiagnosticsStore,
+    config: LspClientConfig,
 }
 #[async_trait]
 impl LspClient for RubyClient {
@@ -33,6 +36,14 @@ impl LspClient for RubyClient {
     }
     fn get_pending_requests(&mut self) -> &mut PendingRequests {
         &mut self.pending_requests
+    }
+
+    fn get_diagnostics_store(&self) -> &DiagnosticsStore {
+        &self.diagnostics_store
+    }
+
+    fn get_config(&self) -> &LspClientConfig {
+        &self.config
     }
 
     async fn get_initialize_params(
@@ -89,6 +100,8 @@ impl RubyClient {
             json_rpc: json_rpc_handler,
             workspace_documents,
             pending_requests,
+            diagnostics_store: DiagnosticsStore::new(),
+            config: LspClientConfig::default(),
         })
     }
 }

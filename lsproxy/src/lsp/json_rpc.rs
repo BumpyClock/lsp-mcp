@@ -179,6 +179,27 @@ impl PendingRequests {
             false
         }
     }
+
+    /// Fail all pending requests with an error message
+    /// Called when the LSP process dies to notify all waiting requests
+    pub async fn fail_all_requests(&self, error_message: String) {
+        let mut channels = self.request_channels.lock().await;
+        for (id, sender) in channels.drain() {
+            let error_response = JsonRpcMessage {
+                jsonrpc: "2.0".to_string(),
+                id: Some(id),
+                method: None,
+                params: None,
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32099,
+                    message: error_message.clone(),
+                    data: None,
+                }),
+            };
+            let _ = sender.send(error_response);
+        }
+    }
 }
 
 /// Thread-safe storage for diagnostics received via publishDiagnostics notifications
@@ -478,6 +499,55 @@ mod tests {
         assert!(
             received.is_some(),
             "expected second handler to receive message after replacement"
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_requests_fail_all_requests_notifies_all_waiting_receivers() {
+        let pending = PendingRequests::new();
+
+        let mut receiver1 = pending.add_request(1).await.expect("add_request should succeed");
+        let mut receiver2 = pending.add_request(2).await.expect("add_request should succeed");
+
+        pending.fail_all_requests("LSP process died".to_string()).await;
+
+        let response1 = timeout(Duration::from_millis(100), receiver1.recv())
+            .await
+            .expect("expected receiver1 to get message within timeout")
+            .expect("expected channel to have message");
+
+        let response2 = timeout(Duration::from_millis(100), receiver2.recv())
+            .await
+            .expect("expected receiver2 to get message within timeout")
+            .expect("expected channel to have message");
+
+        assert!(
+            response1.error.is_some(),
+            "expected response1 to have error"
+        );
+        assert!(
+            response2.error.is_some(),
+            "expected response2 to have error"
+        );
+        assert_eq!(
+            response1.error.as_ref().unwrap().message,
+            "LSP process died",
+            "expected error message to match"
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_requests_fail_all_requests_clears_request_channels() {
+        let pending = PendingRequests::new();
+
+        let _receiver = pending.add_request(1).await.expect("add_request should succeed");
+
+        pending.fail_all_requests("test error".to_string()).await;
+
+        let channels = pending.request_channels.lock().await;
+        assert!(
+            channels.is_empty(),
+            "expected request_channels to be empty after fail_all_requests"
         );
     }
 }
