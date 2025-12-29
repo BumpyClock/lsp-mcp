@@ -48,6 +48,12 @@ pub struct McpDefinitionLocation {
     pub symbol_kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<CodeContext>,
+    /// Type signature from LSP hover (e.g., "(arg: Type) => ReturnType")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    /// Documentation string (JSDoc, docstring, etc.) from LSP hover
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doc: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -136,6 +142,146 @@ struct Pagination {
     truncated: bool,
 }
 
+/// Information about a package from node_modules
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct PackageInfo {
+    pub name: String,
+    pub version: String,
+}
+
+/// Information about external (node_modules) code
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct ExternalInfo {
+    pub external: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<PackageInfo>,
+}
+
+impl ExternalInfo {
+    /// Parses external package info from a file path.
+    /// Returns Some if the path contains node_modules, None otherwise.
+    pub fn from_path(path: &str) -> Option<Self> {
+        if !path.contains("node_modules") {
+            return None;
+        }
+
+        let package = parse_pnpm_package_info(path)
+            .or_else(|| parse_standard_package_info(path));
+
+        Some(ExternalInfo {
+            external: true,
+            package,
+        })
+    }
+}
+
+/// Parses package info from pnpm-style paths like:
+/// node_modules/.pnpm/@reduxjs+toolkit@2.0.0/node_modules/@reduxjs/toolkit/...
+fn parse_pnpm_package_info(path: &str) -> Option<PackageInfo> {
+    if !path.contains(".pnpm/") {
+        return None;
+    }
+
+    // Find the pnpm package segment: .pnpm/{package}@{version}/
+    let pnpm_start = path.find(".pnpm/")?;
+    let after_pnpm = &path[pnpm_start + 6..];
+    let segment_end = after_pnpm.find("/node_modules/")?;
+    let package_segment = &after_pnpm[..segment_end];
+
+    // Parse format: @scope+name@version or name@version
+    let at_version_pos = package_segment.rfind('@')?;
+    if at_version_pos == 0 {
+        return None;
+    }
+
+    let name_part = &package_segment[..at_version_pos];
+    let version = &package_segment[at_version_pos + 1..];
+
+    // Convert + back to / for scoped packages
+    let name = name_part.replace('+', "/");
+
+    Some(PackageInfo {
+        name,
+        version: version.to_string(),
+    })
+}
+
+/// Parses package info from standard npm paths like:
+/// node_modules/react/index.js or node_modules/@scope/package/index.js
+fn parse_standard_package_info(path: &str) -> Option<PackageInfo> {
+    let nm_pos = path.find("node_modules/")?;
+    let after_nm = &path[nm_pos + 13..];
+
+    let (name, _rest) = if after_nm.starts_with('@') {
+        // Scoped package: @scope/name/rest
+        let first_slash = after_nm.find('/')?;
+        let second_slash = after_nm[first_slash + 1..].find('/').map(|p| p + first_slash + 1)?;
+        (&after_nm[..second_slash], &after_nm[second_slash..])
+    } else {
+        // Regular package: name/rest
+        let slash_pos = after_nm.find('/')?;
+        (&after_nm[..slash_pos], &after_nm[slash_pos..])
+    };
+
+    Some(PackageInfo {
+        name: name.to_string(),
+        version: "unknown".to_string(),
+    })
+}
+
+/// Ultra-compact response format for find_definition (~180 chars)
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct CompactDefinitionResponse {
+    pub name: String,
+    pub sig: String,
+    pub loc: String,
+    pub ext: bool,
+}
+
+/// Parameters for find_definition with optimization options
+#[derive(Debug, Clone, Default)]
+pub struct FindDefinitionParams {
+    pub compact: bool,
+    pub include_siblings: bool,
+    pub siblings_limit: Option<u32>,
+}
+
+/// Checks if a symbol name is an internal builder symbol that should be filtered from siblings.
+/// This includes RTK Query builder functions, underscore-prefixed internals, etc.
+pub fn is_internal_builder_symbol(name: &str) -> bool {
+    // Underscore prefix indicates internal/private
+    if name.starts_with('_') {
+        return true;
+    }
+
+    // RTK Query builder methods and common framework internals
+    matches!(
+        name,
+        "query"
+            | "mutation"
+            | "endpoints"
+            | "providesTags"
+            | "invalidatesTags"
+            | "transformResponse"
+            | "transformErrorResponse"
+            | "onQueryStarted"
+            | "onCacheEntryAdded"
+            | "baseQuery"
+            | "reducerPath"
+            | "tagTypes"
+            | "keepUnusedDataFor"
+    )
+}
+
+/// Filters sibling exports to remove internal builder symbols and respect limit
+pub fn filter_sibling_exports(siblings: Vec<Symbol>, limit: u32) -> Vec<Symbol> {
+    siblings
+        .into_iter()
+        .filter(|s| !is_internal_builder_symbol(&s.name))
+        .take(limit as usize)
+        .collect()
+}
+
 pub fn create_service(manager: Arc<Manager>) -> LspService {
     LspService { manager }
 }
@@ -144,6 +290,7 @@ pub fn create_service(manager: Arc<Manager>) -> LspService {
 pub enum ServiceError {
     Lsp(LspManagerError),
     IdentifierSelection(PositionError),
+    CallHierarchy(CallHierarchyError),
     Serialization(String),
 }
 
@@ -154,9 +301,22 @@ impl fmt::Display for ServiceError {
             ServiceError::IdentifierSelection(e) => {
                 write!(f, "Identifier selection failed because {e}")
             }
+            ServiceError::CallHierarchy(e) => {
+                write!(f, "Call hierarchy failed because {e}")
+            }
             ServiceError::Serialization(message) => {
                 write!(f, "Serialization failed because {message}")
             }
+        }
+    }
+}
+
+impl ServiceError {
+    pub fn suggestions(&self) -> Vec<String> {
+        match self {
+            ServiceError::IdentifierSelection(e) => e.suggestions(),
+            ServiceError::CallHierarchy(e) => e.suggestions(),
+            ServiceError::Lsp(_) | ServiceError::Serialization(_) => vec![],
         }
     }
 }
@@ -181,6 +341,12 @@ impl From<serde_json::Error> for ServiceError {
     }
 }
 
+impl From<CallHierarchyError> for ServiceError {
+    fn from(err: CallHierarchyError) -> Self {
+        ServiceError::CallHierarchy(err)
+    }
+}
+
 #[derive(Debug)]
 pub enum PositionError {
     IdentifierNotFound { closest: Vec<Identifier> },
@@ -199,6 +365,69 @@ impl fmt::Display for PositionError {
 }
 
 impl Error for PositionError {}
+
+impl PositionError {
+    pub fn suggestions(&self) -> Vec<String> {
+        match self {
+            PositionError::IdentifierNotFound { closest } => {
+                let mut suggestions = vec![
+                    "Use definitions_in_file to see available symbols in this file".to_string(),
+                ];
+                if !closest.is_empty() {
+                    let names: Vec<&str> = closest.iter().take(3).map(|id| id.name.as_str()).collect();
+                    suggestions.push(format!("Nearby identifiers: {}", names.join(", ")));
+                }
+                suggestions
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum CallHierarchyError {
+    NoItemAtPosition { nearby_callables: Vec<Symbol> },
+}
+
+impl fmt::Display for CallHierarchyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CallHierarchyError::NoItemAtPosition { nearby_callables } => write!(
+                f,
+                "No call hierarchy item at position with {} nearby callables",
+                nearby_callables.len()
+            ),
+        }
+    }
+}
+
+impl Error for CallHierarchyError {}
+
+impl CallHierarchyError {
+    pub fn suggestions(&self) -> Vec<String> {
+        match self {
+            CallHierarchyError::NoItemAtPosition { nearby_callables } => {
+                let mut suggestions = vec![
+                    "Position must be on a function or method name".to_string(),
+                ];
+                if !nearby_callables.is_empty() {
+                    let names: Vec<&str> = nearby_callables
+                        .iter()
+                        .take(3)
+                        .map(|s| s.name.as_str())
+                        .collect();
+                    suggestions.push(format!("Nearby callables: {}", names.join(", ")));
+                }
+                suggestions
+            }
+        }
+    }
+
+    pub fn nearby_callables(&self) -> &[Symbol] {
+        match self {
+            CallHierarchyError::NoItemAtPosition { nearby_callables } => nearby_callables,
+        }
+    }
+}
 
 /// Enriches a symbol with LSP hover data and source-based heuristics
 async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &mut Symbol) {
@@ -598,7 +827,11 @@ impl LspService {
             let snippet = snippet_contexts
                 .as_ref()
                 .and_then(|contexts| contexts.get(index).cloned());
-            definition_items.push(definition_item_from_location(&location, symbol, snippet));
+
+            // Fetch hover info for signature and doc
+            let (signature, doc) = self.fetch_hover_info(&path, &location.range.start).await;
+
+            definition_items.push(definition_item_from_location(&location, symbol, snippet, signature, doc));
         }
 
         let related = compute_related_symbols(
@@ -997,6 +1230,21 @@ impl LspService {
             contents,
             range,
         })
+    }
+
+    /// Fetches signature and documentation from hover info for a definition position.
+    /// Used internally by find_definition to enrich response with type info.
+    async fn fetch_hover_info(
+        &self,
+        file_path: &str,
+        position: &LspPosition,
+    ) -> (Option<String>, Option<String>) {
+        let hover_result = self.manager.hover(file_path, *position).await;
+
+        match hover_result {
+            Ok(Some(hover)) => extract_signature_and_docs(&hover.contents),
+            _ => (None, None),
+        }
     }
 
     pub async fn workspace_symbol(
@@ -1713,14 +1961,16 @@ fn definition_item_from_location(
     location: &Location,
     symbol: Option<Symbol>,
     snippet: Option<CodeContext>,
+    signature: Option<String>,
+    doc: Option<String>,
 ) -> McpDefinitionLocation {
     let path = uri_to_relative_path_string(&location.uri);
     let position = Position {
         line: location.range.start.line + 1,
         character: location.range.start.character + 1,
     };
-    let (definition_range, symbol_kind) = match symbol {
-        Some(symbol) => (symbol.file_range.range, Some(symbol.kind)),
+    let (definition_range, symbol_kind) = match &symbol {
+        Some(symbol) => (symbol.file_range.range.clone(), Some(symbol.kind.clone())),
         None => (range_from_lsp(&location.range), None),
     };
     McpDefinitionLocation {
@@ -1729,6 +1979,8 @@ fn definition_item_from_location(
         definition_range,
         symbol_kind,
         snippet,
+        signature,
+        doc,
     }
 }
 
@@ -2183,15 +2435,21 @@ mod tests {
             },
             source_code: random_irregular_string(),
         };
+        let expected_signature = Some("fn test_function()".to_string());
+        let expected_jsdoc = Some("Test documentation".to_string());
         let response = retry_with(|| {
             let location = location.clone();
             let symbol = symbol.clone();
             let snippet = snippet.clone();
+            let sig = expected_signature.clone();
+            let doc = expected_jsdoc.clone();
             let handle = thread::spawn(move || {
                 Some(definition_item_from_location(
                     &location,
                     Some(symbol),
                     Some(snippet),
+                    sig,
+                    doc,
                 ))
             });
             handle.join().ok().flatten()
@@ -2214,6 +2472,14 @@ mod tests {
             response.symbol_kind,
             Some(symbol.kind.clone()),
             "negative: symbol kind mismatch"
+        );
+        assert_eq!(
+            response.signature, expected_signature,
+            "negative: signature mismatch"
+        );
+        assert_eq!(
+            response.doc, expected_jsdoc,
+            "negative: doc mismatch"
         );
         assert_eq!(
             response.snippet,
@@ -2844,5 +3110,314 @@ fn internal_helper() {
             !suggestions.is_empty(),
             "negative: ServiceError should expose suggestions from CallHierarchyError"
         );
+    }
+
+    // ==================== find_definition optimization tests ====================
+
+    #[test]
+    fn test_mcp_definition_location_includes_signature() {
+        let def_location = McpDefinitionLocation {
+            path: "src/service.ts".to_string(),
+            position: Position { line: 82, character: 5 },
+            definition_range: Range {
+                start: Position { line: 82, character: 1 },
+                end: Position { line: 90, character: 1 },
+            },
+            symbol_kind: Some("function".to_string()),
+            snippet: None,
+            signature: Some("(args: {classId: number}) => UseQueryResult<ClassDetails>".to_string()),
+            doc: Some("Query hook for fetching class details by ID".to_string()),
+        };
+
+        assert!(
+            def_location.signature.is_some(),
+            "definition location must include signature"
+        );
+        assert!(
+            def_location.doc.is_some(),
+            "definition location must include doc"
+        );
+    }
+
+    #[test]
+    fn test_mcp_definition_location_serializes_signature_and_doc() {
+        let def_location = McpDefinitionLocation {
+            path: "src/api.ts".to_string(),
+            position: Position { line: 10, character: 5 },
+            definition_range: Range {
+                start: Position { line: 10, character: 1 },
+                end: Position { line: 15, character: 1 },
+            },
+            symbol_kind: Some("function".to_string()),
+            snippet: None,
+            signature: Some("fn example(x: i32) -> String".to_string()),
+            doc: Some("Example function documentation".to_string()),
+        };
+
+        let json = serde_json::to_value(&def_location).expect("serialization failed");
+
+        assert!(
+            json.get("signature").is_some(),
+            "signature must be present in serialization"
+        );
+        assert!(
+            json.get("doc").is_some(),
+            "doc must be present in serialization"
+        );
+        assert_eq!(
+            json["signature"],
+            "fn example(x: i32) -> String",
+            "signature content must match"
+        );
+    }
+
+    #[test]
+    fn test_mcp_definition_location_skips_none_signature_and_doc() {
+        let def_location = McpDefinitionLocation {
+            path: "src/api.ts".to_string(),
+            position: Position { line: 10, character: 5 },
+            definition_range: Range {
+                start: Position { line: 10, character: 1 },
+                end: Position { line: 15, character: 1 },
+            },
+            symbol_kind: Some("function".to_string()),
+            snippet: None,
+            signature: None,
+            doc: None,
+        };
+
+        let json = serde_json::to_value(&def_location).expect("serialization failed");
+
+        assert!(
+            json.get("signature").is_none(),
+            "None signature must be skipped in serialization"
+        );
+        assert!(
+            json.get("doc").is_none(),
+            "None doc must be skipped in serialization"
+        );
+    }
+
+    #[test]
+    fn test_external_info_creation_for_node_modules_path() {
+        let path = "node_modules/.pnpm/@reduxjs+toolkit@2.0.0/node_modules/@reduxjs/toolkit/dist/query/react/buildHooks.d.ts";
+        let external_info = ExternalInfo::from_path(path);
+
+        assert!(
+            external_info.is_some(),
+            "external info must be detected for node_modules path"
+        );
+
+        let info = external_info.unwrap();
+        assert!(info.external, "external flag must be true");
+        assert!(info.package.is_some(), "package info must be present");
+
+        let pkg = info.package.unwrap();
+        assert_eq!(pkg.name, "@reduxjs/toolkit", "package name must be parsed");
+        assert_eq!(pkg.version, "2.0.0", "package version must be parsed");
+    }
+
+    #[test]
+    fn test_external_info_none_for_workspace_path() {
+        let path = "src/components/Button.tsx";
+        let external_info = ExternalInfo::from_path(path);
+
+        assert!(
+            external_info.is_none(),
+            "external info must be None for workspace paths"
+        );
+    }
+
+    #[test]
+    fn test_external_info_serialization() {
+        let info = ExternalInfo {
+            external: true,
+            package: Some(PackageInfo {
+                name: "react".to_string(),
+                version: "18.2.0".to_string(),
+            }),
+        };
+
+        let json = serde_json::to_value(&info).expect("serialization failed");
+
+        assert_eq!(json["external"], true, "external flag must serialize");
+        assert!(json.get("package").is_some(), "package must be present");
+        assert_eq!(json["package"]["name"], "react", "package name must match");
+        assert_eq!(json["package"]["version"], "18.2.0", "package version must match");
+    }
+
+    #[test]
+    fn test_compact_definition_response_format() {
+        let compact = CompactDefinitionResponse {
+            name: "useGetClassDetailsQuery".to_string(),
+            sig: "(args: {classId: number}) => UseQueryResult".to_string(),
+            loc: "src/app/service/classManagementService.ts:82".to_string(),
+            ext: false,
+        };
+
+        let json = serde_json::to_string(&compact).expect("serialization failed");
+
+        // Compact format should be small (~180 chars or less)
+        assert!(
+            json.len() < 250,
+            "compact format must be under 250 chars, got {} chars",
+            json.len()
+        );
+
+        // Verify all fields are present
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse failed");
+        assert!(parsed.get("name").is_some(), "name must be present");
+        assert!(parsed.get("sig").is_some(), "sig must be present");
+        assert!(parsed.get("loc").is_some(), "loc must be present");
+        assert!(parsed.get("ext").is_some(), "ext must be present");
+    }
+
+    #[test]
+    fn test_compact_definition_response_abbreviations() {
+        let compact = CompactDefinitionResponse {
+            name: "myFunction".to_string(),
+            sig: "(x: number) => string".to_string(),
+            loc: "src/lib.ts:42".to_string(),
+            ext: true,
+        };
+
+        let json = serde_json::to_value(&compact).expect("serialization failed");
+
+        // Uses abbreviated field names
+        assert!(json.get("sig").is_some(), "must use 'sig' not 'signature'");
+        assert!(json.get("loc").is_some(), "must use 'loc' not 'location'");
+        assert!(json.get("ext").is_some(), "must use 'ext' not 'external'");
+    }
+
+    #[test]
+    fn test_find_definition_params_include_siblings_default_false() {
+        let params = FindDefinitionParams::default();
+
+        assert!(
+            !params.include_siblings,
+            "include_siblings must default to false"
+        );
+    }
+
+    #[test]
+    fn test_find_definition_params_include_compact_default_false() {
+        let params = FindDefinitionParams::default();
+
+        assert!(
+            !params.compact,
+            "compact mode must default to false"
+        );
+    }
+
+    #[test]
+    fn test_find_definition_params_siblings_limit_default() {
+        let params = FindDefinitionParams::default();
+
+        assert_eq!(
+            params.siblings_limit.unwrap_or(5),
+            5,
+            "siblings_limit must default to 5"
+        );
+    }
+
+    #[test]
+    fn test_is_internal_builder_symbol() {
+        // RTK Query internal builder functions that should be filtered
+        assert!(is_internal_builder_symbol("_baseEndpointQuery"), "underscore prefix indicates internal");
+        assert!(is_internal_builder_symbol("providesTags"), "RTK builder function");
+        assert!(is_internal_builder_symbol("invalidatesTags"), "RTK builder function");
+        assert!(is_internal_builder_symbol("query"), "generic builder method");
+        assert!(is_internal_builder_symbol("mutation"), "generic builder method");
+        assert!(is_internal_builder_symbol("endpoints"), "RTK builder config");
+
+        // User-defined exports that should NOT be filtered
+        assert!(!is_internal_builder_symbol("useGetUserQuery"), "user hook export");
+        assert!(!is_internal_builder_symbol("UserService"), "user service export");
+        assert!(!is_internal_builder_symbol("getUserById"), "user function export");
+    }
+
+    #[test]
+    fn test_filter_sibling_exports() {
+        let siblings = vec![
+            Symbol {
+                name: "useGetUserQuery".to_string(),
+                kind: "function".to_string(),
+                identifier_position: FilePosition {
+                    path: "src/api.ts".to_string(),
+                    position: Position { line: 10, character: 5 },
+                },
+                file_range: FileRange {
+                    path: "src/api.ts".to_string(),
+                    range: Range {
+                        start: Position { line: 10, character: 1 },
+                        end: Position { line: 15, character: 1 },
+                    },
+                },
+                ..Default::default()
+            },
+            Symbol {
+                name: "providesTags".to_string(),
+                kind: "function".to_string(),
+                identifier_position: FilePosition {
+                    path: "src/api.ts".to_string(),
+                    position: Position { line: 20, character: 5 },
+                },
+                file_range: FileRange {
+                    path: "src/api.ts".to_string(),
+                    range: Range {
+                        start: Position { line: 20, character: 1 },
+                        end: Position { line: 25, character: 1 },
+                    },
+                },
+                ..Default::default()
+            },
+            Symbol {
+                name: "_internalHelper".to_string(),
+                kind: "function".to_string(),
+                identifier_position: FilePosition {
+                    path: "src/api.ts".to_string(),
+                    position: Position { line: 30, character: 5 },
+                },
+                file_range: FileRange {
+                    path: "src/api.ts".to_string(),
+                    range: Range {
+                        start: Position { line: 30, character: 1 },
+                        end: Position { line: 35, character: 1 },
+                    },
+                },
+                ..Default::default()
+            },
+        ];
+
+        let filtered = filter_sibling_exports(siblings, 10);
+
+        assert_eq!(filtered.len(), 1, "must filter out internal builder symbols");
+        assert_eq!(filtered[0].name, "useGetUserQuery", "must keep user exports");
+    }
+
+    #[test]
+    fn test_filter_sibling_exports_respects_limit() {
+        let siblings: Vec<Symbol> = (0..10)
+            .map(|i| Symbol {
+                name: format!("userExport{}", i),
+                kind: "function".to_string(),
+                identifier_position: FilePosition {
+                    path: "src/api.ts".to_string(),
+                    position: Position { line: i * 10, character: 5 },
+                },
+                file_range: FileRange {
+                    path: "src/api.ts".to_string(),
+                    range: Range {
+                        start: Position { line: i * 10, character: 1 },
+                        end: Position { line: i * 10 + 5, character: 1 },
+                    },
+                },
+                ..Default::default()
+            })
+            .collect();
+
+        let filtered = filter_sibling_exports(siblings, 5);
+
+        assert_eq!(filtered.len(), 5, "must respect siblings limit");
     }
 }

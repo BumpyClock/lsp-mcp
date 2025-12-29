@@ -66,7 +66,7 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Definition of symbol at position")]
+    #[tool(description = "Definition of symbol at position. Returns signature/type info from LSP hover. Set include_siblings=true to get other exports from same file (filtered, max siblings_limit=5).")]
     async fn find_definition(
         &self,
         path: String,
@@ -74,6 +74,8 @@ impl LspMcpServer {
         character: u32,
         include_source_code: Option<bool>,
         context_lines: Option<u32>,
+        include_siblings: Option<bool>,
+        siblings_limit: Option<u32>,
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> ToolOutput {
@@ -91,7 +93,22 @@ impl LspMcpServer {
             )
             .await
         {
-            Ok(response) => {
+            Ok(mut response) => {
+                // Filter siblings based on parameters
+                if !include_siblings.unwrap_or(false) {
+                    // Remove siblings when not requested
+                    if let Some(ref mut related) = response.related {
+                        related.sibling_exports.clear();
+                    }
+                } else if let Some(ref mut related) = response.related {
+                    // Filter internal builder symbols and apply limit
+                    let limit = siblings_limit.unwrap_or(5);
+                    related.sibling_exports = crate::service::filter_sibling_exports(
+                        std::mem::take(&mut related.sibling_exports),
+                        limit,
+                    );
+                }
+
                 let data = match serde_json::to_value(&response) {
                     Ok(v) => v,
                     Err(e) => {

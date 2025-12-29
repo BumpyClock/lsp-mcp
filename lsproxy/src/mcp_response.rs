@@ -82,7 +82,21 @@ pub fn success_response(
 
 /// Format an error for MCP protocol-level error response
 pub fn format_error(error: &ServiceError) -> String {
-    error.to_string()
+    let base_message = error.to_string();
+    let suggestions = error.suggestions();
+
+    if suggestions.is_empty() {
+        return base_message;
+    }
+
+    let mut result = base_message;
+    result.push_str("\n\nSuggestion:");
+    for suggestion in &suggestions {
+        result.push_str("\n  - ");
+        result.push_str(suggestion);
+    }
+
+    result
 }
 
 /// Format a tool disabled message for MCP protocol-level error response
@@ -273,8 +287,8 @@ mod tests {
 
     #[test]
     fn it_formats_error_with_suggestions_when_available() {
-        use crate::service::{CallHierarchyError, PositionError};
-        use crate::api_types::{FilePosition, FileRange, Identifier, Position, Range, Symbol};
+        use crate::service::PositionError;
+        use crate::api_types::{FileRange, Identifier, Position, Range};
 
         let closest = vec![
             Identifier {
