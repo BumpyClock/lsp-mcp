@@ -2,9 +2,9 @@
 // ABOUTME: Provides async methods for symbol lookup, references, and file access.
 use crate::api_types::{
     CodeContext, DefinitionResponse, Diagnostic, DiagnosticsResponse, FileDiagnostics,
-    FilePosition, FileRange, Identifier, IdentifierResponse, LspStatus, Position, Range,
-    ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse, ReferencesResponse,
-    SupportedLanguages, Symbol,
+    FilePosition, FileRange, HoverContents, HoverResponse, Identifier, IdentifierResponse,
+    LspStatus, Position, Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse,
+    ReferencesResponse, SupportedLanguages, Symbol,
 };
 use crate::lsp::manager::{LspManagerError, Manager};
 use crate::utils::file_utils::uri_to_relative_path_string;
@@ -427,6 +427,54 @@ impl LspService {
 
         Ok(DiagnosticsResponse { total_count, files })
     }
+
+    /// Get hover information (documentation, type info) for a symbol at a given position.
+    pub async fn hover(
+        &self,
+        file_path: &str,
+        position: Position,
+        include_raw_response: bool,
+    ) -> Result<HoverResponse, ServiceError> {
+        let hover = self
+            .manager
+            .hover(
+                file_path,
+                LspPosition {
+                    line: position.line,
+                    character: position.character,
+                },
+            )
+            .await?;
+
+        let (contents, range, raw_response) = match hover {
+            Some(h) => {
+                let contents = extract_hover_contents(&h.contents);
+                let range = h.range.map(|r| Range {
+                    start: Position {
+                        line: r.start.line,
+                        character: r.start.character,
+                    },
+                    end: Position {
+                        line: r.end.line,
+                        character: r.end.character,
+                    },
+                });
+                let raw = if include_raw_response {
+                    serde_json::to_value(&h).ok()
+                } else {
+                    None
+                };
+                (Some(contents), range, raw)
+            }
+            None => (None, None, None),
+        };
+
+        Ok(HoverResponse {
+            raw_response,
+            contents,
+            range,
+        })
+    }
 }
 
 fn definition_locations(definitions: &GotoDefinitionResponse) -> Vec<FilePosition> {
@@ -664,6 +712,27 @@ async fn fetch_code_context(
         });
     }
     Ok(code_contexts)
+}
+
+fn extract_hover_contents(contents: &lsp_types::HoverContents) -> HoverContents {
+    match contents {
+        lsp_types::HoverContents::Scalar(marked) => {
+            HoverContents::Markup(extract_marked_string(marked))
+        }
+        lsp_types::HoverContents::Array(arr) => {
+            HoverContents::Array(arr.iter().map(extract_marked_string).collect())
+        }
+        lsp_types::HoverContents::Markup(markup) => HoverContents::Markup(markup.value.clone()),
+    }
+}
+
+fn extract_marked_string(marked: &lsp_types::MarkedString) -> String {
+    match marked {
+        lsp_types::MarkedString::String(s) => s.clone(),
+        lsp_types::MarkedString::LanguageString(ls) => {
+            format!("```{}\n{}\n```", ls.language, ls.value)
+        }
+    }
 }
 
 #[cfg(test)]

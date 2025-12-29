@@ -3,6 +3,7 @@
 
 use crate::lsp::json_rpc::JsonRpc;
 use crate::lsp::process::Process;
+use crate::lsp::reconnect::{DocumentTracker, SpawnConfig};
 use crate::lsp::{DiagnosticsStore, ExpectedMessageKey, JsonRpcHandler, ProcessHandler};
 use crate::utils::file_utils::{detect_language_string, search_directories};
 use async_trait::async_trait;
@@ -17,12 +18,37 @@ use lsp_types::{
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::utils::workspace_documents::{
     DidOpenConfiguration, WorkspaceDocuments, WorkspaceDocumentsHandler, DEFAULT_EXCLUDE_PATTERNS,
 };
 
 use super::PendingRequests;
+
+/// Configuration for LSP client behavior
+#[derive(Clone, Debug)]
+pub struct LspClientConfig {
+    /// Timeout for individual LSP requests (default: 30 seconds)
+    pub request_timeout: Duration,
+    /// Maximum retry attempts for reconnection (default: 3)
+    pub max_reconnect_attempts: u32,
+    /// Base delay between reconnection attempts (default: 1 second)
+    pub reconnect_base_delay: Duration,
+    /// Maximum delay between reconnection attempts (default: 30 seconds)
+    pub reconnect_max_delay: Duration,
+}
+
+impl Default for LspClientConfig {
+    fn default() -> Self {
+        Self {
+            request_timeout: Duration::from_secs(30),
+            max_reconnect_attempts: 3,
+            reconnect_base_delay: Duration::from_secs(1),
+            reconnect_max_delay: Duration::from_secs(30),
+        }
+    }
+}
 
 #[async_trait]
 pub trait LspClient: Send {
@@ -97,9 +123,15 @@ pub trait LspClient: Send {
         debug!("Message: {:?}", message);
         self.get_process().send(&message).await?;
 
-        let response = response_receiver
-            .recv()
+        let timeout_duration = self.get_config().request_timeout;
+        let response = tokio::time::timeout(timeout_duration, response_receiver.recv())
             .await
+            .map_err(|_| {
+                format!(
+                    "Request '{}' timed out after {:?}",
+                    method, timeout_duration
+                )
+            })?
             .map_err(|e| format!("Failed to receive response: {}", e))?;
 
         if let Some(result) = response.result {
@@ -169,7 +201,12 @@ pub trait LspClient: Send {
                         }
                     }
                     Err(e) => {
-                        error!("LSP process communication failed: {}. Response listener exiting.", e);
+                        let reason = e.to_string();
+                        error!("LSP process communication failed: {}. Response listener exiting.", reason);
+                        process.report_unhealthy(reason.clone());
+                        pending_requests
+                            .fail_all_requests(format!("LSP process died: {}", reason))
+                            .await;
                         break;
                     }
                 }
@@ -196,6 +233,13 @@ pub trait LspClient: Send {
         &mut self,
         item: lsp_types::TextDocumentItem,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Track the document for potential reconnection
+        if let Some(path) = item.uri.to_file_path().ok() {
+            if let Some(path_str) = path.to_str() {
+                self.track_opened_document(path_str, item.version).await;
+            }
+        }
+
         let params = DidOpenTextDocumentParams {
             text_document: item,
         };
@@ -335,6 +379,64 @@ pub trait LspClient: Send {
         Ok(ref_resp)
     }
 
+    async fn text_document_hover(
+        &mut self,
+        file_path: &str,
+        position: Position,
+    ) -> Result<Option<lsp_types::Hover>, Box<dyn Error + Send + Sync>> {
+        debug!(
+            "Requesting hover for {}, line {}, character {}",
+            file_path, position.line, position.character
+        );
+
+        let needs_open = {
+            let workspace_documents = self.get_workspace_documents();
+            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
+                && !workspace_documents.is_did_open_document(file_path)
+        };
+
+        if needs_open {
+            let document_text = self
+                .get_workspace_documents()
+                .read_text_document(&PathBuf::from(file_path), None)
+                .await?;
+
+            self.text_document_did_open(TextDocumentItem {
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+                language_id: detect_language_string(file_path)?,
+                version: 1,
+                text: document_text,
+            })
+            .await?;
+
+            self.get_workspace_documents()
+                .add_did_open_document(file_path);
+        }
+
+        let params = lsp_types::HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+                },
+                position,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        };
+
+        let result = self
+            .send_request("textDocument/hover", Some(serde_json::to_value(params)?))
+            .await?;
+
+        let hover_resp: Option<lsp_types::Hover> = if result.is_null() {
+            None
+        } else {
+            serde_json::from_value(result)?
+        };
+
+        debug!("Received hover response");
+        Ok(hover_resp)
+    }
+
     fn get_process(&mut self) -> &mut ProcessHandler;
 
     fn get_json_rpc(&mut self) -> &mut JsonRpcHandler;
@@ -348,6 +450,31 @@ pub trait LspClient: Send {
     fn get_workspace_documents(&mut self) -> &mut WorkspaceDocumentsHandler;
 
     fn get_diagnostics_store(&self) -> &DiagnosticsStore;
+
+    /// Get the configuration for this LSP client
+    fn get_config(&self) -> &LspClientConfig;
+
+    /// Get the spawn config for respawning the LSP process (optional)
+    fn get_spawn_config(&self) -> Option<SpawnConfig> {
+        None
+    }
+
+    /// Get the document tracker for tracking opened documents (optional)
+    fn get_document_tracker(&self) -> Option<&DocumentTracker> {
+        None
+    }
+
+    /// Check if the LSP process is healthy
+    async fn is_healthy(&mut self) -> bool {
+        self.get_process().is_alive().await
+    }
+
+    /// Track a document that was opened (for reconnection purposes)
+    async fn track_opened_document(&mut self, file_path: &str, version: i32) {
+        if let Some(tracker) = self.get_document_tracker() {
+            tracker.track_document(file_path.to_string(), version).await;
+        }
+    }
 
     /// Start the diagnostics handler that listens for publishDiagnostics notifications
     async fn start_diagnostics_handler(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {

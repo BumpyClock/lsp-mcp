@@ -101,6 +101,35 @@ impl LspMcpServer {
         }
     }
 
+    #[tool(description = "Get hover information (documentation, type info) for a symbol at a position")]
+    async fn hover(
+        &self,
+        path: String,
+        line: u32,
+        character: u32,
+        include_raw_response: Option<bool>,
+    ) -> ToolOutput {
+        let pos = Position { line, character };
+        match self
+            .service
+            .hover(&path, pos, include_raw_response.unwrap_or(false))
+            .await
+        {
+            Ok(response) => {
+                let summary = if response.contents.is_some() {
+                    "Hover info found"
+                } else {
+                    "No hover info available"
+                };
+                match serde_json::to_string_pretty(&response) {
+                    Ok(json) => ToolOutput::text(format!("{}\n\n{}", summary, json)),
+                    Err(e) => ToolOutput::error(format!("Serialization error: {}", e)),
+                }
+            }
+            Err(e) => ToolOutput::error(format!("Error: {}", e)),
+        }
+    }
+
     #[tool(description = "Finds symbols referenced by a symbol definition at a given position")]
     async fn find_referenced_symbols(
         &self,

@@ -532,6 +532,37 @@ impl Manager {
             })
     }
 
+    pub async fn hover(
+        &self,
+        file_path: &str,
+        position: Position,
+    ) -> Result<Option<lsp_types::Hover>, LspManagerError> {
+        let workspace_files = self.list_files().await.map_err(|e| {
+            LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
+        })?;
+
+        if !workspace_files.contains(&file_path.to_string()) {
+            return Err(LspManagerError::FileNotFound(file_path.to_string()));
+        }
+
+        let full_path = get_mount_dir().join(file_path);
+        let full_path_str = full_path.to_str().unwrap_or_default();
+        let lsp_type = detect_language(full_path_str).map_err(|e| {
+            LspManagerError::InternalError(format!("Language detection failed: {}", e))
+        })?;
+
+        let client = self
+            .get_client(lsp_type)
+            .await
+            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let mut locked_client = client.lock().await;
+
+        locked_client
+            .text_document_hover(full_path_str, position)
+            .await
+            .map_err(|e| LspManagerError::InternalError(format!("Hover retrieval failed: {}", e)))
+    }
+
     pub async fn find_referenced_symbols(
         &self,
         file_path: &str,

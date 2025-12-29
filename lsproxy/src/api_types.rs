@@ -516,6 +516,30 @@ pub struct DiagnosticsResponse {
     pub files: Vec<FileDiagnostics>,
 }
 
+/// Response to a hover request
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct HoverResponse {
+    /// The raw response from the langserver
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<Value>,
+    /// The hover contents (documentation, type info)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contents: Option<HoverContents>,
+    /// The range of the symbol being hovered
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range: Option<Range>,
+}
+
+/// The contents of a hover response
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum HoverContents {
+    /// Plain text or markdown content
+    Markup(String),
+    /// Multiple content items
+    Array(Vec<String>),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
