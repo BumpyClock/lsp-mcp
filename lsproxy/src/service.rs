@@ -72,6 +72,19 @@ pub struct McpReferenceLocation {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct FileGroup {
+    pub path: String,
+    pub count: u32,
+    pub refs: Vec<McpReferenceLocation>,
+}
+
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+pub struct TypeCounts {
+    pub import: u32,
+    pub call: u32,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct McpReferencesResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_response: Option<Value>,
@@ -82,6 +95,9 @@ pub struct McpReferencesResponse {
     pub limit: u32,
     pub offset: u32,
     pub truncated: bool,
+    pub total_count: u32,
+    pub by_file: Vec<FileGroup>,
+    pub by_type: TypeCounts,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -610,7 +626,7 @@ impl LspService {
         )
         .await?;
 
-        let references = find_and_filter_references(
+        let all_references = find_and_filter_references(
             &self.manager,
             &FilePosition {
                 path: file_path.to_string(),
@@ -619,21 +635,29 @@ impl LspService {
         )
         .await?;
 
+        let total_count = all_references.len() as u32;
+
+        // Build by_type counts before pagination
+        let by_type = classify_references_by_type(&self.manager, &all_references).await;
+
         let raw_response = if include_raw_response {
-            serde_json::to_value(&references).ok()
+            serde_json::to_value(&all_references).ok()
         } else {
             None
         };
-        let (references, pagination) = paginate_items(references, limit, offset);
+        let (references, pagination) = paginate_items(all_references, limit, offset);
         let code_contexts = get_code_contexts(&self.manager, &references, context_lines).await?;
 
         let mut reference_items = Vec::with_capacity(references.len());
-        for (index, reference) in references.into_iter().enumerate() {
+        for (index, reference) in references.iter().enumerate() {
             let snippet = code_contexts
                 .as_ref()
                 .and_then(|contexts| contexts.get(index).cloned());
-            reference_items.push(reference_item_from_location(&reference, snippet));
+            reference_items.push(reference_item_from_location(reference, snippet));
         }
+
+        // Build by_file groups from paginated references
+        let by_file = group_references_by_file(&reference_items);
 
         Ok(McpReferencesResponse {
             raw_response,
@@ -643,6 +667,9 @@ impl LspService {
             limit: pagination.limit,
             offset: pagination.offset,
             truncated: pagination.truncated,
+            total_count,
+            by_file,
+            by_type,
         })
     }
 
@@ -1698,6 +1725,79 @@ fn extract_marked_string(marked: &lsp_types::MarkedString) -> String {
     }
 }
 
+/// Groups references by file path
+fn group_references_by_file(references: &[McpReferenceLocation]) -> Vec<FileGroup> {
+    use std::collections::HashMap;
+
+    let mut groups: HashMap<String, Vec<McpReferenceLocation>> = HashMap::new();
+
+    for reference in references {
+        groups.entry(reference.path.clone())
+            .or_insert_with(Vec::new)
+            .push(reference.clone());
+    }
+
+    let mut file_groups: Vec<FileGroup> = groups.into_iter()
+        .map(|(path, refs)| FileGroup {
+            count: refs.len() as u32,
+            path,
+            refs,
+        })
+        .collect();
+
+    // Sort by path for consistent output
+    file_groups.sort_by(|a, b| a.path.cmp(&b.path));
+
+    file_groups
+}
+
+/// Classifies references by type (import vs call)
+async fn classify_references_by_type(manager: &Manager, references: &[Location]) -> TypeCounts {
+    let mut counts = TypeCounts::default();
+
+    for reference in references {
+        let path = uri_to_relative_path_string(&reference.uri);
+        let line_num = reference.range.start.line;
+
+        // Try to read the line containing this reference
+        if let Ok(source) = manager.read_source_code(
+            &path,
+            Some(LspRange::new(
+                LspPosition { line: line_num, character: 0 },
+                LspPosition { line: line_num + 1, character: 0 },
+            )),
+        ).await {
+            if is_import_line(&source) {
+                counts.import += 1;
+            } else {
+                counts.call += 1;
+            }
+        } else {
+            // If we can't read the line, assume it's a call
+            counts.call += 1;
+        }
+    }
+
+    counts
+}
+
+/// Detects if a line is an import statement
+fn is_import_line(line: &str) -> bool {
+    let trimmed = line.trim();
+
+    // Skip comments
+    if trimmed.starts_with("//") || trimmed.starts_with('#') || trimmed.starts_with("/*") {
+        return false;
+    }
+
+    trimmed.starts_with("import ")
+        || trimmed.starts_with("use ")
+        || trimmed.contains("require(")
+        || trimmed.starts_with("from \"")
+        || trimmed.starts_with("from '")
+        || trimmed.starts_with("from ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2209,5 +2309,131 @@ fn internal_helper() {
         assert!(internal_fn.line_count.is_some(), "line_count should be populated for all symbols");
 
         Ok(())
+    }
+
+    #[test]
+    fn test_group_references_by_file() {
+        let refs = vec![
+            McpReferenceLocation {
+                path: "src/main.rs".to_string(),
+                position: Position { line: 1, character: 5 },
+                symbol_range: Range {
+                    start: Position { line: 1, character: 5 },
+                    end: Position { line: 1, character: 9 },
+                },
+                snippet: None,
+            },
+            McpReferenceLocation {
+                path: "src/lib.rs".to_string(),
+                position: Position { line: 2, character: 10 },
+                symbol_range: Range {
+                    start: Position { line: 2, character: 10 },
+                    end: Position { line: 2, character: 14 },
+                },
+                snippet: None,
+            },
+            McpReferenceLocation {
+                path: "src/main.rs".to_string(),
+                position: Position { line: 5, character: 3 },
+                symbol_range: Range {
+                    start: Position { line: 5, character: 3 },
+                    end: Position { line: 5, character: 7 },
+                },
+                snippet: None,
+            },
+        ];
+
+        let groups = group_references_by_file(&refs);
+
+        assert_eq!(groups.len(), 2);
+
+        // Should be sorted by path
+        assert_eq!(groups[0].path, "src/lib.rs");
+        assert_eq!(groups[0].count, 1);
+        assert_eq!(groups[0].refs.len(), 1);
+
+        assert_eq!(groups[1].path, "src/main.rs");
+        assert_eq!(groups[1].count, 2);
+        assert_eq!(groups[1].refs.len(), 2);
+    }
+
+    #[test]
+    fn test_is_import_line() {
+        assert!(is_import_line("import os"));
+        assert!(is_import_line("  import { useState } from 'react'"));
+        assert!(is_import_line("use std::collections::HashMap;"));
+        assert!(is_import_line("const fs = require('fs');"));
+        assert!(is_import_line("from datetime import datetime"));
+        assert!(is_import_line("from \"@/lib/utils\" import { cn }"));
+
+        assert!(!is_import_line("let x = greet('hello')"));
+        assert!(!is_import_line("const result = calculate()"));
+        assert!(!is_import_line("// import this later"));
+    }
+
+    #[test]
+    fn test_type_counts_default() {
+        let counts = TypeCounts::default();
+        assert_eq!(counts.import, 0);
+        assert_eq!(counts.call, 0);
+    }
+
+    #[test]
+    fn test_mcp_references_response_all_fields() {
+        let response = McpReferencesResponse {
+            raw_response: None,
+            references: vec![],
+            context: None,
+            selected_identifier: Identifier {
+                name: "test".to_string(),
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 1, character: 1 },
+                        end: Position { line: 1, character: 5 },
+                    },
+                },
+                kind: Some("function".to_string()),
+            },
+            limit: 200,
+            offset: 0,
+            truncated: false,
+            total_count: 15,
+            by_file: vec![
+                FileGroup {
+                    path: "src/main.rs".to_string(),
+                    count: 10,
+                    refs: vec![],
+                },
+                FileGroup {
+                    path: "src/lib.rs".to_string(),
+                    count: 5,
+                    refs: vec![],
+                },
+            ],
+            by_type: TypeCounts {
+                import: 3,
+                call: 12,
+            },
+        };
+
+        // Verify all fields exist and can be accessed
+        assert_eq!(response.total_count, 15);
+        assert_eq!(response.by_file.len(), 2);
+        assert_eq!(response.by_file[0].count, 10);
+        assert_eq!(response.by_type.import, 3);
+        assert_eq!(response.by_type.call, 12);
+
+        // Verify invariants
+        assert_eq!(
+            response.by_file[0].count + response.by_file[1].count,
+            15,
+            "by_file counts should sum to total_count"
+        );
+        assert_eq!(
+            response.by_type.import + response.by_type.call,
+            15,
+            "by_type counts should sum to total_count"
+        );
     }
 }
