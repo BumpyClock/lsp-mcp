@@ -1,10 +1,14 @@
 // ABOUTME: MCP server tools and handler for exposing LSP-based code navigation.
 // ABOUTME: Provides stdio MCP tool definitions and request handling for a workspace manager.
 use crate::api_types::{HealthResponse, Position, Range};
+use crate::config::LspMcpConfig;
 use crate::lsp::manager::Manager;
 use crate::service::{create_service, LspService};
+use log::info;
 use mcpkit::prelude::*;
 use mcpkit::transport::stdio::StdioTransport;
+use serde_json::Value;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// LSP MCP Server that exposes code navigation tools for a workspace.
@@ -389,12 +393,75 @@ impl LspMcpServer {
     }
 }
 
+/// Wrapper that filters tools based on configuration.
+///
+/// This allows dynamically enabling/disabling tools at runtime based on
+/// the configuration file without modifying the underlying tool implementations.
+pub struct FilteredToolHandler<T> {
+    inner: Arc<T>,
+    enabled_tools: HashSet<String>,
+}
+
+impl<T> FilteredToolHandler<T> {
+    /// Create a new filtered handler wrapping the inner handler.
+    pub fn new(inner: Arc<T>, enabled_tools: HashSet<String>) -> Self {
+        Self { inner, enabled_tools }
+    }
+}
+
+impl<T: ToolHandler + Send + Sync> ToolHandler for FilteredToolHandler<T> {
+    fn list_tools(
+        &self,
+        ctx: &Context<'_>,
+    ) -> impl std::future::Future<Output = Result<Vec<Tool>, McpError>> + Send {
+        let inner = Arc::clone(&self.inner);
+        let enabled = self.enabled_tools.clone();
+        async move {
+            let all_tools = inner.list_tools(ctx).await?;
+            Ok(all_tools
+                .into_iter()
+                .filter(|tool| enabled.contains(&tool.name))
+                .collect())
+        }
+    }
+
+    fn call_tool(
+        &self,
+        name: &str,
+        args: Value,
+        ctx: &Context<'_>,
+    ) -> impl std::future::Future<Output = Result<ToolOutput, McpError>> + Send {
+        let inner = Arc::clone(&self.inner);
+        let enabled = self.enabled_tools.clone();
+        let name = name.to_string();
+        async move {
+            if !enabled.contains(&name) {
+                return Ok(ToolOutput::error(format!(
+                    "Tool '{}' is disabled. Enable it in your .lsp-mcp.json config.",
+                    name
+                )));
+            }
+            inner.call_tool(&name, args, ctx).await
+        }
+    }
+}
+
 /// Create and run the LSP MCP server over stdio
-pub async fn run_server(manager: Arc<Manager>) -> Result<(), McpError> {
+pub async fn run_server(manager: Arc<Manager>, config: &LspMcpConfig) -> Result<(), McpError> {
     let server_instance = Arc::new(LspMcpServer::new(manager));
+    let enabled_tools = config.enabled_tools();
+
+    info!(
+        "Starting MCP server with {} tools enabled (preset: {:?})",
+        enabled_tools.len(),
+        config.tools.preset
+    );
+
+    let filtered_handler = FilteredToolHandler::new(Arc::clone(&server_instance), enabled_tools);
+
     let transport = StdioTransport::new();
     let server = ServerBuilder::new(Arc::clone(&server_instance))
-        .with_tools(Arc::clone(&server_instance))
+        .with_tools(filtered_handler)
         .build();
     server.serve(transport).await
 }

@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None => std::env::current_dir()?,
     };
 
-    let manager = initialize_manager_with_workspace_root_async(&workspace_root).await?;
-    run_server(manager).await.map_err(|e| e.to_string())?;
+    let (manager, config) = initialize_manager_with_workspace_root_async(&workspace_root).await?;
+    run_server(manager, &config).await.map_err(|e| e.to_string())?;
     Ok(())
 }

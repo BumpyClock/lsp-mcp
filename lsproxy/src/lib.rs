@@ -13,6 +13,7 @@ pub mod config;
 pub mod lsp;
 pub mod mcp;
 pub mod service;
+pub mod tool_registry;
 mod ast_grep;
 mod utils;
 
@@ -23,9 +24,11 @@ mod test_utils;
 ///
 /// This function blocks until all configured language servers have initialized.
 /// Use `initialize_manager_with_workspace_root_async` for non-blocking initialization.
+///
+/// Returns both the manager and the merged configuration (for tool filtering).
 pub async fn initialize_manager_with_workspace_root(
     workspace_root: &Path,
-) -> Result<Arc<Manager>, Box<dyn Error>> {
+) -> Result<(Arc<Manager>, LspMcpConfig), Box<dyn Error>> {
     set_global_mount_dir(workspace_root);
     let workspace_path = workspace_root.to_str().ok_or_else(|| {
         std::io::Error::new(
@@ -37,14 +40,16 @@ pub async fn initialize_manager_with_workspace_root(
         )
     })?;
 
-    let config = LspMcpConfig::load(workspace_root);
-    if config.is_some() {
-        info!("Loaded .lsp-mcp.json config from workspace root");
-    }
+    let config = LspMcpConfig::load_merged(workspace_root);
+    info!(
+        "Config loaded: {} languages, {} tools enabled",
+        config.languages.len(),
+        config.enabled_tools().len()
+    );
 
     let mut manager = Manager::new(workspace_path).await?;
-    manager.start_langservers(workspace_path, config.as_ref()).await?;
-    Ok(Arc::new(manager))
+    manager.start_langservers(workspace_path, Some(&config)).await?;
+    Ok((Arc::new(manager), config))
 }
 
 /// Initialize a workspace manager with async language server startup
@@ -52,9 +57,11 @@ pub async fn initialize_manager_with_workspace_root(
 /// This function returns immediately after spawning background tasks to initialize
 /// language servers. Language servers become available as they complete initialization.
 /// Check the health endpoint to see which servers are ready.
+///
+/// Returns both the manager and the merged configuration (for tool filtering).
 pub async fn initialize_manager_with_workspace_root_async(
     workspace_root: &Path,
-) -> Result<Arc<Manager>, Box<dyn Error>> {
+) -> Result<(Arc<Manager>, LspMcpConfig), Box<dyn Error>> {
     set_global_mount_dir(workspace_root);
     let workspace_path = workspace_root.to_str().ok_or_else(|| {
         std::io::Error::new(
@@ -66,12 +73,14 @@ pub async fn initialize_manager_with_workspace_root_async(
         )
     })?;
 
-    let config = LspMcpConfig::load(workspace_root);
-    if config.is_some() {
-        info!("Loaded .lsp-mcp.json config from workspace root");
-    }
+    let config = LspMcpConfig::load_merged(workspace_root);
+    info!(
+        "Config loaded: {} languages, {} tools enabled",
+        config.languages.len(),
+        config.enabled_tools().len()
+    );
 
     let manager = Arc::new(Manager::new(workspace_path).await?);
-    manager.start_langservers_async(workspace_path, config).await;
-    Ok(manager)
+    manager.start_langservers_async(workspace_path, Some(config.clone())).await;
+    Ok((manager, config))
 }

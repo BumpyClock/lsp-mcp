@@ -1,1 +1,8 @@
-{"languages": ["rust"]}
+  {
+    "languages": ["rust"],
+    "tools": {
+      "preset": "standard",
+      "enable": ["find_referenced_symbols"],
+      "disable": ["incoming_calls"]
+    }
+  }

@@ -1,6 +1,10 @@
 <div align="center">
 <a href="https://agenticlabs.com/"><img src="https://raw.githubusercontent.com/agentic-labs/.github/main/assets/logo.png" alt="Agentic Labs" title="Agentic Labs" align="center" height="150px" /></a>
 
+# lsp-mcp
+
+LSP-MCP is a fork of
+
 # lsproxy - Precise code navigation via MCP
 <p align="center">
   <a href="https://discord.gg/EUFGjSawyk"a><img alt="discord" src="https://img.shields.io/discord/1296271531994775552" /></a>
