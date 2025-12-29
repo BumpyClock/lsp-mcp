@@ -1,42 +1,11 @@
-// ABOUTME: MCP tool response formatting with uniform JSON envelopes.
-// ABOUTME: Provides success/error response wrappers with optional metadata for verbose mode.
+// ABOUTME: MCP tool response formatting with direct JSON output.
+// ABOUTME: Returns data directly on success, with optional metadata in verbose mode.
 
 use crate::config::OutputMode;
-use crate::lsp::manager::LspManagerError;
-use crate::service::{PositionError, ServiceError};
-use crate::api_types::{get_mount_dir, SupportedLanguages};
+use crate::service::ServiceError;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashMap;
-
-/// Standardized success response envelope
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct SuccessResponse {
-    pub ok: bool,
-    pub data: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub meta: Option<ResponseMeta>,
-}
-
-/// Standardized error response envelope
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ErrorResponse {
-    pub ok: bool,
-    pub error: ErrorInfo,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub meta: Option<ResponseMeta>,
-}
-
-/// Error information structure
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ErrorInfo {
-    pub code: String,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub supported_languages: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_root: Option<String>,
-}
 
 /// Response metadata (only in verbose mode)
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -47,27 +16,6 @@ pub struct ResponseMeta {
     pub line_indexing: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub counts: Option<HashMap<String, usize>>,
-}
-
-fn workspace_root_string() -> String {
-    get_mount_dir().to_string_lossy().into_owned()
-}
-
-fn supported_language_names() -> Vec<String> {
-    [
-        SupportedLanguages::Python,
-        SupportedLanguages::TypeScriptJavaScript,
-        SupportedLanguages::Rust,
-        SupportedLanguages::CPP,
-        SupportedLanguages::CSharp,
-        SupportedLanguages::Java,
-        SupportedLanguages::Golang,
-        SupportedLanguages::PHP,
-        SupportedLanguages::Ruby,
-    ]
-    .iter()
-    .map(|lang| lang.to_string())
-    .collect()
 }
 
 /// Normalize LSP symbol kind strings to lower-kebab-case
@@ -97,131 +45,58 @@ pub fn normalize_kind(kind: &str) -> String {
     result
 }
 
-/// Map ServiceError to error code
-pub fn error_to_code(error: &ServiceError) -> &'static str {
-    match error {
-        ServiceError::Lsp(lsp_err) => match lsp_err {
-            LspManagerError::FileNotFound(_) => "file_not_found",
-            LspManagerError::LspClientNotFound(_) => "lsp_client_not_found",
-            LspManagerError::LspClientInitializing(_) => "lsp_client_initializing",
-            LspManagerError::UnsupportedFileType(_) => "unsupported_file_type",
-            LspManagerError::NotImplemented(_) => "not_implemented",
-            LspManagerError::InternalError(_) => "internal_error",
-        },
-        ServiceError::IdentifierSelection(PositionError::IdentifierNotFound { .. }) => {
-            "identifier_not_found"
-        }
-        ServiceError::Serialization(_) => "serialization_error",
-    }
-}
-
-/// Create a success response
+/// Create a success response - returns data directly, with meta as sibling in verbose mode
 pub fn success_response(
     tool_name: &str,
     data: Value,
     output_mode: OutputMode,
     counts: Option<HashMap<String, usize>>,
 ) -> String {
-    let meta = if matches!(output_mode, OutputMode::Verbose) {
-        Some(ResponseMeta {
-            tool: tool_name.to_string(),
-            mode: "verbose".to_string(),
-            indexing: "one-based".to_string(),
-            line_indexing: "one-based".to_string(),
-            counts,
-        })
-    } else {
-        None
-    };
-
-    let response = SuccessResponse {
-        ok: true,
-        data,
-        meta,
-    };
-
     match output_mode {
-        OutputMode::Default => serde_json::to_string(&response).unwrap(),
-        OutputMode::Verbose => serde_json::to_string_pretty(&response).unwrap(),
+        OutputMode::Default => serde_json::to_string(&data).unwrap(),
+        OutputMode::Verbose => {
+            // Add meta as a sibling field to the data
+            let mut obj = match data {
+                Value::Object(map) => map,
+                _ => {
+                    // If data is not an object, wrap it
+                    let mut map = Map::new();
+                    map.insert("data".to_string(), data);
+                    map
+                }
+            };
+
+            let meta = ResponseMeta {
+                tool: tool_name.to_string(),
+                mode: "verbose".to_string(),
+                indexing: "one-based".to_string(),
+                line_indexing: "one-based".to_string(),
+                counts,
+            };
+            obj.insert("meta".to_string(), serde_json::to_value(meta).unwrap());
+
+            serde_json::to_string_pretty(&Value::Object(obj)).unwrap()
+        }
     }
 }
 
-/// Create an error response
-pub fn error_response(
-    tool_name: &str,
-    error: &ServiceError,
-    output_mode: OutputMode,
-) -> String {
-    let error_info = ErrorInfo {
-        code: error_to_code(error).to_string(),
-        message: error.to_string(),
-        supported_languages: Some(supported_language_names()),
-        workspace_root: Some(workspace_root_string()),
-    };
-
-    let meta = if matches!(output_mode, OutputMode::Verbose) {
-        Some(ResponseMeta {
-            tool: tool_name.to_string(),
-            mode: "verbose".to_string(),
-            indexing: "one-based".to_string(),
-            line_indexing: "one-based".to_string(),
-            counts: None,
-        })
-    } else {
-        None
-    };
-
-    let response = ErrorResponse {
-        ok: false,
-        error: error_info,
-        meta,
-    };
-
-    match output_mode {
-        OutputMode::Default => serde_json::to_string(&response).unwrap(),
-        OutputMode::Verbose => serde_json::to_string_pretty(&response).unwrap(),
-    }
+/// Format an error for MCP protocol-level error response
+pub fn format_error(error: &ServiceError) -> String {
+    error.to_string()
 }
 
-/// Create a tool disabled error response
-pub fn tool_disabled_error(tool_name: &str, output_mode: OutputMode) -> String {
-    let error_info = ErrorInfo {
-        code: "tool_disabled".to_string(),
-        message: format!(
-            "Tool '{}' is disabled. Enable it in your .lsp-mcp.json config.",
-            tool_name
-        ),
-        supported_languages: Some(supported_language_names()),
-        workspace_root: Some(workspace_root_string()),
-    };
-
-    let meta = if matches!(output_mode, OutputMode::Verbose) {
-        Some(ResponseMeta {
-            tool: tool_name.to_string(),
-            mode: "verbose".to_string(),
-            indexing: "one-based".to_string(),
-            line_indexing: "one-based".to_string(),
-            counts: None,
-        })
-    } else {
-        None
-    };
-
-    let response = ErrorResponse {
-        ok: false,
-        error: error_info,
-        meta,
-    };
-
-    match output_mode {
-        OutputMode::Default => serde_json::to_string(&response).unwrap(),
-        OutputMode::Verbose => serde_json::to_string_pretty(&response).unwrap(),
-    }
+/// Format a tool disabled message for MCP protocol-level error response
+pub fn tool_disabled_message(tool_name: &str) -> String {
+    format!(
+        "Tool '{}' is disabled. Enable it in your .lsp-mcp.json config.",
+        tool_name
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lsp::manager::LspManagerError;
     use rand::{distr::Alphanumeric, Rng};
     use serde_json::json;
     use std::thread;
@@ -282,11 +157,13 @@ mod tests {
         // Should be compact JSON
         assert!(!result.contains('\n'));
 
-        // Parse and verify structure
-        let parsed: SuccessResponse = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed.ok, true);
-        assert_eq!(parsed.data, data);
-        assert!(parsed.meta.is_none());
+        // Parse and verify - data returned directly, no wrapper
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed, data);
+
+        // Should NOT have "ok" or "data" wrapper
+        assert!(!result.contains("\"ok\""));
+        assert!(parsed.get("symbols").is_some());
     }
 
     #[test]
@@ -307,99 +184,46 @@ mod tests {
         // Should be pretty printed
         assert!(result.contains('\n'));
 
-        // Parse and verify structure
-        let parsed: SuccessResponse = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed.ok, true);
-        assert_eq!(parsed.data, data);
-        assert!(parsed.meta.is_some());
+        // Parse and verify - data with meta as sibling
+        let parsed: Value = serde_json::from_str(&result).unwrap();
 
-        let meta = parsed.meta.unwrap();
-        assert_eq!(meta.tool, "test_tool");
-        assert_eq!(meta.mode, "verbose");
-        assert_eq!(meta.indexing, "one-based");
-        assert_eq!(meta.counts, Some(counts));
-    }
+        // Should NOT have "ok" wrapper
+        assert!(parsed.get("ok").is_none());
 
-    #[test]
-    fn test_error_response_compact() {
-        let error = ServiceError::Lsp(LspManagerError::FileNotFound(
-            "test.rs".to_string(),
-        ));
-        let result = error_response("test_tool", &error, OutputMode::Default);
+        // Should have original data fields
+        assert!(parsed.get("symbols").is_some());
 
-        // Should be compact JSON
-        assert!(!result.contains('\n'));
-
-        // Parse and verify structure
-        let parsed: ErrorResponse = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed.ok, false);
-        assert_eq!(parsed.error.code, "file_not_found");
-        assert!(parsed.error.message.contains("test.rs"));
-        assert!(parsed.meta.is_none());
-    }
-
-    #[test]
-    fn test_error_response_verbose() {
-        let error = ServiceError::Lsp(LspManagerError::FileNotFound(
-            "test.rs".to_string(),
-        ));
-        let result = error_response("test_tool", &error, OutputMode::Verbose);
-
-        // Should be pretty printed
-        assert!(result.contains('\n'));
-
-        // Parse and verify structure
-        let parsed: ErrorResponse = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed.ok, false);
-        assert_eq!(parsed.error.code, "file_not_found");
-        assert!(parsed.meta.is_some());
-
-        let meta = parsed.meta.unwrap();
-        assert_eq!(meta.tool, "test_tool");
-        assert_eq!(meta.mode, "verbose");
-    }
-
-    #[test]
-    fn test_error_code_mapping() {
+        // Should have meta as sibling
+        let meta = parsed.get("meta").expect("meta should be present");
+        assert_eq!(meta.get("tool").unwrap().as_str().unwrap(), "test_tool");
+        assert_eq!(meta.get("mode").unwrap().as_str().unwrap(), "verbose");
+        assert_eq!(meta.get("indexing").unwrap().as_str().unwrap(), "one-based");
         assert_eq!(
-            error_to_code(&ServiceError::Lsp(LspManagerError::FileNotFound(
-                "".to_string()
-            ))),
-            "file_not_found"
-        );
-        assert_eq!(
-            error_to_code(&ServiceError::Lsp(LspManagerError::LspClientNotFound(
-                crate::api_types::SupportedLanguages::Rust
-            ))),
-            "lsp_client_not_found"
-        );
-        assert_eq!(
-            error_to_code(&ServiceError::Lsp(
-                LspManagerError::LspClientInitializing(crate::api_types::SupportedLanguages::Rust)
-            )),
-            "lsp_client_initializing"
-        );
-        assert_eq!(
-            error_to_code(&ServiceError::IdentifierSelection(
-                PositionError::IdentifierNotFound { closest: vec![] }
-            )),
-            "identifier_not_found"
-        );
-        assert_eq!(
-            error_to_code(&ServiceError::Serialization("".to_string())),
-            "serialization_error"
+            meta.get("counts").unwrap().get("symbols").unwrap().as_u64().unwrap(),
+            1
         );
     }
 
     #[test]
-    fn test_tool_disabled_error() {
-        let result = tool_disabled_error("disabled_tool", OutputMode::Default);
+    fn test_format_error() {
+        let error = ServiceError::Lsp(LspManagerError::FileNotFound("test.rs".to_string()));
+        let result = format_error(&error);
 
-        let parsed: ErrorResponse = serde_json::from_str(&result).unwrap();
-        assert_eq!(parsed.ok, false);
-        assert_eq!(parsed.error.code, "tool_disabled");
-        assert!(parsed.error.message.contains("disabled_tool"));
-        assert!(parsed.meta.is_none());
+        // Should be a simple error message string
+        assert!(result.contains("test.rs"));
+        // Should NOT be JSON
+        assert!(!result.starts_with('{'));
+    }
+
+    #[test]
+    fn test_tool_disabled_message() {
+        let result = tool_disabled_message("disabled_tool");
+
+        assert!(result.contains("disabled_tool"));
+        assert!(result.contains("disabled"));
+        assert!(result.contains(".lsp-mcp.json"));
+        // Should NOT be JSON
+        assert!(!result.starts_with('{'));
     }
 
     #[test]
@@ -410,41 +234,40 @@ mod tests {
         let response = retry_with(|| {
             let tool_name = tool_name.clone();
             let data = data.clone();
-            let handle = thread::spawn(move || success_response(&tool_name, data, OutputMode::Verbose, None));
+            let handle =
+                thread::spawn(move || success_response(&tool_name, data, OutputMode::Verbose, None));
             handle.join().ok()
         });
-        let parsed: SuccessResponse =
+        let parsed: Value =
             serde_json::from_str(&response).expect("negative: response did not parse");
-        let meta = parsed.meta.expect("negative: meta missing from response");
+        let meta = parsed.get("meta").expect("negative: meta missing from response");
         assert_eq!(
-            meta.line_indexing,
+            meta.get("line_indexing").unwrap().as_str().unwrap(),
             "one-based",
             "negative: line indexing missing or incorrect"
         );
     }
 
     #[test]
-    fn it_includes_error_context_fields_in_payload() {
-        let tool_name = random_irregular_string();
-        let missing_path = random_irregular_string();
-        let response = retry_with(|| {
-            let tool_name = tool_name.clone();
-            let missing_path = missing_path.clone();
-            let handle = thread::spawn(move || {
-                let error = ServiceError::Lsp(LspManagerError::FileNotFound(missing_path));
-                error_response(&tool_name, &error, OutputMode::Default)
-            });
-            handle.join().ok()
-        });
-        let parsed: ErrorResponse =
-            serde_json::from_str(&response).expect("negative: response did not parse");
-        assert!(
-            parsed.error.supported_languages.is_some(),
-            "negative: supported languages missing"
-        );
-        assert!(
-            parsed.error.workspace_root.is_some(),
-            "negative: workspace root missing"
-        );
+    fn test_success_response_non_object_data() {
+        // Test with array data (non-object)
+        let data = json!(["item1", "item2"]);
+        let result = success_response("test_tool", data.clone(), OutputMode::Default, None);
+
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed, data);
+    }
+
+    #[test]
+    fn test_success_response_non_object_verbose() {
+        // Test with array data in verbose mode - should wrap in object with "data" key
+        let data = json!(["item1", "item2"]);
+        let result = success_response("test_tool", data.clone(), OutputMode::Verbose, None);
+
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        // Should have "data" key containing the array
+        assert_eq!(parsed.get("data").unwrap(), &data);
+        // Should have meta
+        assert!(parsed.get("meta").is_some());
     }
 }

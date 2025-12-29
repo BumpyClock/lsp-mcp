@@ -209,12 +209,49 @@ async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &mut Symbol) 
         }
     }
 
+    // Fallback to source-based extraction if LSP didn't provide signature/jsdoc
+    if symbol.signature.is_none() || symbol.jsdoc_summary.is_none() {
+        if let Ok(source_code) = manager.read_source_code(
+            file_path,
+            Some(LspRange::new(
+                LspPosition {
+                    line: symbol.file_range.range.start.line.saturating_sub(1),
+                    character: 0,
+                },
+                LspPosition {
+                    line: symbol.file_range.range.end.line.saturating_sub(1),
+                    character: 0,
+                },
+            )),
+        ).await {
+            if symbol.signature.is_none() {
+                symbol.signature = extract_signature_from_source(&source_code, &symbol.name);
+            }
+            if symbol.jsdoc_summary.is_none() {
+                symbol.jsdoc_summary = extract_docs_from_source(&source_code);
+            }
+        }
+    }
+
     // Best-effort: detect if exported
-    // For now, use simple heuristics based on symbol kind
     symbol.exported = detect_exported(&symbol.kind);
 
-    // Dependencies: Leave as None for now (best-effort would require deeper analysis)
-    symbol.dependencies = None;
+    // Best-effort: detect dependencies from source code
+    if let Ok(source_code) = manager.read_source_code(
+        file_path,
+        Some(LspRange::new(
+            LspPosition {
+                line: symbol.file_range.range.start.line.saturating_sub(1),
+                character: 0,
+            },
+            LspPosition {
+                line: symbol.file_range.range.end.line.saturating_sub(1),
+                character: 0,
+            },
+        )),
+    ).await {
+        symbol.dependencies = extract_dependencies_from_source(&source_code);
+    }
 }
 
 /// Detects if a symbol is exported based on its kind (best-effort heuristic)
@@ -285,6 +322,149 @@ fn extract_signature_and_docs(contents: &lsp_types::HoverContents) -> (Option<St
     };
 
     (signature, jsdoc)
+}
+
+/// Extracts signature from source code (fallback when LSP unavailable)
+fn extract_signature_from_source(source: &str, symbol_name: &str) -> Option<String> {
+    // Find the first line containing the symbol name
+    // This is a best-effort heuristic - looks for function/class/struct definitions
+    for line in source.lines() {
+        let trimmed = line.trim();
+        // Skip comments and empty lines
+        if trimmed.starts_with("//") || trimmed.starts_with("#") || trimmed.starts_with("/*") || trimmed.is_empty() {
+            continue;
+        }
+        // Check if this line contains the symbol name as a definition
+        if trimmed.contains(symbol_name) {
+            // Common patterns: "fn name", "function name", "class name", "def name", "struct name"
+            if trimmed.contains("fn ") || trimmed.contains("function ") ||
+               trimmed.contains("class ") || trimmed.contains("def ") ||
+               trimmed.contains("struct ") || trimmed.contains("enum ") ||
+               trimmed.contains("interface ") || trimmed.contains("type ") {
+                // Extract up to opening brace or semicolon
+                let sig = if let Some(brace_pos) = trimmed.find('{') {
+                    trimmed[..brace_pos].trim()
+                } else if let Some(semi_pos) = trimmed.find(';') {
+                    trimmed[..semi_pos].trim()
+                } else {
+                    trimmed
+                };
+                return Some(sig.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Extracts documentation from source code (fallback when LSP unavailable)
+fn extract_docs_from_source(source: &str) -> Option<String> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut docs = Vec::new();
+
+    // Look for comment blocks at the start of the source
+    for line in &lines {
+        let trimmed = line.trim();
+
+        // Rust-style doc comments: ///
+        if let Some(doc) = trimmed.strip_prefix("///") {
+            docs.push(doc.trim());
+        }
+        // Python/Ruby docstrings: """...""" or '''...'''
+        else if trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''") {
+            let content = trimmed.trim_start_matches("\"\"\"").trim_start_matches("'''")
+                                .trim_end_matches("\"\"\"").trim_end_matches("'''");
+            if !content.is_empty() {
+                docs.push(content);
+            }
+        }
+        // C-style doc comments: /** ... */ or //!
+        else if let Some(doc) = trimmed.strip_prefix("/**") {
+            let content = doc.trim_end_matches("*/").trim();
+            if !content.is_empty() {
+                docs.push(content);
+            }
+        }
+        // JSDoc style: * ... in multiline
+        else if let Some(doc) = trimmed.strip_prefix("*") {
+            let content = doc.trim();
+            if !content.is_empty() && !content.starts_with("*/") {
+                docs.push(content);
+            }
+        }
+        // Regular comments at the start: // or #
+        else if let Some(doc) = trimmed.strip_prefix("//") {
+            docs.push(doc.trim());
+        }
+        else if let Some(doc) = trimmed.strip_prefix("#") {
+            // Only if not a shebang
+            if !doc.starts_with("!") {
+                docs.push(doc.trim());
+            }
+        }
+        // Stop at first non-comment line
+        else if !trimmed.is_empty() {
+            break;
+        }
+    }
+
+    if docs.is_empty() {
+        None
+    } else {
+        Some(docs.join(" ").trim().to_string())
+    }
+}
+
+/// Extracts dependencies/imports used in source code (best-effort)
+fn extract_dependencies_from_source(source: &str) -> Option<Vec<String>> {
+    use std::collections::HashSet;
+    let mut deps = HashSet::new();
+
+    // Pattern: look for common identifiers that appear to be function calls or type references
+    // This is very simplified - just looks for PascalCase and camelCase identifiers
+    // that might be external dependencies
+
+    let identifier_regex = regex::Regex::new(r"\b([A-Z][a-zA-Z0-9]*|[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*)\b").ok()?;
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        // Skip comments and import/use statements (we want usage, not declarations)
+        if trimmed.starts_with("//") || trimmed.starts_with("#") ||
+           trimmed.starts_with("import ") || trimmed.starts_with("use ") ||
+           trimmed.starts_with("from ") {
+            continue;
+        }
+
+        // Find all identifiers in the line
+        for cap in identifier_regex.captures_iter(trimmed) {
+            if let Some(ident) = cap.get(1) {
+                let id = ident.as_str();
+                // Skip very common keywords and short names
+                if id.len() > 2 && !is_common_keyword(id) {
+                    deps.insert(id.to_string());
+                }
+            }
+        }
+    }
+
+    if deps.is_empty() {
+        None
+    } else {
+        let mut result: Vec<String> = deps.into_iter().collect();
+        result.sort();
+        Some(result)
+    }
+}
+
+/// Check if a word is a common language keyword to avoid including in dependencies
+fn is_common_keyword(word: &str) -> bool {
+    matches!(word.to_lowercase().as_str(),
+        "if" | "else" | "for" | "while" | "return" | "let" | "const" | "var" |
+        "fn" | "func" | "function" | "def" | "class" | "struct" | "enum" |
+        "pub" | "public" | "private" | "protected" | "static" | "async" |
+        "await" | "try" | "catch" | "finally" | "throw" | "new" | "this" |
+        "self" | "super" | "true" | "false" | "null" | "undefined" | "None" |
+        "Some" | "Ok" | "Err" | "String" | "Vec" | "Option" | "Result"
+    )
 }
 
 impl LspService {

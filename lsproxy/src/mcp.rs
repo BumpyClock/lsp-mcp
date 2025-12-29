@@ -3,7 +3,7 @@
 use crate::api_types::{HealthResponse, Position, Range};
 use crate::config::{LspMcpConfig, OutputMode};
 use crate::lsp::manager::Manager;
-use crate::mcp_response::{error_response, success_response, tool_disabled_error};
+use crate::mcp_response::{format_error, success_response, tool_disabled_message};
 use crate::service::{create_service, LspService, ServiceError};
 use log::info;
 use mcpkit::prelude::*;
@@ -49,8 +49,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("definitions_in_file", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -63,10 +62,7 @@ impl LspMcpServer {
                 );
                 ToolOutput::text(response)
             }
-            Err(e) => {
-                let response = error_response("definitions_in_file", &e, self.output_mode);
-                ToolOutput::text(response)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -101,8 +97,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("find_definition", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -110,10 +105,7 @@ impl LspMcpServer {
                 let resp = success_response("find_definition", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("find_definition", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -148,8 +140,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("find_references", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -157,10 +148,7 @@ impl LspMcpServer {
                 let resp = success_response("find_references", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("find_references", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -183,18 +171,14 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("hover", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 // No meaningful counts for hover
                 let resp = success_response("hover", data, self.output_mode, None);
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("hover", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -223,8 +207,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("workspace_symbol", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -232,10 +215,7 @@ impl LspMcpServer {
                 let resp = success_response("workspace_symbol", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("workspace_symbol", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -258,8 +238,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("go_to_implementation", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -267,10 +246,7 @@ impl LspMcpServer {
                 let resp = success_response("go_to_implementation", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("go_to_implementation", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -293,8 +269,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("prepare_call_hierarchy", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -302,10 +277,7 @@ impl LspMcpServer {
                 let resp = success_response("prepare_call_hierarchy", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("prepare_call_hierarchy", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -328,8 +300,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("incoming_calls", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -337,10 +308,7 @@ impl LspMcpServer {
                 let resp = success_response("incoming_calls", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("incoming_calls", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -363,8 +331,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("outgoing_calls", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -372,10 +339,7 @@ impl LspMcpServer {
                 let resp = success_response("outgoing_calls", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("outgoing_calls", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -398,8 +362,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("find_referenced_symbols", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -409,10 +372,7 @@ impl LspMcpServer {
                 let resp = success_response("find_referenced_symbols", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("find_referenced_symbols", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -443,8 +403,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("find_identifier", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -452,10 +411,7 @@ impl LspMcpServer {
                 let resp = success_response("find_identifier", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("find_identifier", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -467,8 +423,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("list_files", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -476,10 +431,7 @@ impl LspMcpServer {
                 let resp = success_response("list_files", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("list_files", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -513,10 +465,7 @@ impl LspMcpServer {
                 let resp = success_response("read_source_code", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("read_source_code", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 
@@ -535,8 +484,7 @@ impl LspMcpServer {
             }
             Err(e) => {
                 let err = ServiceError::Serialization(e.to_string());
-                let resp = error_response("health", &err, self.output_mode);
-                ToolOutput::text(resp)
+                ToolOutput::error(format_error(&err))
             }
         }
     }
@@ -549,8 +497,7 @@ impl LspMcpServer {
                     Ok(v) => v,
                     Err(e) => {
                         let err = ServiceError::Serialization(e.to_string());
-                        let resp = error_response("get_diagnostics", &err, self.output_mode);
-                        return ToolOutput::text(resp);
+                        return ToolOutput::error(format_error(&err));
                     }
                 };
                 let mut counts = HashMap::new();
@@ -559,10 +506,7 @@ impl LspMcpServer {
                 let resp = success_response("get_diagnostics", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }
-            Err(e) => {
-                let resp = error_response("get_diagnostics", &e, self.output_mode);
-                ToolOutput::text(resp)
-            }
+            Err(e) => ToolOutput::error(format_error(&e)),
         }
     }
 }
@@ -604,7 +548,7 @@ mod tests {
 
         let content = match tool_output {
             ToolOutput::Success(result) => &result.content,
-            ToolOutput::RecoverableError { .. } => return String::new(),
+            ToolOutput::RecoverableError { message, .. } => return message.clone(),
         };
 
         for item in content {
@@ -616,11 +560,12 @@ mod tests {
         String::new()
     }
 
-    // Note: These tests verify the structure after implementation
-    // They will initially fail until we implement the response envelope wrapping
+    fn is_error_output(tool_output: &ToolOutput) -> bool {
+        matches!(tool_output, ToolOutput::RecoverableError { .. })
+    }
 
     #[tokio::test]
-    async fn test_find_identifier_envelope_compact() {
+    async fn test_find_identifier_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
         let output = server
             .find_identifier(
@@ -632,34 +577,42 @@ mod tests {
                 None,
             )
             .await;
-        let text = extract_text_content(&output);
 
-        // Should contain JSON envelope structure with "ok" field
-        assert!(text.contains("\"ok\""));
-        // Should contain either "data" (success) or "error" (failure)
-        assert!(text.contains("\"data\"") || text.contains("\"error\""));
-        // Should not contain meta in default mode
-        assert!(!text.contains("\"meta\""));
-        // Should be compact (no newlines)
-        assert!(!text.contains('\n'));
+        // Either success (data directly) or MCP protocol error
+        if is_error_output(&output) {
+            // Error should be plain text, not JSON wrapper
+            let error_msg = extract_text_content(&output);
+            assert!(!error_msg.contains("\"ok\""));
+            assert!(!error_msg.starts_with('{'));
+        } else {
+            let text = extract_text_content(&output);
+            // Should NOT contain "ok" wrapper - data returned directly
+            assert!(!text.contains("\"ok\""));
+            // Should contain actual data fields
+            assert!(text.contains("\"identifiers\""));
+            // Should not contain meta in default mode
+            assert!(!text.contains("\"meta\""));
+            // Should be compact (no newlines)
+            assert!(!text.contains('\n'));
+        }
     }
 
     #[tokio::test]
-    async fn test_list_files_envelope_compact() {
+    async fn test_list_files_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
         let output = server.list_files(None, None).await;
         let text = extract_text_content(&output);
 
-        // Should contain JSON envelope structure
-        assert!(text.contains("\"ok\""));
-        assert!(text.contains("\"data\""));
+        // Should NOT contain "ok" wrapper
+        assert!(!text.contains("\"ok\""));
+        // Should contain actual data
         assert!(text.contains("\"files\""));
         // Should not contain meta in default mode
         assert!(!text.contains("\"meta\""));
     }
 
     #[tokio::test]
-    async fn test_list_files_envelope_verbose() {
+    async fn test_list_files_verbose_has_meta_sibling() {
         let (server, _temp) = create_test_server_with_mode(OutputMode::Verbose).await;
         let output = server.list_files(None, None).await;
         let text = extract_text_content(&output);
@@ -667,9 +620,12 @@ mod tests {
         let parsed: serde_json::Value =
             serde_json::from_str(&text).expect("Expected JSON response");
 
-        assert!(text.contains("\"ok\""));
-        assert!(text.contains("\"data\""));
-        assert!(text.contains("\"meta\""));
+        // Should NOT have "ok" wrapper
+        assert!(parsed.get("ok").is_none());
+        // Should have data fields directly
+        assert!(parsed.get("files").is_some());
+        // Should have meta as sibling
+        assert!(parsed.get("meta").is_some());
         assert_eq!(
             parsed
                 .get("meta")
@@ -681,47 +637,71 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_source_code_envelope_compact() {
+    async fn test_read_source_code_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
         let output = server
             .read_source_code("test.rs".to_string(), None, None, None, None)
             .await;
-        let text = extract_text_content(&output);
 
-        // Should contain JSON envelope structure with "ok" field
-        assert!(text.contains("\"ok\""));
-        // Should contain either "data" (success) or "error" (failure)
-        assert!(text.contains("\"data\"") || text.contains("\"error\""));
-        // Should not contain meta in default mode
-        assert!(!text.contains("\"meta\""));
-        // Should be compact (no newlines)
-        assert!(!text.contains('\n'));
+        // Either success (data directly) or MCP protocol error
+        if is_error_output(&output) {
+            // Error should be plain text, not JSON wrapper
+            let error_msg = extract_text_content(&output);
+            assert!(!error_msg.contains("\"ok\""));
+            assert!(!error_msg.starts_with('{'));
+        } else {
+            let text = extract_text_content(&output);
+            // Should NOT contain "ok" wrapper
+            assert!(!text.contains("\"ok\""));
+            // Should contain source data
+            assert!(text.contains("\"source\""));
+            // Should not contain meta in default mode
+            assert!(!text.contains("\"meta\""));
+            // Should be compact (no newlines)
+            assert!(!text.contains('\n'));
+        }
     }
 
     #[tokio::test]
-    async fn test_health_envelope_compact() {
+    async fn test_health_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
         let output = server.health().await;
         let text = extract_text_content(&output);
 
-        // Should contain JSON envelope structure
-        assert!(text.contains("\"ok\""));
-        assert!(text.contains("\"data\""));
+        // Should NOT contain "ok" wrapper
+        assert!(!text.contains("\"ok\":true"));
+        // Should contain health data fields directly
+        assert!(text.contains("\"status\""));
+        assert!(text.contains("\"version\""));
         // Should not contain meta in default mode
         assert!(!text.contains("\"meta\""));
     }
 
     #[tokio::test]
-    async fn test_get_diagnostics_envelope_compact() {
+    async fn test_get_diagnostics_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
         let output = server.get_diagnostics(None).await;
         let text = extract_text_content(&output);
 
-        // Should contain JSON envelope structure
-        assert!(text.contains("\"ok\""));
-        assert!(text.contains("\"data\""));
+        // Should NOT contain "ok" wrapper
+        assert!(!text.contains("\"ok\""));
         // Should not contain meta in default mode
         assert!(!text.contains("\"meta\""));
+    }
+
+    #[tokio::test]
+    async fn test_error_uses_mcp_protocol_error() {
+        let (server, _temp) = create_test_server().await;
+        // Request a file that doesn't exist
+        let output = server
+            .read_source_code("nonexistent.rs".to_string(), None, None, None, None)
+            .await;
+
+        // Should be a RecoverableError, not a Success with JSON error
+        assert!(is_error_output(&output));
+        let error_message = extract_text_content(&output);
+        // Error message should be plain text, not JSON
+        assert!(!error_message.starts_with('{'));
     }
 }
 
@@ -732,16 +712,14 @@ mod tests {
 pub struct FilteredToolHandler<T> {
     inner: Arc<T>,
     enabled_tools: HashSet<String>,
-    output_mode: OutputMode,
 }
 
 impl<T> FilteredToolHandler<T> {
     /// Create a new filtered handler wrapping the inner handler.
-    pub fn new(inner: Arc<T>, enabled_tools: HashSet<String>, output_mode: OutputMode) -> Self {
+    pub fn new(inner: Arc<T>, enabled_tools: HashSet<String>) -> Self {
         Self {
             inner,
             enabled_tools,
-            output_mode,
         }
     }
 }
@@ -770,11 +748,10 @@ impl<T: ToolHandler + Send + Sync> ToolHandler for FilteredToolHandler<T> {
     ) -> impl std::future::Future<Output = Result<ToolOutput, McpError>> + Send {
         let inner = Arc::clone(&self.inner);
         let enabled = self.enabled_tools.clone();
-        let output_mode = self.output_mode;
         let name = name.to_string();
         async move {
             if !enabled.contains(&name) {
-                return Ok(ToolOutput::text(tool_disabled_error(&name, output_mode)));
+                return Ok(ToolOutput::error(tool_disabled_message(&name)));
             }
             inner.call_tool(&name, args, ctx).await
         }
@@ -795,7 +772,6 @@ pub async fn run_server(manager: Arc<Manager>, config: &LspMcpConfig) -> Result<
     let filtered_handler = FilteredToolHandler::new(
         Arc::clone(&server_instance),
         enabled_tools,
-        config.output_mode(),
     );
 
     let transport = StdioTransport::new();
