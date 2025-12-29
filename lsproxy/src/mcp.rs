@@ -1,6 +1,6 @@
 // ABOUTME: MCP server tools and handler for exposing LSP-based code navigation.
 // ABOUTME: Provides stdio MCP tool definitions and request handling for a workspace manager.
-use crate::api_types::{CallHierarchyDirection, HealthResponse, Position, Range};
+use crate::api_types::{CallHierarchyDirection, HealthResponse, HoverBatchItem, HoverRequest, Position, Range};
 use crate::config::{LspMcpConfig, OutputMode};
 use crate::lsp::manager::Manager;
 use crate::mcp_response::{format_error, success_response, tool_disabled_message};
@@ -148,13 +148,47 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Hover info at position")]
+    #[tool(description = "Hover info at position. Use 'requests' for batch mode with array of {path, line, character}")]
     async fn hover(
         &self,
-        path: String,
-        line: u32,
-        character: u32,
+        path: Option<String>,
+        line: Option<u32>,
+        character: Option<u32>,
+        requests: Option<String>,
     ) -> ToolOutput {
+        if let Some(requests_json) = requests {
+            let batch_requests: Vec<HoverRequest> = match serde_json::from_str(&requests_json) {
+                Ok(r) => r,
+                Err(e) => return ToolOutput::error(format!("Invalid requests JSON: {}", e)),
+            };
+            let mut results: Vec<HoverBatchItem> = Vec::with_capacity(batch_requests.len());
+            for req in batch_requests {
+                let pos = Position {
+                    line: req.line,
+                    character: req.character,
+                };
+                match self
+                    .service
+                    .hover(&req.path, pos, self.output_mode == OutputMode::Verbose)
+                    .await
+                {
+                    Ok(response) => results.push(HoverBatchItem::Success(response)),
+                    Err(e) => results.push(HoverBatchItem::Error {
+                        error: format_error(&e),
+                    }),
+                }
+            }
+            let data = match serde_json::to_value(&results) {
+                Ok(v) => v,
+                Err(e) => return ToolOutput::error(format!("Serialization error: {}", e)),
+            };
+            let resp = success_response("hover", data, self.output_mode, None);
+            return ToolOutput::text(resp);
+        }
+        let (path, line, character) = match (path, line, character) {
+            (Some(p), Some(l), Some(c)) => (p, l, c),
+            _ => return ToolOutput::error("Single mode requires path, line, and character"),
+        };
         let pos = Position { line, character };
         match self
             .service
@@ -169,7 +203,6 @@ impl LspMcpServer {
                         return ToolOutput::error(format_error(&err));
                     }
                 };
-                // No meaningful counts for hover
                 let resp = success_response("hover", data, self.output_mode, None);
                 ToolOutput::text(resp)
             }

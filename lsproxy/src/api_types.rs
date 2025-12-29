@@ -541,6 +541,22 @@ pub struct DiagnosticsResponse {
     pub files: Vec<FileDiagnostics>,
 }
 
+/// Request for a single hover operation (used in batch mode)
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct HoverRequest {
+    pub path: String,
+    pub line: u32,
+    pub character: u32,
+}
+
+/// A single item in a batch hover response - either success or error
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HoverBatchItem {
+    Success(HoverResponse),
+    Error { error: String },
+}
+
 /// Response to a hover request
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HoverResponse {
