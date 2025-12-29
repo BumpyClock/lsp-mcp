@@ -101,13 +101,13 @@ pub enum SupportedLanguages {
     Ruby,
 }
 
-/// A position within a text document, using 0-based indexing
+/// A position within a text document, using 1-based indexing (matching editor display)
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Position {
-    /// 0-indexed line number.
+    /// 1-indexed line number (first line is 1).
     #[schema(example = 10)]
     pub line: u32,
-    /// 0-indexed character index within the line.
+    /// 1-indexed character/column within the line (first column is 1).
     #[schema(example = 5)]
     pub character: u32,
 }
@@ -154,18 +154,20 @@ impl From<FileRange> for lsp_types::Range {
 
 impl From<Position> for lsp_types::Position {
     fn from(position: Position) -> Self {
+        // Convert from 1-indexed (user-facing) to 0-indexed (LSP internal)
         lsp_types::Position {
-            line: position.line,
-            character: position.character,
+            line: position.line.saturating_sub(1),
+            character: position.character.saturating_sub(1),
         }
     }
 }
 
 impl From<lsp_types::Position> for Position {
     fn from(position: lsp_types::Position) -> Self {
+        // Convert from 0-indexed (LSP internal) to 1-indexed (user-facing)
         Position {
-            line: position.line,
-            character: position.character,
+            line: position.line + 1,
+            character: position.character + 1,
         }
     }
 }
@@ -376,11 +378,12 @@ pub type SymbolResponse = Vec<Symbol>;
 
 impl From<Location> for FilePosition {
     fn from(location: Location) -> Self {
+        // Convert from 0-indexed (LSP internal) to 1-indexed (user-facing)
         FilePosition {
             path: uri_to_relative_path_string(&location.uri),
             position: Position {
-                line: location.range.start.line,
-                character: location.range.start.character,
+                line: location.range.start.line + 1,
+                character: location.range.start.character + 1,
             },
         }
     }
@@ -388,11 +391,12 @@ impl From<Location> for FilePosition {
 
 impl From<LocationLink> for FilePosition {
     fn from(link: LocationLink) -> Self {
+        // Convert from 0-indexed (LSP internal) to 1-indexed (user-facing)
         FilePosition {
             path: uri_to_relative_path_string(&link.target_uri),
             position: Position {
-                line: link.target_range.start.line,
-                character: link.target_range.start.character,
+                line: link.target_range.start.line + 1,
+                character: link.target_range.start.character + 1,
             },
         }
     }
@@ -476,15 +480,16 @@ pub struct Diagnostic {
 
 impl From<lsp_types::Diagnostic> for Diagnostic {
     fn from(diag: lsp_types::Diagnostic) -> Self {
+        // Convert from 0-indexed (LSP internal) to 1-indexed (user-facing)
         Self {
             range: Range {
                 start: Position {
-                    line: diag.range.start.line,
-                    character: diag.range.start.character,
+                    line: diag.range.start.line + 1,
+                    character: diag.range.start.character + 1,
                 },
                 end: Position {
-                    line: diag.range.end.line,
-                    character: diag.range.end.character,
+                    line: diag.range.end.line + 1,
+                    character: diag.range.end.character + 1,
                 },
             },
             severity: diag.severity.map(DiagnosticSeverity::from),
@@ -896,10 +901,11 @@ mod tests {
 
         let diag = Diagnostic::from(lsp_diag);
 
-        assert_eq!(diag.range.start.line, 10);
-        assert_eq!(diag.range.start.character, 5);
-        assert_eq!(diag.range.end.line, 10);
-        assert_eq!(diag.range.end.character, 15);
+        // Expect 1-indexed output (LSP input 10 -> output 11)
+        assert_eq!(diag.range.start.line, 11);
+        assert_eq!(diag.range.start.character, 6);
+        assert_eq!(diag.range.end.line, 11);
+        assert_eq!(diag.range.end.character, 16);
         assert_eq!(diag.severity, Some(DiagnosticSeverity::Error));
         assert_eq!(diag.code, Some("E0001".to_string()));
         assert_eq!(diag.source, Some("rustc".to_string()));

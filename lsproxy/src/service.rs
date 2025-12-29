@@ -226,8 +226,8 @@ impl LspService {
             .find_definition(
                 file_path,
                 LspPosition {
-                    line: position.line,
-                    character: position.character,
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
                 },
             )
             .await?;
@@ -345,8 +345,8 @@ impl LspService {
             .find_referenced_symbols(
                 file_path,
                 LspPosition {
-                    line: position.line,
-                    character: position.character,
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
                 },
                 full_scan,
             )
@@ -380,8 +380,8 @@ impl LspService {
                             .get_symbol_from_position(
                                 &def.path,
                                 &lsp_types::Position {
-                                    line: def.position.line,
-                                    character: def.position.character,
+                                    line: def.position.line.saturating_sub(1),
+                                    character: def.position.character.saturating_sub(1),
                                 },
                             )
                             .await
@@ -579,8 +579,8 @@ impl LspService {
             .hover(
                 file_path,
                 LspPosition {
-                    line: position.line,
-                    character: position.character,
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
                 },
             )
             .await?;
@@ -590,12 +590,12 @@ impl LspService {
                 let contents = extract_hover_contents(&h.contents);
                 let range = h.range.map(|r| Range {
                     start: Position {
-                        line: r.start.line,
-                        character: r.start.character,
+                        line: r.start.line + 1,
+                        character: r.start.character + 1,
                     },
                     end: Position {
-                        line: r.end.line,
-                        character: r.end.character,
+                        line: r.end.line + 1,
+                        character: r.end.character + 1,
                     },
                 });
                 let raw = if include_raw_response {
@@ -680,8 +680,8 @@ impl LspService {
             .find_implementation(
                 file_path,
                 LspPosition {
-                    line: position.line,
-                    character: position.character,
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
                 },
             )
             .await?;
@@ -710,8 +710,8 @@ impl LspService {
             .prepare_call_hierarchy(
                 file_path,
                 LspPosition {
-                    line: position.line,
-                    character: position.character,
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
                 },
             )
             .await?;
@@ -746,8 +746,8 @@ impl LspService {
             .prepare_call_hierarchy(
                 file_path,
                 LspPosition {
-                    line: position.line,
-                    character: position.character,
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
                 },
             )
             .await?;
@@ -777,12 +777,12 @@ impl LspService {
                     .into_iter()
                     .map(|r| Range {
                         start: Position {
-                            line: r.start.line,
-                            character: r.start.character,
+                            line: r.start.line + 1,
+                            character: r.start.character + 1,
                         },
                         end: Position {
-                            line: r.end.line,
-                            character: r.end.character,
+                            line: r.end.line + 1,
+                            character: r.end.character + 1,
                         },
                     })
                     .collect(),
@@ -813,8 +813,8 @@ impl LspService {
             .prepare_call_hierarchy(
                 file_path,
                 LspPosition {
-                    line: position.line,
-                    character: position.character,
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
                 },
             )
             .await?;
@@ -844,12 +844,12 @@ impl LspService {
                     .into_iter()
                     .map(|r| Range {
                         start: Position {
-                            line: r.start.line,
-                            character: r.start.character,
+                            line: r.start.line + 1,
+                            character: r.start.character + 1,
                         },
                         end: Position {
-                            line: r.end.line,
-                            character: r.end.character,
+                            line: r.end.line + 1,
+                            character: r.end.character + 1,
                         },
                     })
                     .collect(),
@@ -879,8 +879,8 @@ fn workspace_symbol_info_from_lsp(
         location: FilePosition {
             path,
             position: Position {
-                line: sym.location.range.start.line,
-                character: sym.location.range.start.character,
+                line: sym.location.range.start.line + 1,
+                character: sym.location.range.start.character + 1,
             },
         },
         container_name: sym.container_name,
@@ -896,18 +896,18 @@ fn call_hierarchy_item_to_info(item: &lsp_types::CallHierarchyItem) -> CallHiera
         location: FilePosition {
             path: uri_to_relative_path_string(&item.uri),
             position: Position {
-                line: item.selection_range.start.line,
-                character: item.selection_range.start.character,
+                line: item.selection_range.start.line + 1,
+                character: item.selection_range.start.character + 1,
             },
         },
         range: Range {
             start: Position {
-                line: item.range.start.line,
-                character: item.range.start.character,
+                line: item.range.start.line + 1,
+                character: item.range.start.character + 1,
             },
             end: Position {
-                line: item.range.end.line,
-                character: item.range.end.character,
+                line: item.range.end.line + 1,
+                character: item.range.end.character + 1,
             },
         },
         detail: item.detail.clone(),
@@ -919,8 +919,8 @@ fn definition_locations(definitions: &GotoDefinitionResponse) -> Vec<FilePositio
         GotoDefinitionResponse::Scalar(location) => vec![FilePosition {
             path: uri_to_relative_path_string(&location.uri),
             position: Position {
-                line: location.range.start.line,
-                character: location.range.start.character,
+                line: location.range.start.line + 1,
+                character: location.range.start.character + 1,
             },
         }],
         GotoDefinitionResponse::Array(locations) => locations
@@ -928,8 +928,8 @@ fn definition_locations(definitions: &GotoDefinitionResponse) -> Vec<FilePositio
             .map(|location| FilePosition {
                 path: uri_to_relative_path_string(&location.uri),
                 position: Position {
-                    line: location.range.start.line,
-                    character: location.range.start.character,
+                    line: location.range.start.line + 1,
+                    character: location.range.start.character + 1,
                 },
             })
             .collect(),
@@ -938,8 +938,8 @@ fn definition_locations(definitions: &GotoDefinitionResponse) -> Vec<FilePositio
             .map(|link| FilePosition {
                 path: uri_to_relative_path_string(&link.target_uri),
                 position: Position {
-                    line: link.target_range.start.line,
-                    character: link.target_range.start.character,
+                    line: link.target_range.start.line + 1,
+                    character: link.target_range.start.character + 1,
                 },
             })
             .collect(),
@@ -976,12 +976,12 @@ async fn fetch_definition_source_code(
                     path: relative_path,
                     range: Range {
                         start: Position {
-                            line: ast_grep_match.get_context_range().start.line,
-                            character: ast_grep_match.get_context_range().start.column,
+                            line: ast_grep_match.get_context_range().start.line + 1,
+                            character: ast_grep_match.get_context_range().start.column + 1,
                         },
                         end: Position {
-                            line: ast_grep_match.get_context_range().end.line,
-                            character: ast_grep_match.get_context_range().end.column,
+                            line: ast_grep_match.get_context_range().end.line + 1,
+                            character: ast_grep_match.get_context_range().end.column + 1,
                         },
                     },
                 },
@@ -1004,12 +1004,12 @@ async fn fetch_definition_source_code(
                         path: relative_path,
                         range: Range {
                             start: Position {
-                                line: definition.range.start.line.saturating_sub(3),
-                                character: 0,
+                                line: definition.range.start.line.saturating_sub(3) + 1,
+                                character: 1,
                             },
                             end: Position {
-                                line: definition.range.end.line + 3,
-                                character: 0,
+                                line: definition.range.end.line + 3 + 1,
+                                character: 1,
                             },
                         },
                     },
@@ -1074,8 +1074,8 @@ async fn find_and_filter_references(
         .find_references(
             &position.path,
             LspPosition {
-                line: position.position.line,
-                character: position.position.character,
+                line: position.position.line.saturating_sub(1),
+                character: position.position.character.saturating_sub(1),
             },
         )
         .await?;
@@ -1138,12 +1138,12 @@ async fn fetch_code_context(
                 path: relative_path,
                 range: Range {
                     start: Position {
-                        line: reference.range.start.line.saturating_sub(context_lines),
-                        character: 0,
+                        line: reference.range.start.line.saturating_sub(context_lines) + 1,
+                        character: 1,
                     },
                     end: Position {
-                        line: reference.range.end.line.saturating_add(context_lines),
-                        character: 0,
+                        line: reference.range.end.line.saturating_add(context_lines) + 1,
+                        character: 1,
                     },
                 },
             },
@@ -1210,12 +1210,12 @@ fn is_fuzzy_match(query: &str, name: &str) -> bool {
 fn range_from_lsp(range: &LspRange) -> Range {
     Range {
         start: Position {
-            line: range.start.line,
-            character: range.start.character,
+            line: range.start.line + 1,
+            character: range.start.character + 1,
         },
         end: Position {
-            line: range.end.line,
-            character: range.end.character,
+            line: range.end.line + 1,
+            character: range.end.character + 1,
         },
     }
 }
@@ -1227,8 +1227,8 @@ fn definition_item_from_location(
 ) -> McpDefinitionLocation {
     let path = uri_to_relative_path_string(&location.uri);
     let position = Position {
-        line: location.range.start.line,
-        character: location.range.start.character,
+        line: location.range.start.line + 1,
+        character: location.range.start.character + 1,
     };
     let (definition_range, symbol_kind) = match symbol {
         Some(symbol) => (symbol.file_range.range, Some(symbol.kind)),
@@ -1249,8 +1249,8 @@ fn reference_item_from_location(
 ) -> McpReferenceLocation {
     let path = uri_to_relative_path_string(&location.uri);
     let position = Position {
-        line: location.range.start.line,
-        character: location.range.start.character,
+        line: location.range.start.line + 1,
+        character: location.range.start.character + 1,
     };
     McpReferenceLocation {
         path,
@@ -1604,12 +1604,13 @@ mod tests {
             handle.join().ok().flatten()
         });
         assert_eq!(response.path, expected_path, "negative: path mismatch");
+        // Output is 1-indexed: LSP 0-indexed input + 1
         assert_eq!(
-            response.position.line, start_line,
+            response.position.line, start_line + 1,
             "negative: line mismatch"
         );
         assert_eq!(
-            response.position.character, start_char,
+            response.position.character, start_char + 1,
             "negative: character mismatch"
         );
         assert_eq!(
@@ -1653,14 +1654,15 @@ mod tests {
             },
         };
         let expected_path = file_path.to_string_lossy().into_owned();
+        // Expected range is 1-indexed (LSP 0-indexed + 1)
         let expected_range = Range {
             start: Position {
-                line: start_line,
-                character: start_char,
+                line: start_line + 1,
+                character: start_char + 1,
             },
             end: Position {
-                line: end_line,
-                character: end_char,
+                line: end_line + 1,
+                character: end_char + 1,
             },
         };
         let snippet = CodeContext {
@@ -1678,12 +1680,13 @@ mod tests {
             handle.join().ok().flatten()
         });
         assert_eq!(response.path, expected_path, "negative: path mismatch");
+        // Output is 1-indexed: LSP 0-indexed input + 1
         assert_eq!(
-            response.position.line, start_line,
+            response.position.line, start_line + 1,
             "negative: line mismatch"
         );
         assert_eq!(
-            response.position.character, start_char,
+            response.position.character, start_char + 1,
             "negative: character mismatch"
         );
         assert_eq!(

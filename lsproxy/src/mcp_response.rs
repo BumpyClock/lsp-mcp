@@ -126,8 +126,8 @@ pub fn success_response(
         Some(ResponseMeta {
             tool: tool_name.to_string(),
             mode: "verbose".to_string(),
-            indexing: "zero-based".to_string(),
-            line_indexing: "zero-based".to_string(),
+            indexing: "one-based".to_string(),
+            line_indexing: "one-based".to_string(),
             counts,
         })
     } else {
@@ -163,8 +163,8 @@ pub fn error_response(
         Some(ResponseMeta {
             tool: tool_name.to_string(),
             mode: "verbose".to_string(),
-            indexing: "zero-based".to_string(),
-            line_indexing: "zero-based".to_string(),
+            indexing: "one-based".to_string(),
+            line_indexing: "one-based".to_string(),
             counts: None,
         })
     } else {
@@ -199,8 +199,8 @@ pub fn tool_disabled_error(tool_name: &str, output_mode: OutputMode) -> String {
         Some(ResponseMeta {
             tool: tool_name.to_string(),
             mode: "verbose".to_string(),
-            indexing: "zero-based".to_string(),
-            line_indexing: "zero-based".to_string(),
+            indexing: "one-based".to_string(),
+            line_indexing: "one-based".to_string(),
             counts: None,
         })
     } else {
@@ -316,7 +316,7 @@ mod tests {
         let meta = parsed.meta.unwrap();
         assert_eq!(meta.tool, "test_tool");
         assert_eq!(meta.mode, "verbose");
-        assert_eq!(meta.indexing, "zero-based");
+        assert_eq!(meta.indexing, "one-based");
         assert_eq!(meta.counts, Some(counts));
     }
 
@@ -418,7 +418,7 @@ mod tests {
         let meta = parsed.meta.expect("negative: meta missing from response");
         assert_eq!(
             meta.line_indexing,
-            "zero-based",
+            "one-based",
             "negative: line indexing missing or incorrect"
         );
     }
