@@ -140,7 +140,8 @@ impl LspMcpServer {
                     }
                 };
                 let mut counts = HashMap::new();
-                counts.insert("references".to_string(), response.references.len());
+                let reference_count: usize = response.by_file.iter().map(|g| g.refs.len()).sum();
+                counts.insert("references".to_string(), reference_count);
                 let resp = success_response("find_references", data, self.output_mode, Some(counts));
                 ToolOutput::text(resp)
             }

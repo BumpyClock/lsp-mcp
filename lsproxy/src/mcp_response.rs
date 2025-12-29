@@ -270,4 +270,88 @@ mod tests {
         // Should have meta
         assert!(parsed.get("meta").is_some());
     }
+
+    #[test]
+    fn it_formats_error_with_suggestions_when_available() {
+        use crate::service::{CallHierarchyError, PositionError};
+        use crate::api_types::{FilePosition, FileRange, Identifier, Position, Range, Symbol};
+
+        let closest = vec![
+            Identifier {
+                name: "nearby_symbol".to_string(),
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 5, character: 1 },
+                        end: Position { line: 5, character: 14 },
+                    },
+                },
+                kind: Some("function".to_string()),
+            },
+        ];
+
+        let error = ServiceError::IdentifierSelection(
+            PositionError::IdentifierNotFound { closest }
+        );
+        let result = format_error(&error);
+
+        assert!(
+            result.contains("Suggestion"),
+            "negative: error format should include suggestions section"
+        );
+        assert!(
+            result.contains("definitions_in_file"),
+            "negative: error format should include definitions_in_file suggestion"
+        );
+    }
+
+    #[test]
+    fn it_formats_call_hierarchy_error_with_nearby_callables() {
+        use crate::service::CallHierarchyError;
+        use crate::api_types::{FilePosition, FileRange, Position, Range, Symbol};
+
+        let nearby = vec![
+            Symbol {
+                name: "nearby_function".to_string(),
+                kind: "function".to_string(),
+                identifier_position: FilePosition {
+                    path: "test.rs".to_string(),
+                    position: Position { line: 10, character: 4 },
+                },
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 10, character: 1 },
+                        end: Position { line: 15, character: 1 },
+                    },
+                },
+                ..Default::default()
+            },
+        ];
+
+        let error = ServiceError::CallHierarchy(
+            CallHierarchyError::NoItemAtPosition { nearby_callables: nearby }
+        );
+        let result = format_error(&error);
+
+        assert!(
+            result.contains("Suggestion"),
+            "negative: call hierarchy error should include suggestions"
+        );
+        assert!(
+            result.contains("nearby_function"),
+            "negative: call hierarchy error should include nearby callable names"
+        );
+    }
+
+    #[test]
+    fn it_formats_error_without_suggestions_for_simple_errors() {
+        let error = ServiceError::Serialization("test error".to_string());
+        let result = format_error(&error);
+
+        assert!(
+            !result.contains("Suggestion"),
+            "negative: simple errors should not include suggestions section"
+        );
+    }
 }

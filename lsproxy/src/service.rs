@@ -2,11 +2,12 @@
 // ABOUTME: Provides async methods for symbol lookup, references, and file access.
 use crate::api_types::{
     CallHierarchyDirection, CallHierarchyItemInfo, CallHierarchyResponse, CallInfo, CodeContext,
-    Diagnostic, DiagnosticsResponse, FileDiagnostics, FilePosition, FileRange, HoverContents,
-    HoverResponse, Identifier, ImplementationResponse, IncomingCallInfo, IncomingCallsResponse,
-    LspStatus, OutgoingCallInfo, OutgoingCallsResponse, Position, PrepareCallHierarchyResponse,
-    Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse, SupportedLanguages, Symbol,
-    WorkspaceSymbolInfo, WorkspaceSymbolResponse,
+    Diagnostic, DiagnosticSeverity, DiagnosticsResponse, FileDiagnostics, FilePosition, FileRange,
+    HoverContents, HoverResponse, Identifier, ImplementationResponse, IncomingCallInfo,
+    IncomingCallsResponse, LspStatus, OutgoingCallInfo, OutgoingCallsResponse, Position,
+    PrepareCallHierarchyResponse, Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse,
+    RelatedSymbols, SeverityCounts, SupportedLanguages, Symbol, WorkspaceSymbolInfo,
+    WorkspaceSymbolResponse,
 };
 use crate::lsp::manager::{LspManagerError, Manager};
 use crate::mcp_response::normalize_kind;
@@ -57,6 +58,9 @@ pub struct McpDefinitionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_code_context: Option<Vec<CodeContext>>,
     pub selected_identifier: Identifier,
+    /// Related symbols (interfaces implemented, parent classes, sibling exports)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub related: Option<RelatedSymbols>,
     pub limit: u32,
     pub offset: u32,
     pub truncated: bool,
@@ -88,9 +92,6 @@ pub struct TypeCounts {
 pub struct McpReferencesResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_response: Option<Value>,
-    pub references: Vec<McpReferenceLocation>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub context: Option<Vec<CodeContext>>,
     pub selected_identifier: Identifier,
     pub limit: u32,
     pub offset: u32,
@@ -580,8 +581,12 @@ impl LspService {
         };
 
         let mut definition_items = Vec::with_capacity(definition_locations.len());
+        let mut first_definition_path: Option<String> = None;
         for (index, location) in definition_locations.into_iter().enumerate() {
             let path = uri_to_relative_path_string(&location.uri);
+            if index == 0 {
+                first_definition_path = Some(path.clone());
+            }
             let symbol = match self
                 .manager
                 .get_symbol_from_position(&path, &location.range.start)
@@ -596,11 +601,19 @@ impl LspService {
             definition_items.push(definition_item_from_location(&location, symbol, snippet));
         }
 
+        let related = compute_related_symbols(
+            &self.manager,
+            first_definition_path.as_deref(),
+            &selected_identifier,
+        )
+        .await;
+
         Ok(McpDefinitionResponse {
             raw_response,
             definitions: definition_items,
             source_code_context,
             selected_identifier,
+            related: Some(related),
             limit: pagination.limit,
             offset: pagination.offset,
             truncated: pagination.truncated,
@@ -661,8 +674,6 @@ impl LspService {
 
         Ok(McpReferencesResponse {
             raw_response,
-            references: reference_items,
-            context: code_contexts,
             selected_identifier,
             limit: pagination.limit,
             offset: pagination.offset,
@@ -888,22 +899,56 @@ impl LspService {
     ) -> Result<DiagnosticsResponse, ServiceError> {
         let raw_diagnostics = self.manager.get_diagnostics(file_path).await?;
 
-        // Convert to API types and collect into FileDiagnostics
-        let mut files: Vec<FileDiagnostics> = raw_diagnostics
-            .into_iter()
-            .map(|(path, lsp_diagnostics)| FileDiagnostics {
-                path,
-                diagnostics: lsp_diagnostics.into_iter().map(Diagnostic::from).collect(),
-            })
-            .collect();
+        let mut files: Vec<FileDiagnostics> = Vec::new();
+        let mut by_severity = SeverityCounts::default();
 
-        // Sort files by path for consistent output
+        for (path, lsp_diagnostics) in raw_diagnostics {
+            let mut diagnostics: Vec<Diagnostic> = Vec::new();
+
+            for lsp_diag in lsp_diagnostics {
+                let lsp_range = lsp_diag.range;
+                let lsp_diag_clone = lsp_diag.clone();
+                let mut diag = Diagnostic::from(lsp_diag);
+
+                match diag.severity {
+                    Some(DiagnosticSeverity::Error) => by_severity.error += 1,
+                    Some(DiagnosticSeverity::Warning) => by_severity.warning += 1,
+                    Some(DiagnosticSeverity::Information) => by_severity.info += 1,
+                    Some(DiagnosticSeverity::Hint) => by_severity.hint += 1,
+                    None => {}
+                }
+
+                if let Ok(Some(actions)) = self
+                    .manager
+                    .code_action(&path, lsp_range, vec![lsp_diag_clone])
+                    .await
+                {
+                    diag.has_quick_fix = actions.iter().any(|action| {
+                        match action {
+                            lsp_types::CodeActionOrCommand::CodeAction(ca) => ca
+                                .kind
+                                .as_ref()
+                                .is_some_and(|k| k.as_str().starts_with("quickfix")),
+                            lsp_types::CodeActionOrCommand::Command(_) => false,
+                        }
+                    });
+                }
+
+                diagnostics.push(diag);
+            }
+
+            files.push(FileDiagnostics { path, diagnostics });
+        }
+
         files.sort_by(|a, b| a.path.cmp(&b.path));
 
-        // Calculate total count
         let total_count: usize = files.iter().map(|f| f.diagnostics.len()).sum();
 
-        Ok(DiagnosticsResponse { total_count, files })
+        Ok(DiagnosticsResponse {
+            total_count,
+            by_severity,
+            files,
+        })
     }
 
     /// Get hover information (documentation, type info) for a symbol at a given position.
@@ -1475,7 +1520,7 @@ async fn find_identifier_at_position(
         .iter()
         .find(|i| i.file_range.contains(position.clone()))
     {
-        return Ok(exact_match.clone());
+        return Ok(exact_match.clone().with_kind_defaulted());
     }
 
     let mut with_distances: Vec<_> = identifiers
@@ -1495,7 +1540,7 @@ async fn find_identifier_at_position(
                 .abs();
             let end_distance = end_line_diff * 100 + end_char_diff;
 
-            (id.clone(), (start_distance.min(end_distance)) as f64)
+            (id.clone().with_kind_defaulted(), (start_distance.min(end_distance)) as f64)
         })
         .collect();
 
@@ -1796,6 +1841,32 @@ fn is_import_line(line: &str) -> bool {
         || trimmed.starts_with("from \"")
         || trimmed.starts_with("from '")
         || trimmed.starts_with("from ")
+}
+
+/// Computes related symbols for a definition (sibling exports, implements, extends)
+async fn compute_related_symbols(
+    manager: &Manager,
+    definition_file_path: Option<&str>,
+    selected_identifier: &Identifier,
+) -> RelatedSymbols {
+    let mut related = RelatedSymbols::default();
+
+    let Some(def_path) = definition_file_path else {
+        return related;
+    };
+
+    if let Ok(file_symbols) = manager.definitions_in_file_ast_grep(def_path).await {
+        let sibling_exports: Vec<Symbol> = file_symbols
+            .into_iter()
+            .filter(|s| s.rule_id != "local-variable" && s.rule_id != "all-identifiers")
+            .filter(|s| s.meta_variables.single.name.text != selected_identifier.name)
+            .map(Symbol::from)
+            .collect();
+
+        related.sibling_exports = sibling_exports;
+    }
+
+    related
 }
 
 #[cfg(test)]
@@ -2379,11 +2450,20 @@ fn internal_helper() {
     }
 
     #[test]
-    fn test_mcp_references_response_all_fields() {
+    fn test_mcp_references_response_contains_by_file_with_snippets() {
+        let snippet = CodeContext {
+            range: FileRange {
+                path: "src/main.rs".to_string(),
+                range: Range {
+                    start: Position { line: 10, character: 5 },
+                    end: Position { line: 12, character: 10 },
+                },
+            },
+            source_code: "fn example() {}".to_string(),
+        };
+
         let response = McpReferencesResponse {
             raw_response: None,
-            references: vec![],
-            context: None,
             selected_identifier: Identifier {
                 name: "test".to_string(),
                 file_range: FileRange {
@@ -2403,7 +2483,17 @@ fn internal_helper() {
                 FileGroup {
                     path: "src/main.rs".to_string(),
                     count: 10,
-                    refs: vec![],
+                    refs: vec![
+                        McpReferenceLocation {
+                            path: "src/main.rs".to_string(),
+                            position: Position { line: 10, character: 5 },
+                            symbol_range: Range {
+                                start: Position { line: 10, character: 5 },
+                                end: Position { line: 10, character: 9 },
+                            },
+                            snippet: Some(snippet.clone()),
+                        },
+                    ],
                 },
                 FileGroup {
                     path: "src/lib.rs".to_string(),
@@ -2417,10 +2507,18 @@ fn internal_helper() {
             },
         };
 
-        // Verify all fields exist and can be accessed
-        assert_eq!(response.total_count, 15);
+        // Verify by_file contains references with snippets
         assert_eq!(response.by_file.len(), 2);
         assert_eq!(response.by_file[0].count, 10);
+        assert_eq!(response.by_file[0].refs.len(), 1);
+        assert!(response.by_file[0].refs[0].snippet.is_some());
+
+        // Verify the snippet is correctly attached to the reference
+        let ref_snippet = response.by_file[0].refs[0].snippet.as_ref().unwrap();
+        assert_eq!(ref_snippet.source_code, "fn example() {}");
+
+        // Verify counts
+        assert_eq!(response.total_count, 15);
         assert_eq!(response.by_type.import, 3);
         assert_eq!(response.by_type.call, 12);
 
@@ -2434,6 +2532,317 @@ fn internal_helper() {
             response.by_type.import + response.by_type.call,
             15,
             "by_type counts should sum to total_count"
+        );
+    }
+
+    #[test]
+    fn test_mcp_definition_response_has_related_field() {
+        let response = McpDefinitionResponse {
+            raw_response: None,
+            definitions: vec![],
+            source_code_context: None,
+            selected_identifier: Identifier {
+                name: "test_fn".to_string(),
+                file_range: FileRange {
+                    path: "src/lib.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 1, character: 1 },
+                        end: Position { line: 1, character: 8 },
+                    },
+                },
+                kind: Some("function".to_string()),
+            },
+            related: Some(RelatedSymbols::default()),
+            limit: 200,
+            offset: 0,
+            truncated: false,
+        };
+
+        assert!(
+            response.related.is_some(),
+            "related field must be present"
+        );
+        let related = response.related.unwrap();
+        assert!(
+            related.sibling_exports.is_empty(),
+            "default sibling_exports must be empty"
+        );
+    }
+
+    #[test]
+    fn test_mcp_definition_response_related_with_siblings() {
+        let sibling = Symbol {
+            name: "helper_fn".to_string(),
+            kind: "function".to_string(),
+            identifier_position: FilePosition {
+                path: "src/lib.rs".to_string(),
+                position: Position { line: 20, character: 4 },
+            },
+            file_range: FileRange {
+                path: "src/lib.rs".to_string(),
+                range: Range {
+                    start: Position { line: 20, character: 1 },
+                    end: Position { line: 25, character: 1 },
+                },
+            },
+            ..Default::default()
+        };
+
+        let related = RelatedSymbols {
+            sibling_exports: vec![sibling.clone()],
+            ..Default::default()
+        };
+
+        let response = McpDefinitionResponse {
+            raw_response: None,
+            definitions: vec![],
+            source_code_context: None,
+            selected_identifier: Identifier {
+                name: "main_fn".to_string(),
+                file_range: FileRange {
+                    path: "src/lib.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 1, character: 1 },
+                        end: Position { line: 1, character: 8 },
+                    },
+                },
+                kind: Some("function".to_string()),
+            },
+            related: Some(related),
+            limit: 200,
+            offset: 0,
+            truncated: false,
+        };
+
+        let related = response.related.expect("related field must be present");
+        assert_eq!(
+            related.sibling_exports.len(),
+            1,
+            "sibling_exports must have one entry"
+        );
+        assert_eq!(
+            related.sibling_exports[0].name,
+            "helper_fn",
+            "sibling name must match"
+        );
+    }
+
+    #[test]
+    fn test_mcp_definition_response_serialization_skips_empty_related() {
+        let response = McpDefinitionResponse {
+            raw_response: None,
+            definitions: vec![],
+            source_code_context: None,
+            selected_identifier: Identifier {
+                name: "test".to_string(),
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 1, character: 1 },
+                        end: Position { line: 1, character: 5 },
+                    },
+                },
+                kind: Some("identifier".to_string()),
+            },
+            related: None,
+            limit: 200,
+            offset: 0,
+            truncated: false,
+        };
+
+        let json = serde_json::to_value(&response).expect("serialization failed");
+
+        assert!(
+            json.get("related").is_none(),
+            "None related must be skipped in serialization"
+        );
+    }
+
+    #[test]
+    fn it_creates_position_error_with_suggestions() {
+        let closest = vec![
+            Identifier {
+                name: "my_function".to_string(),
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 5, character: 1 },
+                        end: Position { line: 5, character: 12 },
+                    },
+                },
+                kind: Some("function".to_string()),
+            },
+        ];
+
+        let error = PositionError::IdentifierNotFound { closest: closest.clone() };
+        let suggestions = error.suggestions();
+
+        assert!(
+            !suggestions.is_empty(),
+            "negative: IdentifierNotFound should provide suggestions"
+        );
+        assert!(
+            suggestions.iter().any(|s| s.contains("definitions_in_file")),
+            "negative: suggestions should mention definitions_in_file tool"
+        );
+    }
+
+    #[test]
+    fn it_creates_position_error_with_closest_identifiers_in_suggestions() {
+        let closest = vec![
+            Identifier {
+                name: "nearby_fn".to_string(),
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 10, character: 1 },
+                        end: Position { line: 10, character: 10 },
+                    },
+                },
+                kind: Some("function".to_string()),
+            },
+            Identifier {
+                name: "another_fn".to_string(),
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 15, character: 1 },
+                        end: Position { line: 15, character: 11 },
+                    },
+                },
+                kind: Some("function".to_string()),
+            },
+        ];
+
+        let error = PositionError::IdentifierNotFound { closest: closest.clone() };
+        let suggestions = error.suggestions();
+
+        assert!(
+            suggestions.iter().any(|s| s.contains("nearby_fn")),
+            "negative: suggestions should include closest identifier names"
+        );
+    }
+
+    #[test]
+    fn it_creates_call_hierarchy_error_with_suggestions() {
+        let nearby = vec![
+            Symbol {
+                name: "some_function".to_string(),
+                kind: "function".to_string(),
+                identifier_position: FilePosition {
+                    path: "test.rs".to_string(),
+                    position: Position { line: 10, character: 4 },
+                },
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 10, character: 1 },
+                        end: Position { line: 15, character: 1 },
+                    },
+                },
+                ..Default::default()
+            },
+        ];
+
+        let error = CallHierarchyError::NoItemAtPosition { nearby_callables: nearby };
+        let suggestions = error.suggestions();
+
+        assert!(
+            !suggestions.is_empty(),
+            "negative: NoItemAtPosition should provide suggestions"
+        );
+        assert!(
+            suggestions.iter().any(|s| s.contains("function") || s.contains("method")),
+            "negative: suggestions should mention function/method positioning"
+        );
+    }
+
+    #[test]
+    fn it_includes_nearby_callables_in_call_hierarchy_error_suggestions() {
+        let nearby = vec![
+            Symbol {
+                name: "callable_fn".to_string(),
+                kind: "function".to_string(),
+                identifier_position: FilePosition {
+                    path: "test.rs".to_string(),
+                    position: Position { line: 5, character: 4 },
+                },
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 5, character: 1 },
+                        end: Position { line: 10, character: 1 },
+                    },
+                },
+                ..Default::default()
+            },
+        ];
+
+        let error = CallHierarchyError::NoItemAtPosition { nearby_callables: nearby.clone() };
+        let suggestions = error.suggestions();
+
+        assert!(
+            suggestions.iter().any(|s| s.contains("callable_fn")),
+            "negative: suggestions should include nearby callable names"
+        );
+    }
+
+    #[test]
+    fn it_formats_service_error_with_suggestions() {
+        let closest = vec![
+            Identifier {
+                name: "test_id".to_string(),
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 1, character: 1 },
+                        end: Position { line: 1, character: 8 },
+                    },
+                },
+                kind: Some("identifier".to_string()),
+            },
+        ];
+
+        let error = ServiceError::IdentifierSelection(
+            PositionError::IdentifierNotFound { closest }
+        );
+
+        let suggestions = error.suggestions();
+        assert!(
+            !suggestions.is_empty(),
+            "negative: ServiceError should expose suggestions from inner error"
+        );
+    }
+
+    #[test]
+    fn it_formats_call_hierarchy_service_error_with_suggestions() {
+        let nearby = vec![
+            Symbol {
+                name: "method_name".to_string(),
+                kind: "method".to_string(),
+                identifier_position: FilePosition {
+                    path: "test.rs".to_string(),
+                    position: Position { line: 20, character: 8 },
+                },
+                file_range: FileRange {
+                    path: "test.rs".to_string(),
+                    range: Range {
+                        start: Position { line: 20, character: 1 },
+                        end: Position { line: 25, character: 1 },
+                    },
+                },
+                ..Default::default()
+            },
+        ];
+
+        let error = ServiceError::CallHierarchy(
+            CallHierarchyError::NoItemAtPosition { nearby_callables: nearby }
+        );
+
+        let suggestions = error.suggestions();
+        assert!(
+            !suggestions.is_empty(),
+            "negative: ServiceError should expose suggestions from CallHierarchyError"
         );
     }
 }

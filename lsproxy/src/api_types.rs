@@ -237,6 +237,40 @@ pub struct Identifier {
     pub kind: Option<String>,
 }
 
+impl Identifier {
+    /// Ensures the kind field is never None by providing a default fallback.
+    /// Returns the kind if present, otherwise "identifier".
+    pub fn kind_or_default(&self) -> &str {
+        self.kind.as_deref().unwrap_or("identifier")
+    }
+
+    /// Creates a new Identifier with a guaranteed non-None kind.
+    /// If kind is None, sets it to "identifier".
+    pub fn with_kind_defaulted(mut self) -> Self {
+        if self.kind.is_none() {
+            self.kind = Some("identifier".to_string());
+        }
+        self
+    }
+}
+
+/// Related symbols for a definition (interfaces, parent classes, siblings)
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RelatedSymbols {
+    /// Interfaces or traits this symbol implements
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub implements: Vec<Symbol>,
+    /// Parent classes this symbol extends
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extends: Vec<Symbol>,
+    /// Types that reference this symbol
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub used_by_types: Vec<Symbol>,
+    /// Other exports from the same module/file
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sibling_exports: Vec<Symbol>,
+}
+
 #[derive(Deserialize, ToSchema, IntoParams)]
 pub struct GetDefinitionRequest {
     pub position: FilePosition,
@@ -480,6 +514,19 @@ impl From<lsp_types::DiagnosticSeverity> for DiagnosticSeverity {
     }
 }
 
+/// Aggregated counts of diagnostics by severity level
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct SeverityCounts {
+    /// Number of error-level diagnostics
+    pub error: u32,
+    /// Number of warning-level diagnostics
+    pub warning: u32,
+    /// Number of informational diagnostics
+    pub info: u32,
+    /// Number of hint-level diagnostics
+    pub hint: u32,
+}
+
 /// A diagnostic message (error, warning, etc.) for a specific location
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Diagnostic {
@@ -496,6 +543,8 @@ pub struct Diagnostic {
     pub source: Option<String>,
     /// The diagnostic message
     pub message: String,
+    /// Whether a quick-fix code action is available for this diagnostic
+    pub has_quick_fix: bool,
 }
 
 impl From<lsp_types::Diagnostic> for Diagnostic {
@@ -519,6 +568,7 @@ impl From<lsp_types::Diagnostic> for Diagnostic {
             }),
             source: diag.source,
             message: diag.message,
+            has_quick_fix: false,
         }
     }
 }
@@ -537,6 +587,8 @@ pub struct FileDiagnostics {
 pub struct DiagnosticsResponse {
     /// Total number of diagnostics across all files
     pub total_count: usize,
+    /// Counts of diagnostics aggregated by severity level
+    pub by_severity: SeverityCounts,
     /// Diagnostics grouped by file
     pub files: Vec<FileDiagnostics>,
 }
@@ -1019,6 +1071,12 @@ mod tests {
     fn test_diagnostics_response_structure() {
         let response = DiagnosticsResponse {
             total_count: 2,
+            by_severity: SeverityCounts {
+                error: 1,
+                warning: 1,
+                info: 0,
+                hint: 0,
+            },
             files: vec![
                 FileDiagnostics {
                     path: "src/main.rs".to_string(),
@@ -1031,6 +1089,7 @@ mod tests {
                         code: Some("E0001".to_string()),
                         source: Some("rustc".to_string()),
                         message: "error 1".to_string(),
+                        has_quick_fix: false,
                     }],
                 },
                 FileDiagnostics {
@@ -1044,12 +1103,15 @@ mod tests {
                         code: None,
                         source: None,
                         message: "warning 1".to_string(),
+                        has_quick_fix: true,
                     }],
                 },
             ],
         };
 
         assert_eq!(response.total_count, 2);
+        assert_eq!(response.by_severity.error, 1);
+        assert_eq!(response.by_severity.warning, 1);
         assert_eq!(response.files.len(), 2);
         assert_eq!(response.files[0].path, "src/main.rs");
         assert_eq!(response.files[0].diagnostics.len(), 1);
@@ -1289,6 +1351,291 @@ mod tests {
             call_ranges.len(),
             3,
             "must serialize all three call ranges"
+        );
+    }
+
+    #[test]
+    fn test_identifier_kind_or_default_returns_kind_when_present() {
+        let identifier = Identifier {
+            name: "test_func".to_string(),
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position { line: 1, character: 1 },
+                    end: Position { line: 1, character: 10 },
+                },
+            },
+            kind: Some("function".to_string()),
+        };
+
+        assert_eq!(
+            identifier.kind_or_default(),
+            "function",
+            "kind_or_default must return the actual kind when present"
+        );
+    }
+
+    #[test]
+    fn test_identifier_kind_or_default_returns_identifier_when_none() {
+        let identifier = Identifier {
+            name: "unknown_symbol".to_string(),
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position { line: 5, character: 3 },
+                    end: Position { line: 5, character: 17 },
+                },
+            },
+            kind: None,
+        };
+
+        assert_eq!(
+            identifier.kind_or_default(),
+            "identifier",
+            "kind_or_default must return 'identifier' when kind is None"
+        );
+    }
+
+    #[test]
+    fn test_identifier_with_kind_defaulted_preserves_existing_kind() {
+        let identifier = Identifier {
+            name: "my_class".to_string(),
+            file_range: FileRange {
+                path: "module.py".to_string(),
+                range: Range {
+                    start: Position { line: 10, character: 6 },
+                    end: Position { line: 10, character: 14 },
+                },
+            },
+            kind: Some("class".to_string()),
+        };
+
+        let result = identifier.with_kind_defaulted();
+
+        assert_eq!(
+            result.kind,
+            Some("class".to_string()),
+            "with_kind_defaulted must preserve existing kind"
+        );
+    }
+
+    #[test]
+    fn test_identifier_with_kind_defaulted_sets_default_when_none() {
+        let identifier = Identifier {
+            name: "some_var".to_string(),
+            file_range: FileRange {
+                path: "script.js".to_string(),
+                range: Range {
+                    start: Position { line: 2, character: 4 },
+                    end: Position { line: 2, character: 12 },
+                },
+            },
+            kind: None,
+        };
+
+        let result = identifier.with_kind_defaulted();
+
+        assert_eq!(
+            result.kind,
+            Some("identifier".to_string()),
+            "with_kind_defaulted must set kind to 'identifier' when None"
+        );
+    }
+
+    #[test]
+    fn test_related_symbols_default_has_empty_vecs() {
+        let related = RelatedSymbols::default();
+
+        assert!(
+            related.implements.is_empty(),
+            "default implements must be empty"
+        );
+        assert!(
+            related.extends.is_empty(),
+            "default extends must be empty"
+        );
+        assert!(
+            related.used_by_types.is_empty(),
+            "default used_by_types must be empty"
+        );
+        assert!(
+            related.sibling_exports.is_empty(),
+            "default sibling_exports must be empty"
+        );
+    }
+
+    #[test]
+    fn test_related_symbols_serialization_skips_empty_vecs() {
+        let related = RelatedSymbols::default();
+        let json = serde_json::to_value(&related).expect("serialization failed");
+
+        assert!(
+            json.get("implements").is_none(),
+            "empty implements must be skipped in serialization"
+        );
+        assert!(
+            json.get("extends").is_none(),
+            "empty extends must be skipped in serialization"
+        );
+        assert!(
+            json.get("used_by_types").is_none(),
+            "empty used_by_types must be skipped in serialization"
+        );
+        assert!(
+            json.get("sibling_exports").is_none(),
+            "empty sibling_exports must be skipped in serialization"
+        );
+    }
+
+    #[test]
+    fn test_related_symbols_serializes_non_empty_vec() {
+        let sibling = Symbol {
+            name: "sibling_fn".to_string(),
+            kind: "function".to_string(),
+            identifier_position: FilePosition {
+                path: "module.rs".to_string(),
+                position: Position { line: 20, character: 4 },
+            },
+            file_range: FileRange {
+                path: "module.rs".to_string(),
+                range: Range {
+                    start: Position { line: 20, character: 1 },
+                    end: Position { line: 25, character: 1 },
+                },
+            },
+            ..Default::default()
+        };
+
+        let related = RelatedSymbols {
+            sibling_exports: vec![sibling],
+            ..Default::default()
+        };
+
+        let json = serde_json::to_value(&related).expect("serialization failed");
+
+        assert!(
+            json.get("sibling_exports").is_some(),
+            "non-empty sibling_exports must be serialized"
+        );
+        assert!(
+            json.get("implements").is_none(),
+            "empty implements must still be skipped"
+        );
+    }
+
+    #[test]
+    fn test_severity_counts_default_has_all_zeros() {
+        let counts = SeverityCounts::default();
+
+        assert_eq!(counts.error, 0, "default error count must be zero");
+        assert_eq!(counts.warning, 0, "default warning count must be zero");
+        assert_eq!(counts.info, 0, "default info count must be zero");
+        assert_eq!(counts.hint, 0, "default hint count must be zero");
+    }
+
+    #[test]
+    fn test_severity_counts_serialization_roundtrip() {
+        let counts = SeverityCounts {
+            error: 3,
+            warning: 5,
+            info: 2,
+            hint: 1,
+        };
+
+        let json = serde_json::to_string(&counts).expect("failed to serialize severity counts");
+        let deserialized: SeverityCounts =
+            serde_json::from_str(&json).expect("failed to deserialize severity counts");
+
+        assert_eq!(
+            counts, deserialized,
+            "severity counts must survive serialization roundtrip"
+        );
+    }
+
+    #[test]
+    fn test_diagnostics_response_includes_by_severity() {
+        let response = DiagnosticsResponse {
+            total_count: 4,
+            by_severity: SeverityCounts {
+                error: 2,
+                warning: 1,
+                info: 1,
+                hint: 0,
+            },
+            files: vec![],
+        };
+
+        let json = serde_json::to_value(&response).expect("failed to serialize diagnostics response");
+
+        assert!(
+            json.get("by_severity").is_some(),
+            "by_severity field must be present in serialized output"
+        );
+        assert_eq!(
+            json["by_severity"]["error"], 2,
+            "error count must match"
+        );
+        assert_eq!(
+            json["by_severity"]["warning"], 1,
+            "warning count must match"
+        );
+    }
+
+    #[test]
+    fn test_diagnostic_has_quick_fix_field_serializes() {
+        let diag_with_fix = Diagnostic {
+            range: Range {
+                start: Position { line: 1, character: 1 },
+                end: Position { line: 1, character: 10 },
+            },
+            severity: Some(DiagnosticSeverity::Error),
+            code: Some("E0001".to_string()),
+            source: Some("rustc".to_string()),
+            message: "unused variable".to_string(),
+            has_quick_fix: true,
+        };
+
+        let diag_without_fix = Diagnostic {
+            range: Range {
+                start: Position { line: 2, character: 1 },
+                end: Position { line: 2, character: 15 },
+            },
+            severity: Some(DiagnosticSeverity::Warning),
+            code: None,
+            source: None,
+            message: "some warning".to_string(),
+            has_quick_fix: false,
+        };
+
+        let json_with = serde_json::to_value(&diag_with_fix).expect("failed to serialize");
+        let json_without = serde_json::to_value(&diag_without_fix).expect("failed to serialize");
+
+        assert_eq!(
+            json_with["has_quick_fix"], true,
+            "has_quick_fix must be true when set"
+        );
+        assert_eq!(
+            json_without["has_quick_fix"], false,
+            "has_quick_fix must be false when not set"
+        );
+    }
+
+    #[test]
+    fn test_diagnostic_from_lsp_sets_has_quick_fix_false() {
+        let lsp_diag = lsp_types::Diagnostic {
+            range: lsp_types::Range::default(),
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            code: None,
+            source: None,
+            message: "test error".to_string(),
+            ..Default::default()
+        };
+
+        let diag = Diagnostic::from(lsp_diag);
+
+        assert_eq!(
+            diag.has_quick_fix, false,
+            "diagnostic from LSP must have has_quick_fix set to false by default"
         );
     }
 }
