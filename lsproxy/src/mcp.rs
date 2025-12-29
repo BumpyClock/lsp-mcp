@@ -152,6 +152,31 @@ impl LspMcpServer {
         }
     }
 
+    #[tool(description = "Find implementations of an interface, trait, or abstract method")]
+    async fn go_to_implementation(
+        &self,
+        path: String,
+        line: u32,
+        character: u32,
+        include_raw_response: Option<bool>,
+    ) -> ToolOutput {
+        let pos = Position { line, character };
+        match self
+            .service
+            .find_implementation(&path, pos, include_raw_response.unwrap_or(false))
+            .await
+        {
+            Ok(response) => {
+                let summary = format!("Found {} implementations", response.implementations.len());
+                match serde_json::to_string_pretty(&response) {
+                    Ok(json) => ToolOutput::text(format!("{}\n\n{}", summary, json)),
+                    Err(e) => ToolOutput::error(format!("Serialization error: {}", e)),
+                }
+            }
+            Err(e) => ToolOutput::error(format!("Error: {}", e)),
+        }
+    }
+
     #[tool(description = "Finds symbols referenced by a symbol definition at a given position")]
     async fn find_referenced_symbols(
         &self,

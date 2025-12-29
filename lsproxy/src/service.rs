@@ -3,8 +3,9 @@
 use crate::api_types::{
     CodeContext, DefinitionResponse, Diagnostic, DiagnosticsResponse, FileDiagnostics,
     FilePosition, FileRange, HoverContents, HoverResponse, Identifier, IdentifierResponse,
-    LspStatus, Position, Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse,
-    ReferencesResponse, SupportedLanguages, Symbol, WorkspaceSymbolInfo, WorkspaceSymbolResponse,
+    ImplementationResponse, LspStatus, Position, Range, ReferenceWithSymbolDefinitions,
+    ReferencedSymbolsResponse, ReferencesResponse, SupportedLanguages, Symbol, WorkspaceSymbolInfo,
+    WorkspaceSymbolResponse,
 };
 use crate::lsp::manager::{LspManagerError, Manager};
 use crate::utils::file_utils::uri_to_relative_path_string;
@@ -518,6 +519,46 @@ impl LspService {
         Ok(WorkspaceSymbolResponse {
             raw_response,
             symbols: filtered_symbols,
+        })
+    }
+
+    pub async fn find_implementation(
+        &self,
+        file_path: &str,
+        position: Position,
+        include_raw_response: bool,
+    ) -> Result<ImplementationResponse, ServiceError> {
+        let file_identifiers = self.manager.get_file_identifiers(file_path).await?;
+        let selected_identifier = find_identifier_at_position(
+            file_identifiers,
+            &FilePosition {
+                path: file_path.to_string(),
+                position: position.clone(),
+            },
+        )
+        .await?;
+
+        let implementations = self
+            .manager
+            .find_implementation(
+                file_path,
+                LspPosition {
+                    line: position.line,
+                    character: position.character,
+                },
+            )
+            .await?;
+
+        let raw_response = if include_raw_response {
+            Some(serde_json::to_value(&implementations)?)
+        } else {
+            None
+        };
+
+        Ok(ImplementationResponse {
+            raw_response,
+            implementations: definition_locations(&implementations),
+            selected_identifier,
         })
     }
 }

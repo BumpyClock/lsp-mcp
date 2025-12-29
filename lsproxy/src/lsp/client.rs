@@ -464,6 +464,70 @@ pub trait LspClient: Send {
         Ok(symbols)
     }
 
+    async fn text_document_implementation(
+        &mut self,
+        file_path: &str,
+        position: Position,
+    ) -> Result<GotoDefinitionResponse, Box<dyn Error + Send + Sync>> {
+        debug!(
+            "Requesting implementation for {}, line {}, character {}",
+            file_path, position.line, position.character
+        );
+
+        let needs_open = {
+            let workspace_documents = self.get_workspace_documents();
+            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
+                && !workspace_documents.is_did_open_document(file_path)
+        };
+
+        if needs_open {
+            let document_text = self
+                .get_workspace_documents()
+                .read_text_document(&PathBuf::from(file_path), None)
+                .await?;
+
+            self.text_document_did_open(TextDocumentItem {
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+                language_id: detect_language_string(file_path)?,
+                version: 1,
+                text: document_text,
+            })
+            .await?;
+
+            self.get_workspace_documents()
+                .add_did_open_document(file_path);
+        }
+
+        // GotoImplementationParams is an alias for GotoDefinitionParams
+        let params = GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+                },
+                position,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+
+        let result = self
+            .send_request(
+                "textDocument/implementation",
+                Some(serde_json::to_value(params)?),
+            )
+            .await?;
+
+        // GotoImplementationResponse is the same as GotoDefinitionResponse
+        let impl_resp: GotoDefinitionResponse = if result.is_null() {
+            GotoDefinitionResponse::Array(Vec::new())
+        } else {
+            serde_json::from_value(result)?
+        };
+
+        debug!("Received implementation response");
+        Ok(impl_resp)
+    }
+
     fn get_process(&mut self) -> &mut ProcessHandler;
 
     fn get_json_rpc(&mut self) -> &mut JsonRpcHandler;

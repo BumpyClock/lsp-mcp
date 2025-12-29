@@ -550,6 +550,18 @@ pub struct WorkspaceSymbolResponse {
     pub symbols: Vec<WorkspaceSymbolInfo>,
 }
 
+/// Response to a go-to-implementation request
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ImplementationResponse {
+    /// The raw response from the langserver
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_response: Option<Value>,
+    /// The implementations found
+    pub implementations: Vec<FilePosition>,
+    /// The identifier that was queried
+    pub selected_identifier: Identifier,
+}
+
 /// Information about a workspace symbol
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct WorkspaceSymbolInfo {

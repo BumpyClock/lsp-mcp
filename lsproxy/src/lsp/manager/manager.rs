@@ -588,6 +588,66 @@ impl Manager {
         Ok(all_symbols)
     }
 
+    pub async fn find_implementation(
+        &self,
+        file_path: &str,
+        position: Position,
+    ) -> Result<GotoDefinitionResponse, LspManagerError> {
+        let workspace_files = self.list_files().await.map_err(|e| {
+            LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
+        })?;
+
+        if !workspace_files.contains(&file_path.to_string()) {
+            return Err(LspManagerError::FileNotFound(file_path.to_string()));
+        }
+
+        let full_path = get_mount_dir().join(file_path);
+        let full_path_str = full_path.to_str().unwrap_or_default();
+        let lsp_type = detect_language(full_path_str).map_err(|e| {
+            LspManagerError::InternalError(format!("Language detection failed: {}", e))
+        })?;
+
+        let client = self
+            .get_client(lsp_type)
+            .await
+            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let mut locked_client = client.lock().await;
+
+        let mut implementations = locked_client
+            .text_document_implementation(full_path_str, position)
+            .await
+            .map_err(|e| {
+                LspManagerError::InternalError(format!("Implementation retrieval failed: {}", e))
+            })?;
+
+        // Sort implementations for consistent output (same pattern as find_definition)
+        match &mut implementations {
+            GotoDefinitionResponse::Array(locations) => {
+                locations.sort_by(|a, b| {
+                    let path_a = uri_to_relative_path_string(&a.uri);
+                    let path_b = uri_to_relative_path_string(&b.uri);
+                    path_a
+                        .cmp(&path_b)
+                        .then(a.range.start.line.cmp(&b.range.start.line))
+                        .then(a.range.start.character.cmp(&b.range.start.character))
+                });
+            }
+            GotoDefinitionResponse::Link(links) => {
+                links.sort_by(|a, b| {
+                    let path_a = uri_to_relative_path_string(&a.target_uri);
+                    let path_b = uri_to_relative_path_string(&b.target_uri);
+                    path_a
+                        .cmp(&path_b)
+                        .then(a.target_range.start.line.cmp(&b.target_range.start.line))
+                        .then(a.target_range.start.character.cmp(&b.target_range.start.character))
+                });
+            }
+            _ => {}
+        }
+
+        Ok(implementations)
+    }
+
     pub async fn find_referenced_symbols(
         &self,
         file_path: &str,
