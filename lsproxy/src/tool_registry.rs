@@ -12,9 +12,7 @@ pub const ALL_TOOLS: &[&str] = &[
     "hover",
     "workspace_symbol",
     "go_to_implementation",
-    "prepare_call_hierarchy",
-    "incoming_calls",
-    "outgoing_calls",
+    "call_hierarchy",
     "find_referenced_symbols",
     "find_identifier",
     "list_files",
@@ -31,8 +29,7 @@ pub const CORE_TOOLS: &[&str] = &[
     "get_diagnostics",
     "workspace_symbol",
     "definitions_in_file",
-    "incoming_calls",
-    "outgoing_calls",
+    "call_hierarchy",
 ];
 
 /// Minimal tools (Tier 1): Essential navigation only
@@ -49,10 +46,10 @@ pub const MINIMAL_TOOLS: &[&str] = &[
 pub enum ToolPreset {
     /// Minimal: Only essential navigation tools (4 tools)
     Minimal,
-    /// Standard (default): Core tools for productive development (8 tools)
+    /// Standard (default): Core tools for productive development (7 tools)
     #[default]
     Standard,
-    /// Full: All available tools (15 tools)
+    /// Full: All available tools (13 tools)
     Full,
 }
 
@@ -76,12 +73,12 @@ mod tests {
 
     #[test]
     fn test_all_tools_count() {
-        assert_eq!(ALL_TOOLS.len(), 15, "Expected 15 total tools");
+        assert_eq!(ALL_TOOLS.len(), 13, "Expected 13 total tools");
     }
 
     #[test]
     fn test_core_tools_count() {
-        assert_eq!(CORE_TOOLS.len(), 8, "Expected 8 core tools");
+        assert_eq!(CORE_TOOLS.len(), 7, "Expected 7 core tools");
     }
 
     #[test]
@@ -102,7 +99,7 @@ mod tests {
     #[test]
     fn test_get_preset_tools_standard() {
         let tools = get_preset_tools(ToolPreset::Standard);
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 7);
         // Should include all minimal tools
         assert!(tools.contains("find_definition"));
         assert!(tools.contains("find_references"));
@@ -111,14 +108,13 @@ mod tests {
         // Plus additional core tools
         assert!(tools.contains("workspace_symbol"));
         assert!(tools.contains("definitions_in_file"));
-        assert!(tools.contains("incoming_calls"));
-        assert!(tools.contains("outgoing_calls"));
+        assert!(tools.contains("call_hierarchy"));
     }
 
     #[test]
     fn test_get_preset_tools_full() {
         let tools = get_preset_tools(ToolPreset::Full);
-        assert_eq!(tools.len(), 15);
+        assert_eq!(tools.len(), 13);
         // Should include all tools
         for tool in ALL_TOOLS {
             assert!(tools.contains(*tool), "Missing tool: {}", tool);

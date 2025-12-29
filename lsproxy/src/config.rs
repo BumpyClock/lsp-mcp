@@ -103,7 +103,7 @@ impl ToolsConfig {
 ///   "tools": {
 ///     "preset": "standard",
 ///     "enable": ["find_referenced_symbols"],
-///     "disable": ["incoming_calls"]
+///     "disable": ["call_hierarchy"]
 ///   },
 ///   "output": {
 ///     "mode": "verbose"
@@ -382,7 +382,7 @@ mod tests {
             "tools": {
                 "preset": "standard",
                 "enable": ["find_referenced_symbols"],
-                "disable": ["incoming_calls"]
+                "disable": ["call_hierarchy"]
             }
         }"#;
         let config_path = temp_dir.path().join(".lsp-mcp.json");
@@ -393,7 +393,7 @@ mod tests {
 
         assert_eq!(config.tools.preset, ToolPreset::Standard);
         assert!(config.tools.enable.contains(&"find_referenced_symbols".to_string()));
-        assert!(config.tools.disable.contains(&"incoming_calls".to_string()));
+        assert!(config.tools.disable.contains(&"call_hierarchy".to_string()));
     }
 
     #[test]
@@ -416,16 +416,15 @@ mod tests {
         let config = LspMcpConfig::default();
         let tools = config.enabled_tools();
 
-        // Standard preset should have 8 tools
-        assert_eq!(tools.len(), 8);
+        // Standard preset should have 7 tools
+        assert_eq!(tools.len(), 7);
         assert!(tools.contains("find_definition"));
         assert!(tools.contains("find_references"));
         assert!(tools.contains("hover"));
         assert!(tools.contains("get_diagnostics"));
         assert!(tools.contains("workspace_symbol"));
         assert!(tools.contains("definitions_in_file"));
-        assert!(tools.contains("incoming_calls"));
-        assert!(tools.contains("outgoing_calls"));
+        assert!(tools.contains("call_hierarchy"));
     }
 
     #[test]
@@ -440,8 +439,8 @@ mod tests {
         };
         let tools = config.enabled_tools();
 
-        // Should have 8 + 1 = 9 tools
-        assert_eq!(tools.len(), 9);
+        // Should have 7 + 1 = 8 tools
+        assert_eq!(tools.len(), 8);
         assert!(tools.contains("find_referenced_symbols"));
     }
 
@@ -451,15 +450,15 @@ mod tests {
             tools: ToolsConfig {
                 preset: ToolPreset::Standard,
                 enable: vec![],
-                disable: vec!["incoming_calls".to_string()],
+                disable: vec!["call_hierarchy".to_string()],
             },
             ..Default::default()
         };
         let tools = config.enabled_tools();
 
-        // Should have 8 - 1 = 7 tools
-        assert_eq!(tools.len(), 7);
-        assert!(!tools.contains("incoming_calls"));
+        // Should have 7 - 1 = 6 tools
+        assert_eq!(tools.len(), 6);
+        assert!(!tools.contains("call_hierarchy"));
     }
 
     #[test]
