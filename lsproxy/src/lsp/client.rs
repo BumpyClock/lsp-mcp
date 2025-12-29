@@ -116,39 +116,47 @@ pub trait LspClient: Send {
 
         tokio::spawn(async move {
             loop {
-                if let Ok(raw_response) = process.receive().await {
-                    if let Ok(message) = json_rpc.parse_message(&raw_response) {
-                        if let Some(id) = message.id {
-                            debug!("Received response for request {}", id);
-                            if let Ok(Some(sender)) = pending_requests.remove_request(id).await {
-                                if sender.send(message.clone()).is_err() {
-                                    error!("Failed to send response for request {}", id);
-                                }
-                            } else {
-                                debug!(
-                                    "Responding to server message {} - Message: {:?}",
-                                    id, message
-                                );
-                                let response = json_rpc.create_success_response(id);
+                match process.receive().await {
+                    Ok(raw_response) => {
+                        if let Ok(message) = json_rpc.parse_message(&raw_response) {
+                            if let Some(id) = message.id {
+                                debug!("Received response for request {}", id);
+                                if let Ok(Some(sender)) = pending_requests.remove_request(id).await {
+                                    if sender.send(message.clone()).is_err() {
+                                        error!("Failed to send response for request {}", id);
+                                    }
+                                } else {
+                                    debug!(
+                                        "Responding to server message {} - Message: {:?}",
+                                        id, message
+                                    );
+                                    let response = json_rpc.create_success_response(id);
 
-                                let message = format!(
-                                    "Content-Length: {}\r\n\r\n{}",
-                                    response.len(),
-                                    response
-                                );
-                                let _ = process.send(&message).await;
-                            }
-                        } else if let Some(params) = message.params.clone() {
-                            let message_key = ExpectedMessageKey {
-                                method: message.method.clone().unwrap(),
-                                params,
-                            };
-                            if let Some(sender) =
-                                pending_requests.remove_notification(message_key).await
-                            {
-                                sender.send(message).unwrap();
+                                    let message = format!(
+                                        "Content-Length: {}\r\n\r\n{}",
+                                        response.len(),
+                                        response
+                                    );
+                                    let _ = process.send(&message).await;
+                                }
+                            } else if let (Some(params), Some(method)) = (message.params.clone(), message.method.clone()) {
+                                let message_key = ExpectedMessageKey {
+                                    method,
+                                    params,
+                                };
+                                if let Some(sender) =
+                                    pending_requests.remove_notification(message_key).await
+                                {
+                                    if sender.send(message).is_err() {
+                                        warn!("Failed to send notification: receiver dropped");
+                                    }
+                                }
                             }
                         }
+                    }
+                    Err(e) => {
+                        error!("LSP process communication failed: {}. Response listener exiting.", e);
+                        break;
                     }
                 }
             }
@@ -212,7 +220,7 @@ pub trait LspClient: Send {
                 .await?;
 
             self.text_document_did_open(TextDocumentItem {
-                uri: Url::from_file_path(file_path).unwrap(),
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
                 language_id: detect_language_string(file_path)?,
                 version: 1,
                 text: document_text,
@@ -226,7 +234,7 @@ pub trait LspClient: Send {
         let params = GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
-                    uri: Url::from_file_path(file_path).unwrap(),
+                    uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
                 },
                 position,
             },
@@ -272,7 +280,7 @@ pub trait LspClient: Send {
                 .await?;
 
             self.text_document_did_open(TextDocumentItem {
-                uri: Url::from_file_path(file_path).unwrap(),
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
                 language_id: detect_language_string(file_path)?,
                 version: 1,
                 text: document_text,

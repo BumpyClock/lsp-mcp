@@ -44,7 +44,7 @@ impl Process for ProcessHandler {
             let mut stdout = self.stdout.lock().await;
             let n = stdout.read_until(b'\n', &mut buffer).await?;
             if n == 0 {
-                continue;
+                return Err("LSP process terminated (EOF)".into());
             }
 
             let line = String::from_utf8_lossy(&buffer[buffer.len() - n..]);
