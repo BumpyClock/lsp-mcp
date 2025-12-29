@@ -18,7 +18,7 @@ use crate::utils::workspace_documents::{
     RUBY_FILE_PATTERNS, RUST_FILE_PATTERNS, TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS,
 };
 use log::{debug, error, info, warn};
-use lsp_types::{GotoDefinitionResponse, Location, Position, Range};
+use lsp_types::{GotoDefinitionResponse, Location, Position, Range, Url};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult, DebouncedEvent};
 use std::collections::{HashMap, HashSet};
@@ -673,6 +673,60 @@ impl Manager {
                 LspManagerError::InternalError(format!("Symbol retrieval failed: {}", e))
             })?;
         Ok(ast_grep_result.into_iter().map(|s| s.into()).collect())
+    }
+
+    /// Get diagnostics from language servers.
+    ///
+    /// If `file_path` is provided (relative to workspace root), returns diagnostics for that file only.
+    /// If None, returns all diagnostics from all language clients.
+    ///
+    /// Returns a HashMap where keys are relative file paths and values are vectors of LSP diagnostics.
+    pub async fn get_diagnostics(
+        &self,
+        file_path: Option<&str>,
+    ) -> Result<HashMap<String, Vec<lsp_types::Diagnostic>>, LspManagerError> {
+        let mut all_diagnostics: HashMap<String, Vec<lsp_types::Diagnostic>> = HashMap::new();
+
+        match file_path {
+            Some(path) => {
+                // Get diagnostics for a specific file
+                let full_path = get_mount_dir().join(path);
+                let full_path_str = full_path
+                    .to_str()
+                    .ok_or_else(|| LspManagerError::InternalError("Invalid file path".to_string()))?;
+
+                let lsp_type = detect_language(full_path_str).map_err(|e| {
+                    LspManagerError::InternalError(format!("Language detection failed: {}", e))
+                })?;
+
+                let client = self.get_client(lsp_type).await.ok_or_else(|| {
+                    LspManagerError::LspClientNotFound(lsp_type)
+                })?;
+
+                let locked_client = client.lock().await;
+                let uri = Url::from_file_path(&full_path)
+                    .map_err(|_| LspManagerError::InternalError("Invalid file path for URI".to_string()))?;
+
+                if let Some(diagnostics) = locked_client.get_diagnostics_store().get(&uri).await {
+                    all_diagnostics.insert(path.to_string(), diagnostics);
+                }
+            }
+            None => {
+                // Get all diagnostics from all language clients
+                let clients = self.lsp_clients.read().await;
+                for client in clients.values() {
+                    let locked_client = client.lock().await;
+                    let client_diagnostics = locked_client.get_diagnostics_store().get_all().await;
+
+                    for (uri, diagnostics) in client_diagnostics {
+                        let relative_path = uri_to_relative_path_string(&uri);
+                        all_diagnostics.insert(relative_path, diagnostics);
+                    }
+                }
+            }
+        }
+
+        Ok(all_diagnostics)
     }
 }
 

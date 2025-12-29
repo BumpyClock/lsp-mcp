@@ -1,9 +1,10 @@
 // ABOUTME: Domain service layer for LSP-backed code navigation operations.
 // ABOUTME: Provides async methods for symbol lookup, references, and file access.
 use crate::api_types::{
-    CodeContext, DefinitionResponse, FilePosition, FileRange, Identifier, IdentifierResponse,
-    LspStatus, Position, Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse,
-    ReferencesResponse, SupportedLanguages, Symbol,
+    CodeContext, DefinitionResponse, Diagnostic, DiagnosticsResponse, FileDiagnostics,
+    FilePosition, FileRange, Identifier, IdentifierResponse, LspStatus, Position, Range,
+    ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse, ReferencesResponse,
+    SupportedLanguages, Symbol,
 };
 use crate::lsp::manager::{LspManagerError, Manager};
 use crate::utils::file_utils::uri_to_relative_path_string;
@@ -397,6 +398,34 @@ impl LspService {
             languages.insert(lang, status);
         }
         languages
+    }
+
+    /// Get diagnostics (errors, warnings, hints) for a file or the entire workspace.
+    ///
+    /// If `file_path` is provided (relative to workspace root), returns diagnostics for that file only.
+    /// If None, returns all diagnostics from all language clients.
+    pub async fn get_diagnostics(
+        &self,
+        file_path: Option<&str>,
+    ) -> Result<DiagnosticsResponse, ServiceError> {
+        let raw_diagnostics = self.manager.get_diagnostics(file_path).await?;
+
+        // Convert to API types and collect into FileDiagnostics
+        let mut files: Vec<FileDiagnostics> = raw_diagnostics
+            .into_iter()
+            .map(|(path, lsp_diagnostics)| FileDiagnostics {
+                path,
+                diagnostics: lsp_diagnostics.into_iter().map(Diagnostic::from).collect(),
+            })
+            .collect();
+
+        // Sort files by path for consistent output
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+
+        // Calculate total count
+        let total_count: usize = files.iter().map(|f| f.diagnostics.len()).sum();
+
+        Ok(DiagnosticsResponse { total_count, files })
     }
 }
 

@@ -214,6 +214,28 @@ impl LspMcpServer {
             Err(e) => ToolOutput::error(format!("Serialization error: {}", e)),
         }
     }
+
+    #[tool(description = "Returns diagnostics (errors, warnings, hints) for a file or the entire workspace. Diagnostics are pushed by language servers and cached. Pass a file path for single file diagnostics, or omit for all workspace diagnostics.")]
+    async fn get_diagnostics(&self, file_path: Option<String>) -> ToolOutput {
+        match self.service.get_diagnostics(file_path.as_deref()).await {
+            Ok(response) => {
+                let summary = if response.total_count == 0 {
+                    "No diagnostics found".to_string()
+                } else {
+                    format!(
+                        "Found {} diagnostics across {} files",
+                        response.total_count,
+                        response.files.len()
+                    )
+                };
+                match serde_json::to_string_pretty(&response) {
+                    Ok(json) => ToolOutput::text(format!("{}\n\n{}", summary, json)),
+                    Err(e) => ToolOutput::error(format!("Serialization error: {}", e)),
+                }
+            }
+            Err(e) => ToolOutput::error(format!("Error: {}", e)),
+        }
+    }
 }
 
 /// Create and run the LSP MCP server over stdio
