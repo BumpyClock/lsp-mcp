@@ -86,6 +86,10 @@ pub struct McpReferencesResponse {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct McpSymbolsResponse {
+    /// Path to the file, relative to workspace root
+    pub path: String,
+    /// File modification time in RFC3339 UTC format
+    pub mtime: String,
     pub symbols: Vec<Symbol>,
     pub limit: u32,
     pub offset: u32,

@@ -208,6 +208,26 @@ pub struct Symbol {
 
     /// The full range of the symbol.
     pub file_range: FileRange,
+
+    /// The signature of the symbol (from LSP hover or source).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+
+    /// Whether the symbol is exported (best-effort heuristic).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exported: Option<bool>,
+
+    /// JSDoc/docstring summary (from LSP hover or source comments).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jsdoc_summary: Option<String>,
+
+    /// List of imports/dependencies used in the symbol body (best-effort).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<Vec<String>>,
+
+    /// Number of lines in the symbol's context range.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_count: Option<u32>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
