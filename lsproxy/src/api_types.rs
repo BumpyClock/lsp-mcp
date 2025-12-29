@@ -434,6 +434,88 @@ pub struct ReadSourceCodeRequest {
     pub range: Option<Range>,
 }
 
+/// Diagnostic severity level
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+    Information,
+    Hint,
+}
+
+impl From<lsp_types::DiagnosticSeverity> for DiagnosticSeverity {
+    fn from(severity: lsp_types::DiagnosticSeverity) -> Self {
+        match severity {
+            lsp_types::DiagnosticSeverity::ERROR => DiagnosticSeverity::Error,
+            lsp_types::DiagnosticSeverity::WARNING => DiagnosticSeverity::Warning,
+            lsp_types::DiagnosticSeverity::INFORMATION => DiagnosticSeverity::Information,
+            lsp_types::DiagnosticSeverity::HINT => DiagnosticSeverity::Hint,
+            _ => DiagnosticSeverity::Error, // Fallback for unknown severity
+        }
+    }
+}
+
+/// A diagnostic message (error, warning, etc.) for a specific location
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct Diagnostic {
+    /// The range where the diagnostic applies
+    pub range: Range,
+    /// The severity of the diagnostic
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub severity: Option<DiagnosticSeverity>,
+    /// The diagnostic's code (e.g., error number)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// The source of the diagnostic (e.g., "typescript", "eslint")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// The diagnostic message
+    pub message: String,
+}
+
+impl From<lsp_types::Diagnostic> for Diagnostic {
+    fn from(diag: lsp_types::Diagnostic) -> Self {
+        Self {
+            range: Range {
+                start: Position {
+                    line: diag.range.start.line,
+                    character: diag.range.start.character,
+                },
+                end: Position {
+                    line: diag.range.end.line,
+                    character: diag.range.end.character,
+                },
+            },
+            severity: diag.severity.map(DiagnosticSeverity::from),
+            code: diag.code.map(|c| match c {
+                lsp_types::NumberOrString::Number(n) => n.to_string(),
+                lsp_types::NumberOrString::String(s) => s,
+            }),
+            source: diag.source,
+            message: diag.message,
+        }
+    }
+}
+
+/// Diagnostics for a single file
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct FileDiagnostics {
+    /// Path to the file, relative to workspace root
+    pub path: String,
+    /// The diagnostics for this file
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Response containing diagnostics for one or more files
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct DiagnosticsResponse {
+    /// Total number of diagnostics across all files
+    pub total_count: usize,
+    /// Diagnostics grouped by file
+    pub files: Vec<FileDiagnostics>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,5 +721,135 @@ mod tests {
             }),
             "position after zero-width range should not be contained"
         );
+    }
+
+    #[test]
+    fn test_diagnostic_severity_from_lsp() {
+        assert_eq!(
+            DiagnosticSeverity::from(lsp_types::DiagnosticSeverity::ERROR),
+            DiagnosticSeverity::Error
+        );
+        assert_eq!(
+            DiagnosticSeverity::from(lsp_types::DiagnosticSeverity::WARNING),
+            DiagnosticSeverity::Warning
+        );
+        assert_eq!(
+            DiagnosticSeverity::from(lsp_types::DiagnosticSeverity::INFORMATION),
+            DiagnosticSeverity::Information
+        );
+        assert_eq!(
+            DiagnosticSeverity::from(lsp_types::DiagnosticSeverity::HINT),
+            DiagnosticSeverity::Hint
+        );
+    }
+
+    #[test]
+    fn test_diagnostic_from_lsp_full() {
+        let lsp_diag = lsp_types::Diagnostic {
+            range: lsp_types::Range {
+                start: lsp_types::Position {
+                    line: 10,
+                    character: 5,
+                },
+                end: lsp_types::Position {
+                    line: 10,
+                    character: 15,
+                },
+            },
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            code: Some(lsp_types::NumberOrString::String("E0001".to_string())),
+            source: Some("rustc".to_string()),
+            message: "mismatched types".to_string(),
+            ..Default::default()
+        };
+
+        let diag = Diagnostic::from(lsp_diag);
+
+        assert_eq!(diag.range.start.line, 10);
+        assert_eq!(diag.range.start.character, 5);
+        assert_eq!(diag.range.end.line, 10);
+        assert_eq!(diag.range.end.character, 15);
+        assert_eq!(diag.severity, Some(DiagnosticSeverity::Error));
+        assert_eq!(diag.code, Some("E0001".to_string()));
+        assert_eq!(diag.source, Some("rustc".to_string()));
+        assert_eq!(diag.message, "mismatched types");
+    }
+
+    #[test]
+    fn test_diagnostic_from_lsp_with_numeric_code() {
+        let lsp_diag = lsp_types::Diagnostic {
+            range: lsp_types::Range::default(),
+            severity: Some(lsp_types::DiagnosticSeverity::WARNING),
+            code: Some(lsp_types::NumberOrString::Number(42)),
+            source: None,
+            message: "test warning".to_string(),
+            ..Default::default()
+        };
+
+        let diag = Diagnostic::from(lsp_diag);
+
+        assert_eq!(diag.code, Some("42".to_string()));
+        assert_eq!(diag.severity, Some(DiagnosticSeverity::Warning));
+    }
+
+    #[test]
+    fn test_diagnostic_from_lsp_minimal() {
+        let lsp_diag = lsp_types::Diagnostic {
+            range: lsp_types::Range::default(),
+            severity: None,
+            code: None,
+            source: None,
+            message: "simple error".to_string(),
+            ..Default::default()
+        };
+
+        let diag = Diagnostic::from(lsp_diag);
+
+        assert_eq!(diag.severity, None);
+        assert_eq!(diag.code, None);
+        assert_eq!(diag.source, None);
+        assert_eq!(diag.message, "simple error");
+    }
+
+    #[test]
+    fn test_diagnostics_response_structure() {
+        let response = DiagnosticsResponse {
+            total_count: 2,
+            files: vec![
+                FileDiagnostics {
+                    path: "src/main.rs".to_string(),
+                    diagnostics: vec![Diagnostic {
+                        range: Range {
+                            start: Position { line: 1, character: 0 },
+                            end: Position { line: 1, character: 10 },
+                        },
+                        severity: Some(DiagnosticSeverity::Error),
+                        code: Some("E0001".to_string()),
+                        source: Some("rustc".to_string()),
+                        message: "error 1".to_string(),
+                    }],
+                },
+                FileDiagnostics {
+                    path: "src/lib.rs".to_string(),
+                    diagnostics: vec![Diagnostic {
+                        range: Range {
+                            start: Position { line: 5, character: 0 },
+                            end: Position { line: 5, character: 20 },
+                        },
+                        severity: Some(DiagnosticSeverity::Warning),
+                        code: None,
+                        source: None,
+                        message: "warning 1".to_string(),
+                    }],
+                },
+            ],
+        };
+
+        assert_eq!(response.total_count, 2);
+        assert_eq!(response.files.len(), 2);
+        assert_eq!(response.files[0].path, "src/main.rs");
+        assert_eq!(response.files[0].diagnostics.len(), 1);
+        assert_eq!(response.files[1].path, "src/lib.rs");
+        assert_eq!(response.files[1].diagnostics.len(), 1);
     }
 }
