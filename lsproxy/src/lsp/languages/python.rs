@@ -43,11 +43,15 @@ impl LspClient for JediClient {
 }
 
 impl JediClient {
+    pub const DEFAULT_BINARY: &'static str = "jedi-language-server";
+
     pub async fn new(
         root_path: &str,
         watch_events_rx: Receiver<DebouncedEvent>,
+        binary: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let process = Command::new("jedi-language-server")
+        let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
+        let process = Command::new(binary)
             .current_dir(root_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

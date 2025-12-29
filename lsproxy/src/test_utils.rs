@@ -54,7 +54,7 @@ impl TestContext {
         set_thread_local_mount_dir(file_path);
         if manager {
             let mut manager = Manager::new(file_path).await?;
-            if let Err(e) = manager.start_langservers(file_path).await {
+            if let Err(e) = manager.start_langservers(file_path, None).await {
                 unset_thread_local_mount_dir();
                 return Err(e);
             }

@@ -67,11 +67,15 @@ impl LspClient for TypeScriptLanguageClient {
 }
 
 impl TypeScriptLanguageClient {
+    pub const DEFAULT_BINARY: &'static str = "typescript-language-server";
+
     pub async fn new(
         root_path: &str,
         watch_events_rx: Receiver<DebouncedEvent>,
+        binary: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let process = Command::new("typescript-language-server")
+        let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
+        let process = Command::new(binary)
             .arg("--stdio")
             .current_dir(root_path)
             .stdin(Stdio::piped())

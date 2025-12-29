@@ -49,12 +49,16 @@ impl LspClient for RubyClient {
     }
 }
 impl RubyClient {
+    pub const DEFAULT_BINARY: &'static str = "ruby-lsp";
+
     pub async fn new(
         root_path: &str,
         watch_events_rx: Receiver<DebouncedEvent>,
+        binary: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
         let debug_file = std::fs::File::create("/tmp/ruby-lsp.log")?;
-        let process = Command::new("ruby-lsp")
+        let process = Command::new(binary)
             .arg("--use-launcher")
             .current_dir(root_path)
             .stdin(Stdio::piped())

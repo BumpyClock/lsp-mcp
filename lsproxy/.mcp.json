@@ -1,0 +1,14 @@
+  {
+    "mcpServers": {
+      "lsp-mcp": {
+        "type": "stdio",
+        "command": "cargo",
+        "args": [
+          "run",
+          "--manifest-path",
+          "/home/bumpyclock/Projects/lsproxy-mcp/lsproxy/Cargo.toml",
+          "--bin",
+          "lsp-mcp"        ]
+      }
+    }
+  }

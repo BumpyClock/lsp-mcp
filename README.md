@@ -1,11 +1,10 @@
 <div align="center">
 <a href="https://agenticlabs.com/"><img src="https://raw.githubusercontent.com/agentic-labs/.github/main/assets/logo.png" alt="Agentic Labs" title="Agentic Labs" align="center" height="150px" /></a>
 
-# lsproxy - Precise code navigation via an API
+# lsproxy - Precise code navigation via MCP
 <p align="center">
   <a href="https://discord.gg/EUFGjSawyk"a><img alt="discord" src="https://img.shields.io/discord/1296271531994775552" /></a>
   <img alt="license" src="https://img.shields.io/github/license/agentic-labs/lsproxy" />
-  <a href="https://pypi.org/project/lsproxy-sdk/" a><img alt="pypi" src="https://img.shields.io/pypi/v/lsproxy-sdk" /></a>
 </p>
 </div>
 
@@ -13,20 +12,18 @@
    
 ## <a name="what-is-lsproxy">What is lsproxy?</a>
 
-`lsproxy` offers IDE-like code analysis and navigation functionality in a docker container with a REST API.
+`lsproxy` offers IDE-like code analysis and navigation through an MCP stdio server.
 
 It supports [multiple languages](#supported-languages) and resolves relationships between code symbols (functions, classes, variables) anywhere in the project - which can be used to help AI assistants navigate a codebase or build custom code RAG systems.
 
 `lsproxy` runs [Language Servers](https://microsoft.github.io/language-server-protocol/) and [ast-grep](https://github.com/ast-grep/ast-grep) under the hood, giving you precise search results without the headache of configuring and integrating language-specific tooling.
-
-For more info, please refer to our [API Reference](https://docs.lsproxy.dev/api-reference).
 
 [![](https://mermaid.ink/img/pako:eNptUtFumzAU_RV0q0qdRKpAgAAPk6buZVInTau0h9ZV5YRrYhVsZJuuLMq_7xraNLQ1D9jnnHt8ru09bHWFUIJo9N_tjhsXXP9miqmAhqfuLhhc0X_DLTL4cu-5ibX9pja825FMOS4VmjsGje2Mfh4Y3E8iP55007ej0Z9xNtm8slRBdddc1T2vMbhB84TGzgx4TQpu3aI22M2ZThL17dePTzYMFouv3v1TnNezBBPWydM95xiq6tj40D5I9SBkg75jaZ2HNrqxgVSBh49pKhSWNEKq6kXjIamkk1odVeajiiA0qLY4ncTpjVCugMFP3SvHYAw59TUpKPCInYScEz7SHDEjMmHn54F1Q4Nvl-obasozzMRKiNA6ox-xPEt4scT4Xc1O01FMcpH6771nI1E5-yYRIoUQWjQtlxU9wr0vYOB26F9JSdOKm0cGTB1Ix3unbwa1hdKZHkPou4o7_C45PcMWSsEbS2jH1a3W7auIllDu4RnKJLtM0yJL82hdJKs4zUIYoIyj5WWeJlGyzKNslefr5BDCv9GAiCKOi6yIlnGeFkmxPvwHnPP5bQ?type=png)](https://mermaid.live/edit#pako:eNptUtFumzAU_RV0q0qdRKpAgAAPk6buZVInTau0h9ZV5YRrYhVsZJuuLMq_7xraNLQ1D9jnnHt8ru09bHWFUIJo9N_tjhsXXP9miqmAhqfuLhhc0X_DLTL4cu-5ibX9pja825FMOS4VmjsGje2Mfh4Y3E8iP55007ej0Z9xNtm8slRBdddc1T2vMbhB84TGzgx4TQpu3aI22M2ZThL17dePTzYMFouv3v1TnNezBBPWydM95xiq6tj40D5I9SBkg75jaZ2HNrqxgVSBh49pKhSWNEKq6kXjIamkk1odVeajiiA0qLY4ncTpjVCugMFP3SvHYAw59TUpKPCInYScEz7SHDEjMmHn54F1Q4Nvl-obasozzMRKiNA6ox-xPEt4scT4Xc1O01FMcpH6771nI1E5-yYRIoUQWjQtlxU9wr0vYOB26F9JSdOKm0cGTB1Ix3unbwa1hdKZHkPou4o7_C45PcMWSsEbS2jH1a3W7auIllDu4RnKJLtM0yJL82hdJKs4zUIYoIyj5WWeJlGyzKNslefr5BDCv9GAiCKOi6yIlnGeFkmxPvwHnPP5bQ)
 
 ## Key Features
 
 - 🎯 **Precise Cross-File Code Navigation**: Find symbol definitions and references across your entire project.
-- 🌐 **Unified API**: Access multiple language servers through a single API.
+- 🌐 **Unified MCP Tools**: Access multiple language servers through a single MCP server.
 - 🛠️ **Auto-Configuration**: Automatically detect and configure language servers based on your project files.
 - 📊 **Code Diagnostics**: (Coming Soon) Get language-specific lint output from an endpoint.
 - 🌳 **Call & Type Hierarchies**: (Coming Soon) Query multi-hop code relationships computed by the language servers.
@@ -35,67 +32,106 @@ For more info, please refer to our [API Reference](https://docs.lsproxy.dev/api-
     
 
 ## <a name="getting-started">Getting started</a>
-The easiest way to get started is to run our tutorial! Check it out at [demo.lsproxy.dev](https://demo.lsproxy.dev)
-It's also super easy to run `lsproxy` on your code! We keep the latest version up to date on Docker Hub, and we have a Python SDK available via `pip.`
-
-### Install the sdk
+Run one MCP server per project root. The server uses the current working directory as the workspace unless overridden.
 
 ```bash
-pip install lsproxy-sdk
-```
-You can find the source for the SDK [here](https://github.com/agentic-labs/lsproxy-python-sdk)
-
-### Run a container or add to compose
-> :warning: Version 0.2.0 and newer: JWT authentication is enabled by default for endpoints. So you MUST provide a secret or turn it off as described below
-#### Authentication enabled
-```bash
-docker run -p 4444:4444 -v $WORKSPACE_PATH:/mnt/workspace -e JWT_SECRET=shared_secret agenticlabs/lsproxy
+cargo run --bin lsp-mcp -- --workspace-root /path/to/project
 ```
 
-```dockerfile
-services:
-  lsproxy:
-    image: agenticlabs/lsproxy
-    ports:
-      - "4444:4444"
-    environment:
-      - JWT_SECRET=shared_secret
-    volumes:
-      - ${WORKSPACE_PATH}:/mnt/workspace
+Configure your MCP client to launch the server with the project root as the working directory. The server communicates over stdio.
+
+### MCP client configuration
+
+Use a stdio MCP client configuration that launches one server per workspace. The key pieces are the `command` and `args`; if your client supports `cwd`, set it to the workspace root.
+
+Dev (run from source):
+```json
+{
+  "mcpServers": {
+    "lsp-mcp": {
+      "command": "cargo",
+      "args": [
+        "run",
+        "--bin",
+        "lsp-mcp",
+        "--",
+        "--workspace-root",
+        "/path/to/project"
+      ],
+      "cwd": "/path/to/project"
+    }
+  }
+}
 ```
 
-#### Authentication disabled
-```bash
-docker run -p 4444:4444 -v $WORKSPACE_PATH:/mnt/workspace -e USE_AUTH=false agenticlabs/lsproxy
+Package (installed binary):
+```json
+{
+  "mcpServers": {
+    "lsp-mcp": {
+      "command": "lsp-mcp",
+      "args": [
+        "--workspace-root",
+        "/path/to/project"
+      ],
+      "cwd": "/path/to/project"
+    }
+  }
+}
 ```
 
-```dockerfile
-services:
-  lsproxy:
-    image: agenticlabs/lsproxy
-    ports:
-      - "4444:4444"
-    environment:
-      - USE_AUTH=false
-    volumes:
-      - ${WORKSPACE_PATH}:/mnt/workspace
+Claude Code (`~/.claude.json`):
+Dev (run from source):
+```json
+{
+  "mcpServers": {
+    "lsp-mcp": {
+      "type": "stdio",
+      "command": "cargo",
+      "args": [
+        "run",
+        "--bin",
+        "lsp-mcp",
+        "--",
+        "--workspace-root",
+        "/path/to/project"
+      ],
+      "cwd": "/path/to/project"
+    }
+  }
+}
 ```
-### Configure an existing system
-You can also configure an existing system to run `lsproxy`. Add the following line in your dockerfile or run it as part of a startup script
-```bash
-curl -sSL https://github.com/agentic-labs/lsproxy/releases/latest/download/install-lsproxy.sh | sh
+
+Package (installed binary):
+```json
+{
+  "mcpServers": {
+    "lsp-mcp": {
+      "type": "stdio",
+      "command": "lsp-mcp",
+      "args": [
+        "--workspace-root",
+        "/path/to/project"
+      ],
+      "cwd": "/path/to/project"
+    }
+  }
+}
 ```
 
-### Explore your workspace!
+Codex CLI (`~/.codex/config.toml`):
+Dev (run from source):
+```toml
+[mcp_servers.lsp-mcp]
+command = "cargo"
+args = ["run", "--bin", "lsp-mcp", "--", "--workspace-root", "/path/to/project"]
+```
 
-```python
-from lsproxy import Lsproxy
-
-client = Lsproxy()
-file_path = "relative/path/from/project/root.cpp"
-symbols = client.definitions_in_file(file_path)
-for symbol in symbols:
-    print(f"{symbol.name} is defined in {file_path}")
+Package (installed binary):
+```toml
+[mcp_servers.lsp-mcp]
+command = "lsp-mcp"
+args = ["--workspace-root", "/path/to/project"]
 ```
 
 ## <a name="contributing">Building products with lsproxy</a>

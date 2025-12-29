@@ -131,13 +131,17 @@ impl LspClient for ClangdClient {
 }
 
 impl ClangdClient {
+    pub const DEFAULT_BINARY: &'static str = "clangd";
+
     pub async fn new(
         root_path: &str,
         watch_events_rx: Receiver<DebouncedEvent>,
+        binary: Option<&str>,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let debug_file = std::fs::File::create("/tmp/clangd.log")?;
+        let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
 
-        let process = Command::new("clangd")
+        let process = Command::new(binary)
             .arg("--log=info")
             .current_dir(root_path)
             .stdin(Stdio::piped())

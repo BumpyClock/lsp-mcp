@@ -1,4 +1,6 @@
 use crate::api_types::{get_mount_dir, Identifier, SupportedLanguages, Symbol};
+use crate::config::LspMcpConfig;
+use std::str::FromStr;
 use crate::ast_grep::client::AstGrepClient;
 use crate::ast_grep::types::AstGrepMatch;
 use crate::lsp::client::LspClient;
@@ -15,21 +17,27 @@ use crate::utils::workspace_documents::{
     GOLANG_FILE_PATTERNS, JAVA_FILE_PATTERNS, PHP_FILE_PATTERNS, PYTHON_FILE_PATTERNS,
     RUBY_FILE_PATTERNS, RUST_FILE_PATTERNS, TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS,
 };
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use lsp_types::{GotoDefinitionResponse, Location, Position, Range};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult, DebouncedEvent};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::{channel, Sender};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
+/// Manages language server clients for a workspace
+///
+/// Supports both synchronous and asynchronous initialization of language servers.
+/// When using async initialization, language servers start in the background and
+/// become available as they complete initialization.
 pub struct Manager {
-    lsp_clients: HashMap<SupportedLanguages, Arc<Mutex<Box<dyn LspClient>>>>,
+    lsp_clients: Arc<RwLock<HashMap<SupportedLanguages, Arc<Mutex<Box<dyn LspClient>>>>>>,
+    pending_clients: Arc<Mutex<HashSet<SupportedLanguages>>>,
     watch_events_sender: Sender<DebouncedEvent>,
     ast_grep: AstGrepClient,
 }
@@ -59,10 +67,21 @@ impl Manager {
 
         let ast_grep = AstGrepClient {};
         Ok(Self {
-            lsp_clients: HashMap::new(),
+            lsp_clients: Arc::new(RwLock::new(HashMap::new())),
+            pending_clients: Arc::new(Mutex::new(HashSet::new())),
             watch_events_sender: event_sender,
             ast_grep,
         })
+    }
+
+    /// Returns languages currently being initialized
+    pub async fn pending_languages(&self) -> Vec<SupportedLanguages> {
+        self.pending_clients.lock().await.iter().copied().collect()
+    }
+
+    /// Checks if a specific language is still initializing
+    pub async fn is_language_pending(&self, lang: SupportedLanguages) -> bool {
+        self.pending_clients.lock().await.contains(&lang)
     }
 
     /// Detects the languages in the workspace by searching for files that match the language server's file patterns, before LSPs are started.
@@ -136,75 +155,235 @@ impl Manager {
     pub async fn start_langservers(
         &mut self,
         workspace_path: &str,
+        config: Option<&LspMcpConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let lsps = self.detect_languages_in_workspace(workspace_path);
+        let lsps = match config {
+            Some(cfg) => {
+                cfg.languages
+                    .iter()
+                    .filter_map(|s| SupportedLanguages::from_str(s).ok())
+                    .collect()
+            }
+            None => self.detect_languages_in_workspace(workspace_path),
+        };
+
+        let mut started_count = 0;
         for lsp in lsps {
-            if self.get_client(lsp).is_some() {
+            if self.get_client(lsp).await.is_some() {
                 continue;
             }
+
+            let binary = config
+                .and_then(|c| c.get_binary(&lsp.to_string().to_lowercase()))
+                .map(|s| s.as_str());
+
             debug!("Starting {:?} LSP", lsp);
-            let mut client: Box<dyn LspClient> = match lsp {
-                SupportedLanguages::Python => Box::new(
-                    JediClient::new(workspace_path, self.watch_events_sender.subscribe())
+            let client_result: Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>> = match lsp {
+                SupportedLanguages::Python => {
+                    JediClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
                         .await
-                        .map_err(|e| e.to_string())?,
-                ),
-                SupportedLanguages::TypeScriptJavaScript => Box::new(
+                        .map(|c| Box::new(c) as Box<dyn LspClient>)
+                }
+                SupportedLanguages::TypeScriptJavaScript => {
                     TypeScriptLanguageClient::new(
                         workspace_path,
                         self.watch_events_sender.subscribe(),
+                        binary,
                     )
                     .await
-                    .map_err(|e| e.to_string())?,
-                ),
-                SupportedLanguages::Rust => Box::new(
-                    RustAnalyzerClient::new(workspace_path, self.watch_events_sender.subscribe())
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+                }
+                SupportedLanguages::Rust => {
+                    RustAnalyzerClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
                         .await
-                        .map_err(|e| e.to_string())?,
-                ),
-                SupportedLanguages::CPP => Box::new(
-                    ClangdClient::new(workspace_path, self.watch_events_sender.subscribe())
+                        .map(|c| Box::new(c) as Box<dyn LspClient>)
+                }
+                SupportedLanguages::CPP => {
+                    ClangdClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
                         .await
-                        .map_err(|e| e.to_string())?,
-                ),
-                SupportedLanguages::CSharp => Box::new(
-                    CSharpClient::new(workspace_path, self.watch_events_sender.subscribe())
+                        .map(|c| Box::new(c) as Box<dyn LspClient>)
+                }
+                SupportedLanguages::CSharp => {
+                    CSharpClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
                         .await
-                        .map_err(|e| e.to_string())?,
-                ),
-                SupportedLanguages::Java => Box::new(
-                    JdtlsClient::new(workspace_path, self.watch_events_sender.subscribe())
+                        .map(|c| Box::new(c) as Box<dyn LspClient>)
+                }
+                SupportedLanguages::Java => {
+                    JdtlsClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
                         .await
-                        .map_err(|e| e.to_string())?,
-                ),
-                SupportedLanguages::Golang => Box::new(
-                    GoplsClient::new(workspace_path, self.watch_events_sender.subscribe())
+                        .map(|c| Box::new(c) as Box<dyn LspClient>)
+                }
+                SupportedLanguages::Golang => {
+                    GoplsClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
                         .await
-                        .map_err(|e| e.to_string())?,
-                ),
-                SupportedLanguages::PHP => Box::new(
-                    PhpactorClient::new(workspace_path, self.watch_events_sender.subscribe())
+                        .map(|c| Box::new(c) as Box<dyn LspClient>)
+                }
+                SupportedLanguages::PHP => {
+                    PhpactorClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
                         .await
-                        .map_err(|e| e.to_string())?,
-                ),
-                SupportedLanguages::Ruby => Box::new(
-                    RubyClient::new(workspace_path, self.watch_events_sender.subscribe())
+                        .map(|c| Box::new(c) as Box<dyn LspClient>)
+                }
+                SupportedLanguages::Ruby => {
+                    RubyClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
                         .await
-                        .map_err(|e| e.to_string())?,
-                ),
+                        .map(|c| Box::new(c) as Box<dyn LspClient>)
+                }
             };
-            client
-                .initialize(workspace_path.to_string())
-                .await
-                .map_err(|e| e.to_string())?;
-            debug!("Setting up workspace");
-            client
-                .setup_workspace(workspace_path)
-                .await
-                .map_err(|e| e.to_string())?;
-            self.lsp_clients.insert(lsp, Arc::new(Mutex::new(client)));
+
+            match client_result {
+                Ok(mut client) => {
+                    match client.initialize(workspace_path.to_string()).await {
+                        Ok(_) => {
+                            debug!("Setting up workspace for {:?}", lsp);
+                            if let Err(e) = client.setup_workspace(workspace_path).await {
+                                warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
+                                continue;
+                            }
+                            self.lsp_clients.write().await.insert(lsp, Arc::new(Mutex::new(client)));
+                            started_count += 1;
+                        }
+                        Err(e) => {
+                            warn!("Failed to initialize {:?} language server: {}. Skipping", lsp, e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to start {:?} language server: {}. Skipping", lsp, e);
+                }
+            }
+        }
+
+        if started_count == 0 && config.map_or(false, |c| !c.languages.is_empty()) {
+            return Err("No language servers could be started from config".into());
         }
         Ok(())
+    }
+
+    /// Starts language servers asynchronously in the background
+    ///
+    /// Unlike `start_langservers`, this method returns immediately after spawning
+    /// background tasks for each language server. Language servers become available
+    /// as they complete initialization. Check `pending_languages()` or `is_language_pending()`
+    /// to determine initialization status.
+    pub async fn start_langservers_async(
+        &self,
+        workspace_path: &str,
+        config: Option<LspMcpConfig>,
+    ) {
+        let lsps: Vec<SupportedLanguages> = match &config {
+            Some(cfg) => {
+                cfg.languages
+                    .iter()
+                    .filter_map(|s| SupportedLanguages::from_str(s).ok())
+                    .collect()
+            }
+            None => self.detect_languages_in_workspace(workspace_path),
+        };
+
+        for lsp in lsps {
+            if self.get_client(lsp).await.is_some() {
+                continue;
+            }
+
+            self.pending_clients.lock().await.insert(lsp);
+
+            let binary = config
+                .as_ref()
+                .and_then(|c| c.get_binary(&lsp.to_string().to_lowercase()))
+                .cloned();
+
+            let lsp_clients = self.lsp_clients.clone();
+            let pending_clients = self.pending_clients.clone();
+            let events_rx = self.watch_events_sender.subscribe();
+            let ws_path = workspace_path.to_string();
+
+            tokio::spawn(async move {
+                debug!("Starting {:?} LSP in background", lsp);
+                let binary_ref = binary.as_deref();
+                let client_result = Self::create_lsp_client(lsp, &ws_path, events_rx, binary_ref).await;
+
+                match client_result {
+                    Ok(mut client) => {
+                        match client.initialize(ws_path.clone()).await {
+                            Ok(_) => {
+                                debug!("Setting up workspace for {:?}", lsp);
+                                if let Err(e) = client.setup_workspace(&ws_path).await {
+                                    warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
+                                    pending_clients.lock().await.remove(&lsp);
+                                    return;
+                                }
+                                lsp_clients.write().await.insert(lsp, Arc::new(Mutex::new(client)));
+                                pending_clients.lock().await.remove(&lsp);
+                                info!("{:?} language server is now ready", lsp);
+                            }
+                            Err(e) => {
+                                warn!("Failed to initialize {:?} language server: {}. Skipping", lsp, e);
+                                pending_clients.lock().await.remove(&lsp);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to start {:?} language server: {}. Skipping", lsp, e);
+                        pending_clients.lock().await.remove(&lsp);
+                    }
+                }
+            });
+        }
+    }
+
+    async fn create_lsp_client(
+        lsp: SupportedLanguages,
+        workspace_path: &str,
+        events_rx: tokio::sync::broadcast::Receiver<DebouncedEvent>,
+        binary: Option<&str>,
+    ) -> Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>> {
+        match lsp {
+            SupportedLanguages::Python => {
+                JediClient::new(workspace_path, events_rx, binary)
+                    .await
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+            }
+            SupportedLanguages::TypeScriptJavaScript => {
+                TypeScriptLanguageClient::new(workspace_path, events_rx, binary)
+                    .await
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+            }
+            SupportedLanguages::Rust => {
+                RustAnalyzerClient::new(workspace_path, events_rx, binary)
+                    .await
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+            }
+            SupportedLanguages::CPP => {
+                ClangdClient::new(workspace_path, events_rx, binary)
+                    .await
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+            }
+            SupportedLanguages::CSharp => {
+                CSharpClient::new(workspace_path, events_rx, binary)
+                    .await
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+            }
+            SupportedLanguages::Java => {
+                JdtlsClient::new(workspace_path, events_rx, binary)
+                    .await
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+            }
+            SupportedLanguages::Golang => {
+                GoplsClient::new(workspace_path, events_rx, binary)
+                    .await
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+            }
+            SupportedLanguages::PHP => {
+                PhpactorClient::new(workspace_path, events_rx, binary)
+                    .await
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+            }
+            SupportedLanguages::Ruby => {
+                RubyClient::new(workspace_path, events_rx, binary)
+                    .await
+                    .map(|c| Box::new(c) as Box<dyn LspClient>)
+            }
+        }
     }
 
     pub async fn definitions_in_file_ast_grep(
@@ -260,6 +439,7 @@ impl Manager {
 
         let client = self
             .get_client(lsp_type)
+            .await
             .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
         let mut locked_client = client.lock().await;
         let mut definition = locked_client
@@ -301,11 +481,23 @@ impl Manager {
         Ok(definition)
     }
 
-    pub fn get_client(
+    pub async fn get_client(
         &self,
         lsp_type: SupportedLanguages,
     ) -> Option<Arc<Mutex<Box<dyn LspClient>>>> {
-        self.lsp_clients.get(&lsp_type).cloned()
+        self.lsp_clients.read().await.get(&lsp_type).cloned()
+    }
+
+    /// Returns an error appropriate for when a client is not available
+    ///
+    /// Returns `LspClientInitializing` if the language is still being initialized,
+    /// or `LspClientNotFound` if initialization failed or wasn't attempted.
+    pub async fn client_unavailable_error(&self, lang: SupportedLanguages) -> LspManagerError {
+        if self.is_language_pending(lang).await {
+            LspManagerError::LspClientInitializing(lang)
+        } else {
+            LspManagerError::LspClientNotFound(lang)
+        }
     }
 
     pub async fn find_references(
@@ -328,6 +520,7 @@ impl Manager {
         })?;
         let client = self
             .get_client(lsp_type)
+            .await
             .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
         let mut locked_client = client.lock().await;
 
@@ -386,6 +579,7 @@ impl Manager {
 
         let client = self
             .get_client(lsp_type)
+            .await
             .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
         let mut locked_client = client.lock().await;
         let mut definitions = Vec::new();
@@ -422,7 +616,8 @@ impl Manager {
 
     pub async fn list_files(&self) -> Result<Vec<String>, LspManagerError> {
         let mut files = Vec::new();
-        for client in self.lsp_clients.values() {
+        let clients = self.lsp_clients.read().await;
+        for client in clients.values() {
             let mut locked_client = client.lock().await;
             files.extend(
                 locked_client
@@ -443,8 +638,9 @@ impl Manager {
         file_path: &str,
         range: Option<Range>,
     ) -> Result<String, LspManagerError> {
-        let client = self.get_client(detect_language(file_path)?).ok_or(
-            LspManagerError::LspClientNotFound(detect_language(file_path)?),
+        let lang = detect_language(file_path)?;
+        let client = self.get_client(lang).await.ok_or(
+            LspManagerError::LspClientNotFound(lang),
         )?;
         let full_path = get_mount_dir().join(file_path);
         let mut locked_client = client.lock().await;
@@ -484,6 +680,7 @@ impl Manager {
 pub enum LspManagerError {
     FileNotFound(String),
     LspClientNotFound(SupportedLanguages),
+    LspClientInitializing(SupportedLanguages),
     InternalError(String),
     UnsupportedFileType(String),
     NotImplemented(String),
@@ -497,6 +694,9 @@ impl fmt::Display for LspManagerError {
             }
             LspManagerError::LspClientNotFound(lang) => {
                 write!(f, "LSP client not found for {:?}", lang)
+            }
+            LspManagerError::LspClientInitializing(lang) => {
+                write!(f, "The {:?} language server is still initializing, please try again shortly", lang)
             }
             LspManagerError::InternalError(msg) => write!(f, "Internal error: {}", msg),
             LspManagerError::UnsupportedFileType(path) => {

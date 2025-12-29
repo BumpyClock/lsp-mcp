@@ -56,10 +56,14 @@ impl LspClient for PhpactorClient {
 }
 
 impl PhpactorClient {
+    pub const DEFAULT_BINARY: &'static str = "phpactor";
+
     pub async fn new(
         root_path: &str,
         watch_events_rx: Receiver<DebouncedEvent>,
+        binary: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
         // Create a Phpactor configuration file
         let config_path = Path::new(root_path).join(".phpactor.json");
         let config_content = serde_json::json!({
@@ -97,7 +101,7 @@ impl PhpactorClient {
             }
         }
 
-        let process = Command::new("phpactor")
+        let process = Command::new(binary)
             .arg("language-server")
             .current_dir(root_path)
             .stdin(Stdio::piped())

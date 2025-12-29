@@ -51,6 +51,18 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
+/// Status of a language server
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum LspStatus {
+    /// Language server is available and ready
+    Ready,
+    /// Language server is starting up in the background
+    Initializing,
+    /// Language server is not available (not installed or failed to start)
+    Unavailable,
+}
+
 /// Response returned by the health check endpoint
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
@@ -58,8 +70,8 @@ pub struct HealthResponse {
     pub status: String,
     /// Version of the service
     pub version: String,
-    /// Map of supported languages and whether they are currently available
-    pub languages: HashMap<SupportedLanguages, bool>,
+    /// Map of supported languages and their availability status
+    pub languages: HashMap<SupportedLanguages, LspStatus>,
 }
 
 #[derive(
@@ -71,6 +83,7 @@ pub enum SupportedLanguages {
     Python,
     /// TypeScript and JavaScript are handled by the same langserver
     #[serde(rename = "typescript_javascript")]
+    #[strum(serialize = "typescript", serialize = "javascript", serialize = "typescriptjavascript")]
     TypeScriptJavaScript,
     #[serde(rename = "rust")]
     Rust,

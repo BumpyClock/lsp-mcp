@@ -49,11 +49,15 @@ impl LspClient for GoplsClient {
     }
 }
 impl GoplsClient {
+    pub const DEFAULT_BINARY: &'static str = "gopls";
+
     pub async fn new(
         root_path: &str,
         watch_events_rx: Receiver<DebouncedEvent>,
+        binary: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let process = Command::new("gopls")
+        let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
+        let process = Command::new(binary)
             .arg("-mode=stdio")
             .arg("-vv")
             .arg("-logfile=/tmp/gopls.log")

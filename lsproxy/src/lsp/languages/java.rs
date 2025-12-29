@@ -77,10 +77,14 @@ impl LspClient for JdtlsClient {
 }
 
 impl JdtlsClient {
+    pub const DEFAULT_BINARY: &'static str = "java";
+
     pub async fn new(
         root_path: &str,
         watch_events_rx: Receiver<DebouncedEvent>,
+        binary: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
         let workspace_dir = Path::new("/usr/src/app/jdtls_workspace");
         tokio::fs::create_dir_all(&workspace_dir).await?;
         tokio::fs::set_permissions(&workspace_dir, PermissionsExt::from_mode(0o777)).await?;
@@ -104,7 +108,7 @@ impl JdtlsClient {
 
         debug!("Using launcher jar: {:?}", launcher_path);
 
-        let process = Command::new("java")
+        let process = Command::new(binary)
             .arg("-Declipse.application=org.eclipse.jdt.ls.core.id1")
             .arg("-Dosgi.bundles.defaultStartLevel=4")
             .arg("-Declipse.product=org.eclipse.jdt.ls.core.product")
