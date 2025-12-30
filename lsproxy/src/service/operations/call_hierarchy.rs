@@ -6,7 +6,7 @@ use crate::api_types::{
     IncomingCallInfo, IncomingCallsResponse, OutgoingCallInfo, OutgoingCallsResponse, Position,
     PrepareCallHierarchyResponse, Range,
 };
-use crate::lsp::manager::{LspManagerError, Manager};
+use crate::lsp::manager::Manager;
 use crate::utils::file_utils::uri_to_relative_path_string;
 use lsp_types::Position as LspPosition;
 use std::sync::Arc;
@@ -67,13 +67,15 @@ pub(crate) async fn incoming_calls_impl(
         )
         .await?;
 
-    let item = items
-        .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
-        .ok_or_else(|| {
-            ServiceError::Lsp(LspManagerError::InternalError(
-                "No call hierarchy item at position".to_string(),
-            ))
-        })?;
+    let item = match items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) }) {
+        Some(item) => item,
+        None => {
+            return Ok(IncomingCallsResponse {
+                raw_response: None,
+                calls: vec![],
+            })
+        }
+    };
 
     let calls = manager.incoming_calls(file_path, &item).await?;
 
@@ -134,13 +136,15 @@ pub(crate) async fn outgoing_calls_impl(
         )
         .await?;
 
-    let item = items
-        .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
-        .ok_or_else(|| {
-            ServiceError::Lsp(LspManagerError::InternalError(
-                "No call hierarchy item at position".to_string(),
-            ))
-        })?;
+    let item = match items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) }) {
+        Some(item) => item,
+        None => {
+            return Ok(OutgoingCallsResponse {
+                raw_response: None,
+                calls: vec![],
+            })
+        }
+    };
 
     let calls = manager.outgoing_calls(file_path, &item).await?;
 
@@ -204,13 +208,16 @@ pub(crate) async fn call_hierarchy_impl(
         )
         .await?;
 
-    let item = items
-        .and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) })
-        .ok_or_else(|| {
-            ServiceError::Lsp(LspManagerError::InternalError(
-                "No call hierarchy item at position".to_string(),
-            ))
-        })?;
+    let item = match items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) }) {
+        Some(item) => item,
+        None => {
+            return Ok(CallHierarchyResponse {
+                direction,
+                raw_response: None,
+                calls: vec![],
+            })
+        }
+    };
 
     let workspace_files = manager.list_files().await?;
 
