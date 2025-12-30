@@ -3,10 +3,9 @@
 
 use crate::api_types::{CallHierarchyDirection, Position};
 use crate::config::OutputMode;
-use crate::mcp_response::{format_error, success_response};
-use crate::service::{LspService, ServiceError};
+use crate::mcp_response::{format_error, format_response};
+use crate::service::LspService;
 use mcpkit::prelude::*;
-use std::collections::HashMap;
 
 pub async fn call_hierarchy(
     service: &LspService,
@@ -29,16 +28,7 @@ pub async fn call_hierarchy(
     let pos = Position { line, character };
     match service.call_hierarchy(&path, pos, dir).await {
         Ok(response) => {
-            let data = match serde_json::to_value(&response) {
-                Ok(v) => v,
-                Err(e) => {
-                    let err = ServiceError::Serialization(e.to_string());
-                    return ToolOutput::error(format_error(&err));
-                }
-            };
-            let mut counts = HashMap::new();
-            counts.insert("calls".to_string(), response.calls.len());
-            let resp = success_response("call_hierarchy", data, output_mode, Some(counts));
+            let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => ToolOutput::error(format_error(&e)),
@@ -58,16 +48,7 @@ pub async fn go_to_implementation(
         .await
     {
         Ok(response) => {
-            let data = match serde_json::to_value(&response) {
-                Ok(v) => v,
-                Err(e) => {
-                    let err = ServiceError::Serialization(e.to_string());
-                    return ToolOutput::error(format_error(&err));
-                }
-            };
-            let mut counts = HashMap::new();
-            counts.insert("implementations".to_string(), response.implementations.len());
-            let resp = success_response("go_to_implementation", data, output_mode, Some(counts));
+            let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => ToolOutput::error(format_error(&e)),
