@@ -98,7 +98,7 @@ fn convert_document_symbol(doc_sym: &DocumentSymbol, file_path: &str, is_top_lev
                 },
             },
         },
-        signature: None,
+        signature: doc_sym.detail.clone(),
         exported: None,
         jsdoc_summary: None,
         dependencies: None,

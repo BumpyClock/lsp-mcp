@@ -62,9 +62,12 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
 
     let lines: Vec<&str> = text.lines().collect();
     let mut candidate_signatures: Vec<String> = Vec::new();
+    let mut example_signatures: Vec<String> = Vec::new();
     let mut docs = Vec::new();
     let mut in_code_block = false;
     let mut code_lines = Vec::new();
+    let mut pending_example_block = false;
+    let mut current_block_is_example = false;
 
     for line in lines {
         if line.starts_with("```") {
@@ -74,17 +77,27 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
                     // rust-analyzer returns module name first, then signature
                     // Collect all blocks that look like signatures
                     if is_likely_signature(&block_content) {
-                        candidate_signatures.push(block_content);
+                        if current_block_is_example {
+                            example_signatures.push(block_content);
+                        } else {
+                            candidate_signatures.push(block_content);
+                        }
                     }
                     code_lines.clear();
                 }
                 in_code_block = false;
+                current_block_is_example = false;
             } else {
                 in_code_block = true;
+                current_block_is_example = pending_example_block;
+                pending_example_block = false;
             }
         } else if in_code_block {
             code_lines.push(line);
         } else if !line.is_empty() && line != "---" {
+            if is_example_tag_line(line) {
+                pending_example_block = true;
+            }
             docs.push(line);
         }
     }
@@ -92,14 +105,18 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
     // Select the best signature from candidates:
     // 1. Prefer longer signatures (more complete type info)
     // 2. Among equal lengths, prefer those with more type information (contains ':' or '->')
+    let select_signature = |candidates: Vec<String>| {
+        candidates.into_iter().max_by(|a, b| {
+            let score_a = a.len() + if a.contains(':') || a.contains("->") { 50 } else { 0 };
+            let score_b = b.len() + if b.contains(':') || b.contains("->") { 50 } else { 0 };
+            score_a.cmp(&score_b)
+        })
+    };
+
     let signature = if !candidate_signatures.is_empty() {
-        candidate_signatures.into_iter()
-            .max_by(|a, b| {
-                // Score based on completeness: length + bonus for type info
-                let score_a = a.len() + if a.contains(':') || a.contains("->") { 50 } else { 0 };
-                let score_b = b.len() + if b.contains(':') || b.contains("->") { 50 } else { 0 };
-                score_a.cmp(&score_b)
-            })
+        select_signature(candidate_signatures)
+    } else if !example_signatures.is_empty() {
+        select_signature(example_signatures)
     } else {
         None
     };
@@ -126,12 +143,36 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
     (signature, jsdoc)
 }
 
+/// Checks if a code block is a variable assignment with a value (usage example).
+/// These typically come from @example JSDoc blocks and should not be signatures.
+///
+/// Matches: `const x = value`, `let y: Type = value`, `var z = value`
+/// Does NOT match: `const x: Type` (no value, just type annotation)
+fn is_variable_assignment(block: &str) -> bool {
+    let trimmed = block.trim();
+
+    let is_var_decl = trimmed.starts_with("const ")
+        || trimmed.starts_with("let ")
+        || trimmed.starts_with("var ");
+
+    if !is_var_decl {
+        return false;
+    }
+
+    trimmed.contains('=')
+}
+
 /// Checks if a code block looks like an actual signature vs just a module name
 fn is_likely_signature(block: &str) -> bool {
     let trimmed = block.trim();
 
     // Empty blocks are not signatures
     if trimmed.is_empty() {
+        return false;
+    }
+
+    // Variable assignments are usage examples, not signatures
+    if is_variable_assignment(trimmed) {
         return false;
     }
 
@@ -211,6 +252,13 @@ fn is_likely_signature(block: &str) -> bool {
         trimmed.contains('[');
 
     has_keyword_prefix || has_signature_content
+}
+
+fn is_example_tag_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    let trimmed = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")).unwrap_or(trimmed);
+    let lower = trimmed.to_ascii_lowercase();
+    lower.starts_with("@example") || lower.starts_with("example")
 }
 
 /// Checks if a line looks like a code signature
@@ -653,6 +701,43 @@ mod tests {
     }
 
     #[test]
+    fn test_is_variable_assignment() {
+        assert!(
+            is_variable_assignment("const x = 5"),
+            "const with value is assignment"
+        );
+        assert!(
+            is_variable_assignment("const options: SearchOptions = { query: \"test\" }"),
+            "const with type and value is assignment"
+        );
+        assert!(
+            is_variable_assignment("let result = calculate()"),
+            "let with value is assignment"
+        );
+        assert!(
+            is_variable_assignment("var config: Config = {}"),
+            "var with type and value is assignment"
+        );
+
+        assert!(
+            !is_variable_assignment("const FOO: number"),
+            "const with type only is not assignment"
+        );
+        assert!(
+            !is_variable_assignment("type Foo = string"),
+            "type alias is not variable assignment"
+        );
+        assert!(
+            !is_variable_assignment("interface SearchOptions"),
+            "interface is not variable assignment"
+        );
+        assert!(
+            !is_variable_assignment("function calculate(): number"),
+            "function is not variable assignment"
+        );
+    }
+
+    #[test]
     fn test_is_likely_signature() {
         assert!(is_likely_signature("pub fn example() -> String"));
         assert!(is_likely_signature("fn example()"));
@@ -663,6 +748,27 @@ mod tests {
         assert!(!is_likely_signature("lsproxy"));
         assert!(!is_likely_signature("some_module"));
         assert!(!is_likely_signature("MyType"));
+    }
+
+    #[test]
+    fn test_is_likely_signature_rejects_variable_assignments() {
+        assert!(
+            !is_likely_signature("const x = 5"),
+            "const assignment should be rejected"
+        );
+        assert!(
+            !is_likely_signature("let result = calculate()"),
+            "let assignment should be rejected"
+        );
+        assert!(
+            !is_likely_signature("var config: Config = {}"),
+            "var assignment should be rejected"
+        );
+
+        assert!(
+            is_likely_signature("const FOO: number"),
+            "const with type annotation only should be valid"
+        );
     }
 
     #[test]
@@ -737,5 +843,87 @@ mod tests {
         assert!(sig.is_some(), "Should extract signature");
         let sig = sig.unwrap();
         assert!(sig.contains("->"), "Should prefer signature with return type. Got: {}", sig);
+    }
+
+    #[test]
+    fn test_extract_signature_ignores_example_block() {
+        use lsp_types::{HoverContents, MarkupContent, MarkupKind};
+
+        let hover = HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: "```typescript\nexport interface NavItem {\n  id?: string;\n}\n```\n\nNavigation item interface.\n\n@example\n```typescript\n// RECOMMENDED: Provide stable IDs for reliable persistence\nconst navItem: NavItem = {\n  id: \"dashboard-overview\",\n  label: \"Dashboard\",\n  path: \"/dashboard\",\n};\n```\n"
+                .to_string(),
+        });
+
+        let (sig, _) = extract_signature_and_docs(&hover);
+
+        assert!(sig.is_some(), "Should extract signature");
+        let sig = sig.unwrap();
+        assert!(
+            sig.contains("interface NavItem"),
+            "Should prefer definition signature. Got: {}",
+            sig
+        );
+        assert!(
+            !sig.contains("const navItem"),
+            "Should not return @example block. Got: {}",
+            sig
+        );
+    }
+
+    #[test]
+    fn test_extract_signature_array_prefers_display_string() {
+        use lsp_types::{HoverContents, LanguageString, MarkedString};
+
+        let hover = HoverContents::Array(vec![
+            MarkedString::LanguageString(LanguageString {
+                language: "typescript".to_string(),
+                value: "interface NavSection".to_string(),
+            }),
+            MarkedString::String(
+                "Navigation section containing grouped navigation items.".to_string(),
+            ),
+            MarkedString::LanguageString(LanguageString {
+                language: "typescript".to_string(),
+                value: "const section: NavSection = { id: \"user-management\", title: \"User Management\", items: [] };"
+                    .to_string(),
+            }),
+        ]);
+
+        let (sig, _) = extract_signature_and_docs(&hover);
+
+        assert!(sig.is_some(), "Should extract signature");
+        let sig = sig.unwrap();
+        assert!(
+            sig.contains("interface NavSection"),
+            "Should prefer displayString. Got: {}",
+            sig
+        );
+    }
+
+    #[test]
+    fn test_extract_signature_markup_prefers_definition_over_example_block() {
+        use lsp_types::{HoverContents, MarkupContent, MarkupKind};
+
+        let hover = HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: "```typescript\ninterface NavSection {\n  id?: string;\n  title?: string;\n  items: NavItem[];\n}\n```\n\nNavigation section containing grouped navigation items.\n\n```typescript\nconst section: NavSection = {\n  id: 'user-management',\n  title: 'User Management',\n  items: [...]\n};\n```\n"
+                .to_string(),
+        });
+
+        let (sig, _) = extract_signature_and_docs(&hover);
+
+        assert!(sig.is_some(), "Should extract signature");
+        let sig = sig.unwrap();
+        assert!(
+            sig.contains("interface NavSection"),
+            "Should prefer definition signature. Got: {}",
+            sig
+        );
+        assert!(
+            !sig.contains("const section"),
+            "Should not return example block. Got: {}",
+            sig
+        );
     }
 }
