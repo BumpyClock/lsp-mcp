@@ -746,7 +746,7 @@ mod tests {
                 thread::spawn(move || Some(reference_item_from_location(&location, Some(snippet))));
             handle.join().ok().flatten()
         });
-        assert_eq!(response.path, expected_path, "negative: path mismatch");
+        assert_eq!(response.path, Some(expected_path), "negative: path mismatch");
         assert_eq!(
             response.position.line, start_line + 1,
             "negative: line mismatch"
@@ -846,7 +846,7 @@ fn internal_helper() {
     fn test_group_references_by_file() {
         let refs = vec![
             McpReferenceLocation {
-                path: "src/main.rs".to_string(),
+                path: Some("src/main.rs".to_string()),
                 position: Position { line: 1, character: 5 },
                 symbol_range: Range {
                     start: Position { line: 1, character: 5 },
@@ -855,7 +855,7 @@ fn internal_helper() {
                 snippet: None,
             },
             McpReferenceLocation {
-                path: "src/lib.rs".to_string(),
+                path: Some("src/lib.rs".to_string()),
                 position: Position { line: 2, character: 10 },
                 symbol_range: Range {
                     start: Position { line: 2, character: 10 },
@@ -864,7 +864,7 @@ fn internal_helper() {
                 snippet: None,
             },
             McpReferenceLocation {
-                path: "src/main.rs".to_string(),
+                path: Some("src/main.rs".to_string()),
                 position: Position { line: 5, character: 3 },
                 symbol_range: Range {
                     start: Position { line: 5, character: 3 },
@@ -880,9 +880,14 @@ fn internal_helper() {
         assert_eq!(groups[0].path, "src/lib.rs");
         assert_eq!(groups[0].count, 1);
         assert_eq!(groups[0].refs.len(), 1);
+        // Verify paths are cleared after grouping
+        assert!(groups[0].refs[0].path.is_none());
         assert_eq!(groups[1].path, "src/main.rs");
         assert_eq!(groups[1].count, 2);
         assert_eq!(groups[1].refs.len(), 2);
+        // Verify paths are cleared after grouping
+        assert!(groups[1].refs[0].path.is_none());
+        assert!(groups[1].refs[1].path.is_none());
     }
 
     #[test]
@@ -942,7 +947,7 @@ fn internal_helper() {
                     count: 10,
                     refs: vec![
                         McpReferenceLocation {
-                            path: "src/main.rs".to_string(),
+                            path: None, // Path omitted since FileGroup provides it
                             position: Position { line: 10, character: 5 },
                             symbol_range: Range {
                                 start: Position { line: 10, character: 5 },

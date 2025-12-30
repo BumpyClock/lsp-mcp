@@ -58,7 +58,14 @@ pub(crate) async fn definitions_in_file_impl(
         enrich_symbol(manager, file_path, symbol).await;
     }
 
-    let (symbols, pagination) = paginate_items(symbols, limit, offset);
+    let (mut symbols, pagination) = paginate_items(symbols, limit, offset);
+
+    // Clear paths from nested structures since McpSymbolsResponse.path provides it
+    for symbol in &mut symbols {
+        symbol.file_range.path.clear();
+        symbol.identifier_position.path.clear();
+    }
+
     Ok(McpSymbolsResponse {
         path: file_path.to_string(),
         mtime: mtime_rfc3339,

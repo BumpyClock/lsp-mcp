@@ -343,22 +343,31 @@ pub(crate) async fn fetch_code_context(
 }
 
 /// Groups references by file path.
+/// Clears individual ref paths since FileGroup.path provides the file.
 pub(crate) fn group_references_by_file(references: &[McpReferenceLocation]) -> Vec<FileGroup> {
     use std::collections::HashMap;
 
     let mut groups: HashMap<String, Vec<McpReferenceLocation>> = HashMap::new();
 
     for reference in references {
-        groups.entry(reference.path.clone())
+        // Use path from reference, defaulting to empty string if None (shouldn't happen)
+        let path = reference.path.clone().unwrap_or_default();
+        groups.entry(path)
             .or_insert_with(Vec::new)
             .push(reference.clone());
     }
 
     let mut file_groups: Vec<FileGroup> = groups.into_iter()
-        .map(|(path, refs)| FileGroup {
-            count: refs.len() as u32,
-            path,
-            refs,
+        .map(|(path, refs)| {
+            // Clear paths from individual refs since FileGroup.path provides it
+            let refs_without_path: Vec<McpReferenceLocation> = refs.into_iter()
+                .map(|mut r| { r.path = None; r })
+                .collect();
+            FileGroup {
+                count: refs_without_path.len() as u32,
+                path,
+                refs: refs_without_path,
+            }
         })
         .collect();
 
