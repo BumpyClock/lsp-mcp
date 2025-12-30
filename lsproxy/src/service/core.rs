@@ -61,7 +61,6 @@ impl LspService {
         position: Position,
         include_source_code: bool,
         include_raw_response: bool,
-        context_lines: Option<u32>,
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<McpDefinitionResponse, ServiceError> {
@@ -71,7 +70,6 @@ impl LspService {
             position,
             include_source_code,
             include_raw_response,
-            context_lines,
             limit,
             offset,
         )

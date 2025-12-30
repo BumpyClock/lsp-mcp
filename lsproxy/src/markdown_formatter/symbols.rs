@@ -1,8 +1,8 @@
 // ABOUTME: Markdown formatter for symbol response types.
-// ABOUTME: Converts Symbol and WorkspaceSymbolResponse to readable markdown.
+// ABOUTME: Converts Symbol, WorkspaceSymbolResponse, and McpIdentifierResponse to readable markdown.
 
 use crate::api_types::{Symbol, WorkspaceSymbolResponse};
-use crate::service::types::response::McpSymbolsResponse;
+use crate::service::types::response::{McpIdentifierResponse, McpSymbolsResponse};
 use super::{escape_inline_code, ToMarkdown};
 
 impl ToMarkdown for McpSymbolsResponse {
@@ -62,6 +62,39 @@ impl ToMarkdown for WorkspaceSymbolResponse {
     }
 }
 
+impl ToMarkdown for McpIdentifierResponse {
+    fn to_markdown(&self) -> String {
+        let count = self.identifiers.len();
+        let result_word = if count == 1 { "identifier" } else { "identifiers" };
+        let mut output = format!("## Identifiers ({} {})\n\n", count, result_word);
+
+        for identifier in &self.identifiers {
+            let kind = identifier.kind_or_default();
+            let path = &identifier.file_range.path;
+            let start_line = identifier.file_range.range.start.line;
+            let end_line = identifier.file_range.range.end.line;
+
+            if start_line == end_line {
+                output.push_str(&format!(
+                    "- **{}** ({}) - {}:{}\n",
+                    identifier.name, kind, path, start_line
+                ));
+            } else {
+                output.push_str(&format!(
+                    "- **{}** ({}) - {}:{}-{}\n",
+                    identifier.name, kind, path, start_line, end_line
+                ));
+            }
+        }
+
+        if self.truncated {
+            output.push_str(&format!("\n[Showing {} of more]", self.identifiers.len()));
+        }
+
+        output
+    }
+}
+
 fn count_symbols_recursive(symbols: &[Symbol]) -> usize {
     let mut count = symbols.len();
     for symbol in symbols {
@@ -98,7 +131,7 @@ fn format_symbol_recursive(symbol: &Symbol, depth: usize, output: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api_types::{FilePosition, FileRange, Position, Range, WorkspaceSymbolInfo};
+    use crate::api_types::{FilePosition, FileRange, Identifier, Position, Range, WorkspaceSymbolInfo};
     use rand::Rng;
 
     fn random_line() -> u32 {
@@ -148,6 +181,20 @@ mod tests {
             match_kind: None,
             match_score: None,
             signature,
+        }
+    }
+
+    fn create_identifier(name: &str, kind: Option<&str>, path: &str, start_line: u32, end_line: u32) -> Identifier {
+        Identifier {
+            name: name.to_string(),
+            kind: kind.map(|k| k.to_string()),
+            file_range: FileRange {
+                path: path.to_string(),
+                range: Range {
+                    start: Position { line: start_line, character: 0 },
+                    end: Position { line: end_line, character: 0 },
+                },
+            },
         }
     }
 
@@ -598,6 +645,103 @@ mod tests {
         assert!(
             markdown.contains("    - **nestedMethod**"),
             "negative: grandchild must be indented twice"
+        );
+    }
+
+    #[test]
+    fn mcp_identifier_response_formats_single_identifier() {
+        let line = random_line();
+        let response = McpIdentifierResponse {
+            identifiers: vec![create_identifier("myVar", Some("variable"), "src/app.ts", line, line)],
+            limit: 100,
+            offset: 0,
+            truncated: false,
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("## Identifiers (1 identifier)"),
+            "negative: header must show singular form for 1 identifier"
+        );
+        assert!(
+            markdown.contains("**myVar**"),
+            "negative: identifier name must be bold"
+        );
+        assert!(
+            markdown.contains("(variable)"),
+            "negative: kind must be in parentheses"
+        );
+    }
+
+    #[test]
+    fn mcp_identifier_response_formats_multiple_identifiers() {
+        let response = McpIdentifierResponse {
+            identifiers: vec![
+                create_identifier("var1", Some("variable"), "src/app.ts", 10, 10),
+                create_identifier("var2", Some("function"), "src/app.ts", 20, 25),
+            ],
+            limit: 100,
+            offset: 0,
+            truncated: false,
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("## Identifiers (2 identifiers)"),
+            "negative: header must show plural form for multiple identifiers"
+        );
+    }
+
+    #[test]
+    fn mcp_identifier_response_shows_range_for_multiline() {
+        let response = McpIdentifierResponse {
+            identifiers: vec![create_identifier("myFunc", Some("function"), "src/app.ts", 10, 20)],
+            limit: 100,
+            offset: 0,
+            truncated: false,
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("src/app.ts:10-20"),
+            "negative: multiline identifiers must show range"
+        );
+    }
+
+    #[test]
+    fn mcp_identifier_response_uses_default_kind_when_none() {
+        let response = McpIdentifierResponse {
+            identifiers: vec![create_identifier("unknownThing", None, "src/app.ts", 10, 10)],
+            limit: 100,
+            offset: 0,
+            truncated: false,
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("(identifier)"),
+            "negative: missing kind must default to 'identifier'"
+        );
+    }
+
+    #[test]
+    fn mcp_identifier_response_shows_truncation() {
+        let response = McpIdentifierResponse {
+            identifiers: vec![create_identifier("var1", Some("variable"), "src/app.ts", 10, 10)],
+            limit: 1,
+            offset: 0,
+            truncated: true,
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("[Showing 1 of more]"),
+            "negative: truncation indicator must be present"
         );
     }
 }

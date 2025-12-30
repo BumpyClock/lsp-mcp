@@ -3,10 +3,9 @@
 
 use crate::api_types::Position;
 use crate::config::OutputMode;
-use crate::mcp_response::{format_error, success_response};
-use crate::service::{LspService, ServiceError};
+use crate::mcp_response::{format_error, format_response};
+use crate::service::LspService;
 use mcpkit::prelude::*;
-use std::collections::HashMap;
 
 pub async fn workspace_symbol(
     service: &LspService,
@@ -27,16 +26,7 @@ pub async fn workspace_symbol(
         .await
     {
         Ok(response) => {
-            let data = match serde_json::to_value(&response) {
-                Ok(v) => v,
-                Err(e) => {
-                    let err = ServiceError::Serialization(e.to_string());
-                    return ToolOutput::error(format_error(&err));
-                }
-            };
-            let mut counts = HashMap::new();
-            counts.insert("symbols".to_string(), response.symbols.len());
-            let resp = success_response("workspace_symbol", data, output_mode, Some(counts));
+            let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => ToolOutput::error(format_error(&e)),
@@ -65,16 +55,7 @@ pub async fn find_identifier(
         .await
     {
         Ok(response) => {
-            let data = match serde_json::to_value(&response) {
-                Ok(v) => v,
-                Err(e) => {
-                    let err = ServiceError::Serialization(e.to_string());
-                    return ToolOutput::error(format_error(&err));
-                }
-            };
-            let mut counts = HashMap::new();
-            counts.insert("identifiers".to_string(), response.identifiers.len());
-            let resp = success_response("find_identifier", data, output_mode, Some(counts));
+            let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => ToolOutput::error(format_error(&e)),

@@ -50,16 +50,12 @@ impl LspMcpServer {
         definitions::definitions_in_file(&self.service, self.output_mode, path, limit, offset).await
     }
 
-    #[tool(description = "Definition of symbol at position. Returns signature/type info from LSP hover. Set include_siblings=true to get other exports from same file (filtered, max siblings_limit=5).")]
+    #[tool(description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5).")]
     async fn find_definition(
         &self,
         path: String,
         line: u32,
         character: u32,
-        include_source_code: Option<bool>,
-        context_lines: Option<u32>,
-        include_siblings: Option<bool>,
-        siblings_limit: Option<u32>,
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> ToolOutput {
@@ -69,10 +65,6 @@ impl LspMcpServer {
             path,
             line,
             character,
-            include_source_code,
-            context_lines,
-            include_siblings,
-            siblings_limit,
             limit,
             offset,
         )

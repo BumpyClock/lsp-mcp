@@ -20,7 +20,19 @@ use crate::service::utils::transformations::{
 };
 
 use super::hover::{count_references_impl, fetch_hover_info_impl};
-use super::references::fetch_code_context;
+
+/// Maximum number of lines to include in source code context.
+const MAX_SOURCE_CODE_LINES: usize = 100;
+
+/// Truncates source code to a maximum number of lines with indicator.
+fn truncate_source_code(code: &str, max_lines: usize) -> String {
+    let lines: Vec<&str> = code.lines().collect();
+    if lines.len() <= max_lines {
+        return code.to_string();
+    }
+    let truncated: String = lines[..max_lines].join("\n");
+    format!("{}\n[truncated, {} total lines]", truncated, lines.len())
+}
 
 fn symbol_kind_to_string(kind: SymbolKind) -> String {
     match kind {
@@ -188,7 +200,6 @@ pub(crate) async fn find_definition_impl(
     position: Position,
     include_source_code: bool,
     include_raw_response: bool,
-    context_lines: Option<u32>,
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<McpDefinitionResponse, ServiceError> {
@@ -223,10 +234,6 @@ pub(crate) async fn find_definition_impl(
     } else {
         None
     };
-    let snippet_contexts = match context_lines {
-        Some(lines) => Some(fetch_code_context(manager, definition_locations.clone(), lines).await?),
-        None => None,
-    };
 
     let raw_response = if include_raw_response {
         Some(serde_json::to_value(&definitions)?)
@@ -244,18 +251,15 @@ pub(crate) async fn find_definition_impl(
             first_definition_path = Some(path.clone());
         }
 
-        let (symbol, snippet, reference_count) = if is_external {
-            (None, None, None)
+        let (symbol, reference_count) = if is_external {
+            (None, None)
         } else {
             let symbol = manager
                 .get_symbol_from_position(&path, &location.range.start)
                 .await
                 .ok();
-            let snippet = snippet_contexts
-                .as_ref()
-                .and_then(|contexts| contexts.get(index).cloned());
             let ref_count = count_references_impl(manager, &path, &location.range.start).await;
-            (symbol, snippet, ref_count)
+            (symbol, ref_count)
         };
 
         let (signature, doc) = fetch_hover_info_impl(manager, &path, &location.range.start).await;
@@ -263,7 +267,7 @@ pub(crate) async fn find_definition_impl(
         definition_items.push(definition_item_from_location(
             &location,
             symbol,
-            snippet,
+            None, // snippets removed - source_code_context provides full context
             signature,
             doc,
             reference_count,
@@ -330,6 +334,7 @@ pub(crate) async fn find_implementation_impl(
 }
 
 /// Fetches full source code context for definition locations.
+/// Source code is truncated to MAX_SOURCE_CODE_LINES (100 lines).
 pub(crate) async fn fetch_definition_source_code(
     manager: &Manager,
     definitions: &[Location],
@@ -358,7 +363,7 @@ pub(crate) async fn fetch_definition_source_code(
                         },
                     },
                 },
-                source_code: ast_grep_match.get_source_code(),
+                source_code: truncate_source_code(&ast_grep_match.get_source_code(), MAX_SOURCE_CODE_LINES),
             },
             None => {
                 let range = LspRange {
@@ -386,7 +391,7 @@ pub(crate) async fn fetch_definition_source_code(
                             },
                         },
                     },
-                    source_code,
+                    source_code: truncate_source_code(&source_code, MAX_SOURCE_CODE_LINES),
                 }
             }
         };
