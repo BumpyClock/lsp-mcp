@@ -11,6 +11,7 @@ mod references;
 mod symbols;
 
 pub use files::SourceCodeResponse;
+pub use hover::HoverBatchResponse;
 
 /// Trait for converting types to markdown representation.
 ///

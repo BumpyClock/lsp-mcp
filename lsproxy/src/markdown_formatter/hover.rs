@@ -2,7 +2,31 @@
 // ABOUTME: Converts HoverResponse to readable markdown preserving code blocks.
 
 use super::ToMarkdown;
-use crate::api_types::{HoverContents, HoverResponse};
+use crate::api_types::{HoverBatchItem, HoverContents, HoverResponse};
+
+/// Wrapper for batch hover results that implements ToMarkdown.
+pub struct HoverBatchResponse {
+    pub results: Vec<HoverBatchItem>,
+}
+
+impl ToMarkdown for HoverBatchResponse {
+    fn to_markdown(&self) -> String {
+        if self.results.is_empty() {
+            return "No hover results".to_string();
+        }
+
+        let formatted: Vec<String> = self
+            .results
+            .iter()
+            .map(|item| match item {
+                HoverBatchItem::Success(response) => response.to_markdown(),
+                HoverBatchItem::Error { error } => format!("**Error:** {}", error),
+            })
+            .collect();
+
+        formatted.join("\n\n---\n\n")
+    }
+}
 
 impl ToMarkdown for HoverResponse {
     fn to_markdown(&self) -> String {
@@ -301,5 +325,142 @@ mod tests {
             markdown.contains("path/to/file.ts:256"),
             "negative: must format definition as path:line"
         );
+    }
+
+    mod hover_batch_response_tests {
+        use super::*;
+        use crate::markdown_formatter::hover::HoverBatchResponse;
+
+        fn create_success_item(content: &str) -> HoverBatchItem {
+            HoverBatchItem::Success(HoverResponse {
+                raw_response: None,
+                contents: Some(HoverContents::Markup(content.to_string())),
+                range: None,
+                definition: None,
+            })
+        }
+
+        fn create_error_item(message: &str) -> HoverBatchItem {
+            HoverBatchItem::Error {
+                error: message.to_string(),
+            }
+        }
+
+        #[test]
+        fn it_renders_empty_message_when_results_are_empty() {
+            let batch = HoverBatchResponse { results: vec![] };
+
+            let markdown = batch.to_markdown();
+
+            assert!(
+                markdown.contains("No hover results"),
+                "negative: empty batch must indicate no results"
+            );
+        }
+
+        #[test]
+        fn it_renders_single_success_result_using_hover_response_format() {
+            let batch = HoverBatchResponse {
+                results: vec![create_success_item("Function documentation")],
+            };
+
+            let markdown = batch.to_markdown();
+
+            assert!(
+                markdown.contains("Function documentation"),
+                "negative: single success must include hover content"
+            );
+        }
+
+        #[test]
+        fn it_renders_error_item_with_error_prefix() {
+            let batch = HoverBatchResponse {
+                results: vec![create_error_item("File not found")],
+            };
+
+            let markdown = batch.to_markdown();
+
+            assert!(
+                markdown.contains("**Error:**"),
+                "negative: error item must have Error prefix"
+            );
+            assert!(
+                markdown.contains("File not found"),
+                "negative: error item must include error message"
+            );
+        }
+
+        #[test]
+        fn it_separates_multiple_results_with_horizontal_rule() {
+            let batch = HoverBatchResponse {
+                results: vec![
+                    create_success_item("First result"),
+                    create_success_item("Second result"),
+                ],
+            };
+
+            let markdown = batch.to_markdown();
+
+            assert!(
+                markdown.contains("---"),
+                "negative: multiple results must be separated by horizontal rule"
+            );
+            assert!(
+                markdown.contains("First result"),
+                "negative: must include first result"
+            );
+            assert!(
+                markdown.contains("Second result"),
+                "negative: must include second result"
+            );
+        }
+
+        #[test]
+        fn it_handles_mixed_success_and_error_items() {
+            let batch = HoverBatchResponse {
+                results: vec![
+                    create_success_item("Success content"),
+                    create_error_item("Error message"),
+                    create_success_item("Another success"),
+                ],
+            };
+
+            let markdown = batch.to_markdown();
+
+            assert!(
+                markdown.contains("Success content"),
+                "negative: must include first success"
+            );
+            assert!(
+                markdown.contains("**Error:**"),
+                "negative: must include error indicator"
+            );
+            assert!(
+                markdown.contains("Error message"),
+                "negative: must include error message"
+            );
+            assert!(
+                markdown.contains("Another success"),
+                "negative: must include second success"
+            );
+        }
+
+        #[test]
+        fn it_uses_newline_separator_between_results() {
+            let batch = HoverBatchResponse {
+                results: vec![
+                    create_success_item("First"),
+                    create_success_item("Second"),
+                ],
+            };
+
+            let markdown = batch.to_markdown();
+
+            // Separator should be "\n\n---\n\n"
+            assert!(
+                markdown.contains("\n\n---\n\n"),
+                "negative: results must be separated by newline-rule-newline pattern"
+            );
+        }
     }
 }

@@ -3,8 +3,9 @@
 
 use crate::api_types::{HoverBatchItem, HoverRequest, Position};
 use crate::config::OutputMode;
-use crate::mcp_response::{format_error, success_response};
-use crate::service::{LspService, ServiceError};
+use crate::markdown_formatter::HoverBatchResponse;
+use crate::mcp_response::{format_error, format_response};
+use crate::service::LspService;
 use mcpkit::prelude::*;
 
 pub async fn hover(
@@ -38,11 +39,8 @@ pub async fn hover(
                 }),
             }
         }
-        let data = match serde_json::to_value(&results) {
-            Ok(v) => v,
-            Err(e) => return ToolOutput::error(format!("Serialization error: {}", e)),
-        };
-        let resp = success_response("hover", data, output_mode, None);
+        let batch_response = HoverBatchResponse { results };
+        let resp = format_response(&batch_response, output_mode);
         return ToolOutput::text(resp);
     }
     let (path, line, character) = match (path, line, character) {
@@ -55,14 +53,7 @@ pub async fn hover(
         .await
     {
         Ok(response) => {
-            let data = match serde_json::to_value(&response) {
-                Ok(v) => v,
-                Err(e) => {
-                    let err = ServiceError::Serialization(e.to_string());
-                    return ToolOutput::error(format_error(&err));
-                }
-            };
-            let resp = success_response("hover", data, output_mode, None);
+            let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => ToolOutput::error(format_error(&e)),
