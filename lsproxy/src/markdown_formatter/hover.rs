@@ -20,11 +20,11 @@ impl ToMarkdown for HoverBatchResponse {
             .iter()
             .map(|item| match item {
                 HoverBatchItem::Success(response) => response.to_markdown(),
-                HoverBatchItem::Error { error } => format!("**Error:** {}", error),
+                HoverBatchItem::Error { error } => format!("Error: {}", error),
             })
             .collect();
 
-        formatted.join("\n\n---\n\n")
+        formatted.join("\n\n")
     }
 }
 
@@ -40,7 +40,7 @@ impl ToMarkdown for HoverResponse {
         }
 
         if let Some(ref def) = self.definition {
-            output.push_str("\n\n**Definition:** ");
+            output.push_str("\n\nDefinition: ");
             output.push_str(&def.path);
             output.push(':');
             output.push_str(&def.line.to_string());
@@ -68,7 +68,7 @@ impl HoverResponse {
                 if items.is_empty() {
                     String::new()
                 } else {
-                    items.join("\n\n---\n\n")
+                    items.join("\n\n")
                 }
             }
         }
@@ -381,8 +381,12 @@ mod tests {
             let markdown = batch.to_markdown();
 
             assert!(
-                markdown.contains("**Error:**"),
+                markdown.contains("Error:"),
                 "negative: error item must have Error prefix"
+            );
+            assert!(
+                !markdown.contains("**Error:**"),
+                "negative: error prefix must not use markdown bold"
             );
             assert!(
                 markdown.contains("File not found"),
@@ -391,7 +395,7 @@ mod tests {
         }
 
         #[test]
-        fn it_separates_multiple_results_with_horizontal_rule() {
+        fn it_separates_multiple_results_with_double_newline() {
             let batch = HoverBatchResponse {
                 results: vec![
                     create_success_item("First result"),
@@ -402,16 +406,12 @@ mod tests {
             let markdown = batch.to_markdown();
 
             assert!(
-                markdown.contains("---"),
-                "negative: multiple results must be separated by horizontal rule"
+                !markdown.contains("---"),
+                "negative: multiple results must not use horizontal rule separator"
             );
             assert!(
-                markdown.contains("First result"),
-                "negative: must include first result"
-            );
-            assert!(
-                markdown.contains("Second result"),
-                "negative: must include second result"
+                markdown.contains("First result\n\nSecond result"),
+                "negative: results must be separated by double newline"
             );
         }
 
@@ -432,7 +432,7 @@ mod tests {
                 "negative: must include first success"
             );
             assert!(
-                markdown.contains("**Error:**"),
+                markdown.contains("Error:"),
                 "negative: must include error indicator"
             );
             assert!(
@@ -446,7 +446,7 @@ mod tests {
         }
 
         #[test]
-        fn it_uses_newline_separator_between_results() {
+        fn it_uses_double_newline_separator_between_results() {
             let batch = HoverBatchResponse {
                 results: vec![
                     create_success_item("First"),
@@ -456,10 +456,14 @@ mod tests {
 
             let markdown = batch.to_markdown();
 
-            // Separator should be "\n\n---\n\n"
+            // Separator should be "\n\n" (no horizontal rule)
             assert!(
-                markdown.contains("\n\n---\n\n"),
-                "negative: results must be separated by newline-rule-newline pattern"
+                markdown.contains("First\n\nSecond"),
+                "negative: results must be separated by double newline"
+            );
+            assert!(
+                !markdown.contains("---"),
+                "negative: results must not use horizontal rule separator"
             );
         }
     }

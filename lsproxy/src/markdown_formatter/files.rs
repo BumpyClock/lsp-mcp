@@ -9,12 +9,12 @@ impl ToMarkdown for McpListFilesResponse {
         let mut output = String::new();
 
         output.push_str(&format!(
-            "## Workspace Files ({} total)\n\n",
+            "Workspace Files ({} total)\n\n",
             self.files.len()
         ));
 
         for file in &self.files {
-            output.push_str(&format!("- {}\n", file));
+            output.push_str(&format!("  {}\n", file));
         }
 
         if self.truncated {
@@ -86,7 +86,7 @@ impl ToMarkdown for SourceCodeResponse {
     fn to_markdown(&self) -> String {
         let mut output = String::new();
 
-        output.push_str(&format!("## Source: {}\n\n", self.path));
+        output.push_str(&format!("Source: {}\n\n", self.path));
 
         let language = self.detect_language();
         output.push_str(&format!("```{}\n", language));
@@ -154,7 +154,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains(&format!("## Workspace Files ({} total)", file_count)),
+            result.contains(&format!("Workspace Files ({} total)", file_count)),
             "negative: markdown must include header with total file count"
         );
     }
@@ -174,8 +174,8 @@ mod tests {
 
         for file in &files {
             assert!(
-                result.contains(&format!("- {}", file)),
-                "negative: each file must appear as a markdown list item"
+                result.contains(&format!("  {}", file)),
+                "negative: each file must appear as an indented list item"
             );
         }
     }
@@ -231,7 +231,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("## Workspace Files (0 total)"),
+            result.contains("Workspace Files (0 total)"),
             "negative: empty file list must show zero total"
         );
     }
@@ -273,7 +273,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains(&format!("## Source: {}", path)),
+            result.contains(&format!("Source: {}", path)),
             "negative: source code markdown must include path header"
         );
     }
@@ -454,7 +454,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("## Source: empty.ts"),
+            result.contains("Source: empty.ts"),
             "negative: empty file must still show header"
         );
     }
@@ -497,7 +497,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains(&format!("## Source: {}", path)),
+            result.contains(&format!("Source: {}", path)),
             "negative: paths with special characters must be preserved"
         );
     }

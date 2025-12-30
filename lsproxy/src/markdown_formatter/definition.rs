@@ -12,7 +12,7 @@ impl ToMarkdown for McpDefinitionResponse {
         let mut output = String::new();
 
         output.push_str(&format!(
-            "## Definition of `{}`\n\n",
+            "Definition of `{}`\n\n",
             escape_inline_code(&self.selected_identifier.name)
         ));
 
@@ -23,7 +23,7 @@ impl ToMarkdown for McpDefinitionResponse {
 
         for (index, def) in self.definitions.iter().enumerate() {
             if self.definitions.len() > 1 {
-                output.push_str(&format!("### Definition {}\n\n", index + 1));
+                output.push_str(&format!("Definition {}\n\n", index + 1));
             }
 
             let external_tag = if def.external.unwrap_or(false) {
@@ -33,33 +33,33 @@ impl ToMarkdown for McpDefinitionResponse {
             };
 
             output.push_str(&format!(
-                "**Location:** {}{}\n",
+                "Location: {}{}\n",
                 format_file_position(&def.path, def.position.line, def.position.character),
                 external_tag
             ));
 
             if let Some(ref kind) = def.symbol_kind {
-                output.push_str(&format!("**Kind:** {}\n", kind));
+                output.push_str(&format!("Kind: {}\n", kind));
             }
 
             if let Some(ref signature) = def.signature {
-                output.push_str(&format!("**Signature:** `{}`\n", escape_inline_code(signature)));
+                output.push_str(&format!("Signature: `{}`\n", escape_inline_code(signature)));
             }
 
             if let Some(ref package) = def.package {
                 output.push_str(&format!(
-                    "**Package:** {}@{}\n",
+                    "Package: {}@{}\n",
                     package.name, package.version
                 ));
             }
 
             if let Some(ref_count) = def.reference_count {
-                output.push_str(&format!("**References:** {}\n", ref_count));
+                output.push_str(&format!("References: {}\n", ref_count));
             }
 
             if let Some(ref doc) = def.doc {
                 if !doc.is_empty() {
-                    output.push_str("\n### Documentation\n");
+                    output.push_str("\nDocumentation\n");
                     output.push_str(doc);
                     output.push('\n');
                 }
@@ -69,7 +69,7 @@ impl ToMarkdown for McpDefinitionResponse {
                 if !snippet.source_code.is_empty() {
                     let language = detect_language(&def.path);
                     let truncated_source = truncate_lines(&snippet.source_code, SOURCE_CODE_MAX_LINES);
-                    output.push_str("\n### Source\n");
+                    output.push_str("\nSource\n");
                     output.push_str(&format!("```{}\n{}\n```\n", language, truncated_source));
                 }
             }
@@ -81,7 +81,7 @@ impl ToMarkdown for McpDefinitionResponse {
 
         if self.truncated {
             output.push_str(&format!(
-                "\n*Results truncated (showing {} of more)*\n",
+                "\nResults truncated (showing {} of more)\n",
                 self.definitions.len()
             ));
         }
@@ -113,7 +113,7 @@ fn detect_language(path: &str) -> &'static str {
 fn format_related_symbols(output: &mut String, related: &RelatedSymbols) {
     if !related.sibling_exports.is_empty() {
         output.push_str(&format!(
-            "\n### Sibling Exports ({})\n",
+            "\nSibling Exports ({})\n",
             related.sibling_exports.len()
         ));
 
@@ -125,7 +125,7 @@ fn format_related_symbols(output: &mut String, related: &RelatedSymbols) {
             };
 
             output.push_str(&format!(
-                "- `{}`{} - line {}\n",
+                "  `{}`{} - line {}\n",
                 escape_inline_code(&sibling.name),
                 kind_part,
                 sibling.identifier_position.position.line
@@ -135,20 +135,20 @@ fn format_related_symbols(output: &mut String, related: &RelatedSymbols) {
 
     if !related.implements.is_empty() {
         output.push_str(&format!(
-            "\n### Implements ({})\n",
+            "\nImplements ({})\n",
             related.implements.len()
         ));
 
         for item in &related.implements {
-            output.push_str(&format!("- `{}`\n", escape_inline_code(&item.name)));
+            output.push_str(&format!("  `{}`\n", escape_inline_code(&item.name)));
         }
     }
 
     if !related.extends.is_empty() {
-        output.push_str(&format!("\n### Extends ({})\n", related.extends.len()));
+        output.push_str(&format!("\nExtends ({})\n", related.extends.len()));
 
         for item in &related.extends {
-            output.push_str(&format!("- `{}`\n", escape_inline_code(&item.name)));
+            output.push_str(&format!("  `{}`\n", escape_inline_code(&item.name)));
         }
     }
 }
@@ -290,7 +290,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("## Definition of `myFunction`"),
+            result.contains("Definition of `myFunction`"),
             "negative: header must contain escaped identifier name"
         );
     }
@@ -333,7 +333,7 @@ mod tests {
 
         let result = response.to_markdown();
 
-        let expected_location = format!("**Location:** src/helpers.ts:{}:{}", line, character);
+        let expected_location = format!("Location: src/helpers.ts:{}:{}", line, character);
         assert!(
             result.contains(&expected_location),
             "negative: output must contain location with path:line:character"
@@ -349,7 +349,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("**Kind:** function"),
+            result.contains("Kind: function"),
             "negative: output must contain symbol kind"
         );
     }
@@ -364,7 +364,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            !result.contains("**Kind:**"),
+            !result.contains("Kind:"),
             "negative: output must not contain Kind label when none"
         );
     }
@@ -378,7 +378,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("**Signature:** `(arg: string) => Promise<Result>`"),
+            result.contains("Signature: `(arg: string) => Promise<Result>`"),
             "negative: output must contain escaped signature"
         );
     }
@@ -413,7 +413,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("### Documentation"),
+            result.contains("Documentation"),
             "negative: output must contain Documentation section"
         );
         assert!(
@@ -431,7 +431,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            !result.contains("### Documentation"),
+            !result.contains("Documentation"),
             "negative: output must not contain Documentation section when empty"
         );
     }
@@ -452,7 +452,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("### Source"),
+            result.contains("Source"),
             "negative: output must contain Source section"
         );
         assert!(
@@ -566,7 +566,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("**Package:** lodash@4.17.21"),
+            result.contains("Package: lodash@4.17.21"),
             "negative: output must contain package name and version"
         );
     }
@@ -580,7 +580,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("**References:** 42"),
+            result.contains("References: 42"),
             "negative: output must contain reference count"
         );
     }
@@ -594,11 +594,11 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("### Definition 1"),
+            result.contains("Definition 1"),
             "negative: multiple definitions must have numbered headers"
         );
         assert!(
-            result.contains("### Definition 2"),
+            result.contains("Definition 2"),
             "negative: multiple definitions must have numbered headers"
         );
     }
@@ -613,7 +613,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            !result.contains("### Definition 1"),
+            !result.contains("Definition 1"),
             "negative: single definition must not have numbered header"
         );
     }
@@ -637,15 +637,15 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("### Sibling Exports (2)"),
+            result.contains("Sibling Exports (2)"),
             "negative: output must contain Sibling Exports section with count"
         );
         assert!(
-            result.contains("- `helperA` (function) - line 20"),
+            result.contains("  `helperA` (function) - line 20"),
             "negative: output must list sibling export with kind and line"
         );
         assert!(
-            result.contains("- `helperB` (constant) - line 30"),
+            result.contains("  `helperB` (constant) - line 30"),
             "negative: output must list all sibling exports"
         );
     }
@@ -666,11 +666,11 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("### Implements (1)"),
+            result.contains("Implements (1)"),
             "negative: output must contain Implements section"
         );
         assert!(
-            result.contains("- `IService`"),
+            result.contains("  `IService`"),
             "negative: output must list implemented interface"
         );
     }
@@ -691,11 +691,11 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("### Extends (1)"),
+            result.contains("Extends (1)"),
             "negative: output must contain Extends section"
         );
         assert!(
-            result.contains("- `BaseClass`"),
+            result.contains("  `BaseClass`"),
             "negative: output must list extended class"
         );
     }
@@ -711,15 +711,15 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            !result.contains("### Sibling Exports"),
+            !result.contains("Sibling Exports"),
             "negative: empty sibling exports must not be rendered"
         );
         assert!(
-            !result.contains("### Implements"),
+            !result.contains("Implements"),
             "negative: empty implements must not be rendered"
         );
         assert!(
-            !result.contains("### Extends"),
+            !result.contains("Extends"),
             "negative: empty extends must not be rendered"
         );
     }
@@ -735,7 +735,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("*Results truncated"),
+            result.contains("Results truncated"),
             "negative: truncated response must show truncation indicator"
         );
     }
@@ -851,7 +851,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            !result.contains("### Source"),
+            !result.contains("Source"),
             "negative: empty snippet must not render Source section"
         );
     }
@@ -874,7 +874,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("- `helper` - line 20"),
+            result.contains("  `helper` - line 20"),
             "negative: sibling without kind must omit kind parentheses"
         );
         assert!(

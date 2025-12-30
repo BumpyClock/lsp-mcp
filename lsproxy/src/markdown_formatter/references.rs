@@ -10,14 +10,14 @@ impl ToMarkdown for McpReferencesResponse {
         let mut output = String::new();
 
         output.push_str(&format!(
-            "## References to `{}` ({} total)\n",
+            "References to `{}` ({} total)\n",
             self.selected_identifier.name, self.total_count
         ));
 
         for file_group in &self.by_file {
             let ref_word = if file_group.count == 1 { "ref" } else { "refs" };
             output.push_str(&format!(
-                "\n### {} ({} {})\n",
+                "\n{} ({} {})\n",
                 file_group.path, file_group.count, ref_word
             ));
 
@@ -25,7 +25,6 @@ impl ToMarkdown for McpReferencesResponse {
                 let line = reference.position.line;
                 match &reference.snippet {
                     Some(ctx) => {
-                        // Calculate which line within the context corresponds to the reference
                         let context_start_line = ctx.range.range.start.line;
                         let offset = line.saturating_sub(context_start_line) as usize;
 
@@ -37,10 +36,10 @@ impl ToMarkdown for McpReferencesResponse {
                             .unwrap_or("");
 
                         let escaped = escape_inline_code(target_line.trim());
-                        output.push_str(&format!("- **Line {}:{}**: `{}`\n", line, reference.position.character, escaped));
+                        output.push_str(&format!("  Line {}:{}: `{}`\n", line, reference.position.character, escaped));
                     }
                     None => {
-                        output.push_str(&format!("- **Line {}:{}**\n", line, reference.position.character));
+                        output.push_str(&format!("  Line {}:{}\n", line, reference.position.character));
                     }
                 }
             }
@@ -67,29 +66,28 @@ impl ToMarkdown for ReferencedSymbolsResponse {
         let total_not_found = self.not_found.len();
         let grand_total = total_workspace + total_external + total_not_found;
 
-        output.push_str(&format!("## Referenced Symbols ({} total)\n", grand_total));
+        output.push_str(&format!("Referenced Symbols ({} total)\n", grand_total));
 
-        // Workspace symbols with definitions
         if !self.workspace_symbols.is_empty() {
-            output.push_str(&format!("\n### Workspace Symbols ({})\n", total_workspace));
+            output.push_str(&format!("\nWorkspace Symbols ({})\n", total_workspace));
             for ws in &self.workspace_symbols {
                 let ref_name = escape_inline_code(&ws.reference.name);
                 let kind = ws.reference.kind_or_default();
-                output.push_str(&format!("\n#### `{}` ({})\n", ref_name, kind));
+                output.push_str(&format!("\n`{}` ({})\n", ref_name, kind));
                 output.push_str(&format!(
-                    "- **Reference**: {}:{}:{}\n",
+                    "  Reference: {}:{}:{}\n",
                     ws.reference.file_range.path,
                     ws.reference.file_range.range.start.line,
                     ws.reference.file_range.range.start.character
                 ));
                 if ws.definitions.is_empty() {
-                    output.push_str("- **Definitions**: none\n");
+                    output.push_str("  Definitions: none\n");
                 } else {
-                    output.push_str(&format!("- **Definitions** ({}):\n", ws.definitions.len()));
+                    output.push_str(&format!("  Definitions ({}):\n", ws.definitions.len()));
                     for def in &ws.definitions {
                         let def_name = escape_inline_code(&def.name);
                         output.push_str(&format!(
-                            "  - `{}` ({}) at {}:{}:{}\n",
+                            "    `{}` ({}) at {}:{}:{}\n",
                             def_name,
                             def.kind,
                             def.identifier_position.path,
@@ -101,14 +99,13 @@ impl ToMarkdown for ReferencedSymbolsResponse {
             }
         }
 
-        // External symbols
         if !self.external_symbols.is_empty() {
-            output.push_str(&format!("\n### External Symbols ({})\n", total_external));
+            output.push_str(&format!("\nExternal Symbols ({})\n", total_external));
             for ext in &self.external_symbols {
                 let name = escape_inline_code(&ext.name);
                 let kind = ext.kind_or_default();
                 output.push_str(&format!(
-                    "- `{}` ({}) at {}:{}:{}\n",
+                    "  `{}` ({}) at {}:{}:{}\n",
                     name,
                     kind,
                     ext.file_range.path,
@@ -118,10 +115,9 @@ impl ToMarkdown for ReferencedSymbolsResponse {
             }
         }
 
-        // Not found symbols (collapsed to single summary line)
         if !self.not_found.is_empty() {
             output.push_str(&format!(
-                "\n### Not Found\n{} unresolved symbols (likely stdlib/builtins)\n",
+                "\nNot Found\n{} unresolved symbols (likely stdlib/builtins)\n",
                 total_not_found
             ));
         }
@@ -217,7 +213,7 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("## References to `{}`", symbol_name)),
+            markdown.contains(&format!("References to `{}`", symbol_name)),
             "negative: header must contain symbol name in backticks"
         );
         assert!(
@@ -249,8 +245,8 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("### {} ({} refs)", file_path, count)),
-            "negative: must include file path as h3 header with ref count"
+            markdown.contains(&format!("{} ({} refs)", file_path, count)),
+            "negative: must include file path with ref count"
         );
     }
 
@@ -277,8 +273,8 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("- **Line {}:5**:", line)),
-            "negative: must show line:column in bold"
+            markdown.contains(&format!("  Line {}:5:", line)),
+            "negative: must show line:column with indent"
         );
         assert!(
             markdown.contains(&format!("`{}`", snippet_code)),
@@ -308,8 +304,8 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("- **Line {}:5**", line)),
-            "negative: must show line:column in bold even without snippet"
+            markdown.contains(&format!("  Line {}:5", line)),
+            "negative: must show line:column with indent even without snippet"
         );
     }
 
@@ -416,11 +412,11 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("### {} ({} refs)", file1, count1)),
+            markdown.contains(&format!("{} ({} refs)", file1, count1)),
             "negative: must include first file header"
         );
         assert!(
-            markdown.contains(&format!("### {} ({} refs)", file2, count2)),
+            markdown.contains(&format!("{} ({} refs)", file2, count2)),
             "negative: must include second file header"
         );
         assert!(
@@ -473,7 +469,7 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("## References to `unusedSymbol`"),
+            markdown.contains("References to `unusedSymbol`"),
             "negative: must still show header even with no references"
         );
         assert!(

@@ -34,19 +34,19 @@ impl ToMarkdown for HealthResponse {
     fn to_markdown(&self) -> String {
         let mut output = String::new();
 
-        output.push_str("## LSP-MCP Health\n\n");
-        output.push_str(&format!("**Status:** {}\n", self.status));
-        output.push_str(&format!("**Version:** {}\n", self.version));
+        output.push_str("LSP-MCP Health\n\n");
+        output.push_str(&format!("Status: {}\n", self.status));
+        output.push_str(&format!("Version: {}\n", self.version));
 
         if !self.languages.is_empty() {
-            output.push_str("\n### Languages\n");
+            output.push_str("\nLanguages\n");
 
             let mut sorted_languages: Vec<_> = self.languages.iter().collect();
             sorted_languages.sort_by_key(|(lang, _)| lang.to_markdown());
 
             for (language, status) in sorted_languages {
                 output.push_str(&format!(
-                    "- **{}** - {}\n",
+                    "  {} - {}\n",
                     language.to_markdown(),
                     status.to_markdown()
                 ));
@@ -224,8 +224,12 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("## LSP-MCP Health"),
+            result.contains("LSP-MCP Health"),
             "negative: health response must contain header"
+        );
+        assert!(
+            !result.contains("##"),
+            "negative: health response must not contain markdown headers"
         );
     }
 
@@ -236,8 +240,12 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("**Status:** ok"),
+            result.contains("Status: ok"),
             "negative: health response must contain status"
+        );
+        assert!(
+            !result.contains("**Status:**"),
+            "negative: health response must not contain bold status"
         );
     }
 
@@ -248,8 +256,12 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("**Version:** 0.4.4"),
+            result.contains("Version: 0.4.4"),
             "negative: health response must contain version"
+        );
+        assert!(
+            !result.contains("**Version:**"),
+            "negative: health response must not contain bold version"
         );
     }
 
@@ -260,7 +272,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            !result.contains("### Languages"),
+            !result.contains("Languages"),
             "negative: health response without languages must not contain Languages section"
         );
     }
@@ -276,8 +288,12 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("### Languages"),
+            result.contains("Languages"),
             "negative: health response with languages must contain Languages section"
+        );
+        assert!(
+            !result.contains("###"),
+            "negative: health response must not contain markdown headers"
         );
     }
 
@@ -292,8 +308,12 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("- **rust** - ready"),
+            result.contains("  rust - ready"),
             "negative: health response must render language with status"
+        );
+        assert!(
+            !result.contains("- **"),
+            "negative: health response must not contain bullet with bold"
         );
     }
 
@@ -308,7 +328,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("- **python** - initializing"),
+            result.contains("  python - initializing"),
             "negative: health response must render initializing language"
         );
     }
@@ -324,7 +344,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("- **golang** - unavailable"),
+            result.contains("  golang - unavailable"),
             "negative: health response must render unavailable language"
         );
     }
@@ -373,19 +393,19 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("- **typescript** - ready"),
+            result.contains("  typescript - ready"),
             "negative: health response must render typescript ready"
         );
         assert!(
-            result.contains("- **rust** - ready"),
+            result.contains("  rust - ready"),
             "negative: health response must render rust ready"
         );
         assert!(
-            result.contains("- **python** - initializing"),
+            result.contains("  python - initializing"),
             "negative: health response must render python initializing"
         );
         assert!(
-            result.contains("- **golang** - unavailable"),
+            result.contains("  golang - unavailable"),
             "negative: health response must render golang unavailable"
         );
     }
@@ -397,7 +417,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("**Version:** 1.0.0-α"),
+            result.contains("Version: 1.0.0-α"),
             "negative: health response must preserve unicode in version"
         );
     }
@@ -409,7 +429,7 @@ mod tests {
         let result = response.to_markdown();
 
         assert!(
-            result.contains("**Status:** error: connection failed"),
+            result.contains("Status: error: connection failed"),
             "negative: health response must preserve error status message"
         );
     }

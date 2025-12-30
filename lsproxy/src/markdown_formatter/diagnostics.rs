@@ -6,19 +6,19 @@ use crate::api_types::{Diagnostic, DiagnosticSeverity, DiagnosticsResponse, Seve
 
 impl ToMarkdown for DiagnosticsResponse {
     fn to_markdown(&self) -> String {
-        let mut output = format!("## Diagnostics ({} total)\n\n", self.total_count);
+        let mut output = format!("Diagnostics ({} total)\n\n", self.total_count);
 
         if self.total_count == 0 {
             output.push_str("No diagnostics found.\n");
             return output;
         }
 
-        output.push_str(&format!("**Summary:** {}\n\n", format_severity_summary(&self.by_severity)));
+        output.push_str(&format!("Summary: {}\n\n", format_severity_summary(&self.by_severity)));
 
         for file in &self.files {
             let issue_word = if file.diagnostics.len() == 1 { "issue" } else { "issues" };
             output.push_str(&format!(
-                "### {} ({} {})\n",
+                "{} ({} {})\n",
                 file.path,
                 file.diagnostics.len(),
                 issue_word
@@ -66,11 +66,11 @@ fn format_severity_summary(counts: &SeverityCounts) -> String {
 
 fn format_diagnostic(diag: &Diagnostic) -> String {
     let severity_str = match diag.severity {
-        Some(DiagnosticSeverity::Error) => "**Error**",
-        Some(DiagnosticSeverity::Warning) => "**Warning**",
-        Some(DiagnosticSeverity::Information) => "**Info**",
-        Some(DiagnosticSeverity::Hint) => "**Hint**",
-        None => "**Unknown**",
+        Some(DiagnosticSeverity::Error) => "Error",
+        Some(DiagnosticSeverity::Warning) => "Warning",
+        Some(DiagnosticSeverity::Information) => "Info",
+        Some(DiagnosticSeverity::Hint) => "Hint",
+        None => "Unknown",
     };
 
     let position = format!("Line {}:{}", diag.range.start.line, diag.range.start.character);
@@ -83,7 +83,7 @@ fn format_diagnostic(diag: &Diagnostic) -> String {
     let quick_fix = if diag.has_quick_fix { " [quick-fix]" } else { "" };
 
     format!(
-        "- {} {} - `{}`{}{}\n",
+        "  {} {} - `{}`{}{}\n",
         severity_str,
         position,
         diag.message,
@@ -182,7 +182,7 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("## Diagnostics (5 total)"),
+            markdown.contains("Diagnostics (5 total)"),
             "negative: header must contain total count"
         );
     }
@@ -277,11 +277,11 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("### src/main.ts (5 issues)"),
+            markdown.contains("src/main.ts (5 issues)"),
             "negative: first file section must have correct issue count"
         );
         assert!(
-            markdown.contains("### src/utils.ts (3 issues)"),
+            markdown.contains("src/utils.ts (3 issues)"),
             "negative: second file section must have correct issue count"
         );
     }
@@ -316,8 +316,8 @@ mod tests {
         let expected_pos = format!("Line {}:{}", line, char);
 
         assert!(
-            markdown.contains("**Error**"),
-            "negative: diagnostic must show severity in bold"
+            markdown.contains("  Error"),
+            "negative: diagnostic must show severity with 2-space indent"
         );
         assert!(
             markdown.contains(&expected_pos),
@@ -577,25 +577,25 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("**Error**"),
-            "negative: error severity must be rendered bold"
+            markdown.contains("  Error Line"),
+            "negative: error severity must be rendered with 2-space indent"
         );
         assert!(
-            markdown.contains("**Warning**"),
-            "negative: warning severity must be rendered bold"
+            markdown.contains("  Warning Line"),
+            "negative: warning severity must be rendered with 2-space indent"
         );
         assert!(
-            markdown.contains("**Info**"),
-            "negative: information severity must be rendered as Info bold"
+            markdown.contains("  Info Line"),
+            "negative: information severity must be rendered as Info with 2-space indent"
         );
         assert!(
-            markdown.contains("**Hint**"),
-            "negative: hint severity must be rendered bold"
+            markdown.contains("  Hint Line"),
+            "negative: hint severity must be rendered with 2-space indent"
         );
     }
 
     #[test]
-    fn it_uses_bullet_list_format_for_diagnostics() {
+    fn it_uses_indented_format_for_diagnostics() {
         let response = DiagnosticsResponse {
             total_count: 2,
             by_severity: SeverityCounts {
@@ -614,11 +614,11 @@ mod tests {
         };
 
         let markdown = response.to_markdown();
-        let bullet_count = markdown.matches("\n- **").count();
+        let indent_count = markdown.matches("\n  Error").count();
 
         assert!(
-            bullet_count >= 2,
-            "negative: each diagnostic must be formatted as a bullet point"
+            indent_count >= 2,
+            "negative: each diagnostic must be formatted with 2-space indentation"
         );
     }
 

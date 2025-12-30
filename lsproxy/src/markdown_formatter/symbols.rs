@@ -7,7 +7,7 @@ use super::{escape_inline_code, ToMarkdown};
 
 impl ToMarkdown for McpSymbolsResponse {
     fn to_markdown(&self) -> String {
-        let mut output = format!("## Symbols in {}\n\n", self.path);
+        let mut output = format!("Symbols in {}\n\n", self.path);
 
         let symbol_count = count_symbols_recursive(&self.symbols);
 
@@ -29,7 +29,7 @@ impl ToMarkdown for WorkspaceSymbolResponse {
     fn to_markdown(&self) -> String {
         let count = self.symbols.len();
         let result_word = if count == 1 { "result" } else { "results" };
-        let mut output = format!("## Symbols ({} {})\n\n", count, result_word);
+        let mut output = format!("Symbols ({} {})\n\n", count, result_word);
 
         for symbol in &self.symbols {
             let is_external = symbol.location.path.contains("node_modules");
@@ -40,7 +40,7 @@ impl ToMarkdown for WorkspaceSymbolResponse {
                 .unwrap_or_default();
 
             output.push_str(&format!(
-                "- **{}{}** ({}) - {}:{}{}\n",
+                "  {}{} ({}) - {}:{}{}\n",
                 container_prefix,
                 symbol.name,
                 symbol.kind,
@@ -50,7 +50,7 @@ impl ToMarkdown for WorkspaceSymbolResponse {
             ));
 
             if let Some(ref sig) = symbol.signature {
-                output.push_str(&format!("  `{}`\n", escape_inline_code(sig)));
+                output.push_str(&format!("    `{}`\n", escape_inline_code(sig)));
             }
         }
 
@@ -66,7 +66,7 @@ impl ToMarkdown for McpIdentifierResponse {
     fn to_markdown(&self) -> String {
         let count = self.identifiers.len();
         let result_word = if count == 1 { "identifier" } else { "identifiers" };
-        let mut output = format!("## Identifiers ({} {})\n\n", count, result_word);
+        let mut output = format!("Identifiers ({} {})\n\n", count, result_word);
 
         for identifier in &self.identifiers {
             let kind = identifier.kind_or_default();
@@ -76,12 +76,12 @@ impl ToMarkdown for McpIdentifierResponse {
 
             if start_line == end_line {
                 output.push_str(&format!(
-                    "- **{}** ({}) - {}:{}\n",
+                    "  {} ({}) - {}:{}\n",
                     identifier.name, kind, path, start_line
                 ));
             } else {
                 output.push_str(&format!(
-                    "- **{}** ({}) - {}:{}-{}\n",
+                    "  {} ({}) - {}:{}-{}\n",
                     identifier.name, kind, path, start_line, end_line
                 ));
             }
@@ -110,7 +110,7 @@ fn format_symbol_recursive(symbol: &Symbol, depth: usize, output: &mut String) {
     let line = symbol.identifier_position.position.line;
 
     output.push_str(&format!(
-        "{}- **{}** ({}) - line {}\n",
+        "{}  {} ({}) - line {}\n",
         indent,
         symbol.name,
         symbol.kind,
@@ -213,7 +213,7 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("## Symbols in src/utils/helpers.ts"),
+            markdown.contains("Symbols in src/utils/helpers.ts"),
             "negative: markdown header must contain file path"
         );
     }
@@ -233,8 +233,8 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("**myFunction**"),
-            "negative: symbol name must be bold"
+            markdown.contains("myFunction"),
+            "negative: symbol name must be present"
         );
         assert!(
             markdown.contains("(function)"),
@@ -329,15 +329,15 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("**MyClass**"),
+            markdown.contains("MyClass"),
             "negative: parent symbol must be present"
         );
         assert!(
-            markdown.contains("  - **methodA**"),
+            markdown.contains("    methodA"),
             "negative: child symbols must be indented"
         );
         assert!(
-            markdown.contains("  - **methodB**"),
+            markdown.contains("    methodB"),
             "negative: second child symbol must be indented"
         );
     }
@@ -374,7 +374,7 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("## Symbols"),
+            markdown.contains("Symbols"),
             "negative: header must contain Symbols"
         );
         assert!(
@@ -397,8 +397,8 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("**myStore**"),
-            "negative: symbol name must be bold"
+            markdown.contains("myStore"),
+            "negative: symbol name must be present"
         );
         assert!(
             markdown.contains("(variable)"),
@@ -635,15 +635,15 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("**OuterClass**"),
+            markdown.contains("OuterClass"),
             "negative: parent class must be present"
         );
         assert!(
-            markdown.contains("  - **InnerClass**"),
+            markdown.contains("    InnerClass"),
             "negative: child class must be indented once"
         );
         assert!(
-            markdown.contains("    - **nestedMethod**"),
+            markdown.contains("      nestedMethod"),
             "negative: grandchild must be indented twice"
         );
     }
@@ -661,12 +661,12 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("## Identifiers (1 identifier)"),
+            markdown.contains("Identifiers (1 identifier)"),
             "negative: header must show singular form for 1 identifier"
         );
         assert!(
-            markdown.contains("**myVar**"),
-            "negative: identifier name must be bold"
+            markdown.contains("myVar"),
+            "negative: identifier name must be present"
         );
         assert!(
             markdown.contains("(variable)"),
@@ -689,7 +689,7 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("## Identifiers (2 identifiers)"),
+            markdown.contains("Identifiers (2 identifiers)"),
             "negative: header must show plural form for multiple identifiers"
         );
     }

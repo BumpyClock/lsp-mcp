@@ -21,12 +21,12 @@ impl ToMarkdown for CallHierarchyResponse {
 
         let header = if preposition.is_empty() {
             format!(
-                "## {} ({} {})\n",
+                "{} ({} {})\n",
                 direction_label, call_count, entity_label
             )
         } else {
             format!(
-                "## {} {} ({} {})\n",
+                "{} {} ({} {})\n",
                 direction_label, preposition, call_count, entity_label
             )
         };
@@ -59,8 +59,8 @@ fn format_call_info(call: &CallInfo) -> String {
     };
 
     let header = match &item.detail {
-        Some(detail) => format!("### {} ({}{})\n*{}*", item.name, position, external_tag, detail),
-        None => format!("### {} ({}{})", item.name, position, external_tag),
+        Some(detail) => format!("{} ({}{})\n{}", item.name, position, external_tag, detail),
+        None => format!("{} ({}{})", item.name, position, external_tag),
     };
 
     if call.call_ranges.is_empty() {
@@ -76,9 +76,9 @@ fn format_call_info(call: &CallInfo) -> String {
             match call.call_snippets.as_ref().and_then(|s| s.get(i)) {
                 Some(snippet) if !snippet.is_empty() => {
                     let escaped = escape_inline_code(snippet.trim());
-                    format!("- **Line {}**: `{}`", line_col, escaped)
+                    format!("  Line {}: `{}`", line_col, escaped)
                 }
-                _ => format!("- **Line {}**: call site", line_col),
+                _ => format!("  Line {}: call site", line_col),
             }
         })
         .collect();
@@ -92,7 +92,7 @@ impl ToMarkdown for ImplementationResponse {
         let identifier_name = &self.selected_identifier.name;
 
         let header = format!(
-            "## Implementations of `{}` ({} found)\n",
+            "Implementations of `{}` ({} found)\n",
             identifier_name, count
         );
 
@@ -105,7 +105,7 @@ impl ToMarkdown for ImplementationResponse {
             .iter()
             .map(|impl_pos| {
                 format!(
-                    "- {}:{}",
+                    "  {}:{}",
                     impl_pos.path, impl_pos.position.line
                 )
             })
@@ -191,8 +191,13 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("## Incoming Calls to (2 callers)"),
+            markdown.contains("Incoming Calls to (2 callers)"),
             "header must indicate incoming calls with count: got {}",
+            markdown
+        );
+        assert!(
+            !markdown.contains("##"),
+            "header must not contain markdown headers: got {}",
             markdown
         );
     }
@@ -212,8 +217,13 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("## Outgoing Calls from (3 callees)"),
+            markdown.contains("Outgoing Calls from (3 callees)"),
             "header must indicate outgoing calls with count: got {}",
+            markdown
+        );
+        assert!(
+            !markdown.contains("##"),
+            "header must not contain markdown headers: got {}",
             markdown
         );
     }
@@ -285,8 +295,13 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("### handleRequest"),
+            markdown.contains("handleRequest"),
             "call info must include function name: got {}",
+            markdown
+        );
+        assert!(
+            !markdown.contains("###"),
+            "call info must not contain markdown headers: got {}",
             markdown
         );
         assert!(
@@ -462,8 +477,13 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("## Implementations of `Serializable` (2 found)"),
+            markdown.contains("Implementations of `Serializable` (2 found)"),
             "header must include identifier name and count: got {}",
+            markdown
+        );
+        assert!(
+            !markdown.contains("##"),
+            "header must not contain markdown headers: got {}",
             markdown
         );
     }
@@ -628,17 +648,22 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("### firstCallee"),
+            markdown.contains("firstCallee"),
             "must include first callee: got {}",
             markdown
         );
         assert!(
-            markdown.contains("### secondCallee"),
+            markdown.contains("secondCallee"),
             "must include second callee: got {}",
             markdown
         );
-        let first_pos = markdown.find("### firstCallee").unwrap();
-        let second_pos = markdown.find("### secondCallee").unwrap();
+        assert!(
+            !markdown.contains("###"),
+            "must not contain markdown headers: got {}",
+            markdown
+        );
+        let first_pos = markdown.find("firstCallee").unwrap();
+        let second_pos = markdown.find("secondCallee").unwrap();
         let between = &markdown[first_pos..second_pos];
         assert!(
             between.contains("\n\n"),
