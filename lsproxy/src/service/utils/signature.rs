@@ -255,8 +255,13 @@ fn is_likely_signature(block: &str) -> bool {
 }
 
 fn is_example_tag_line(line: &str) -> bool {
-    let trimmed = line.trim_start();
-    let trimmed = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")).unwrap_or(trimmed);
+    let trimmed = line.trim();
+    let trimmed = trimmed
+        .strip_prefix("- ")
+        .or_else(|| trimmed.strip_prefix("* "))
+        .unwrap_or(trimmed);
+    let trimmed = trimmed.trim_matches(|c: char| c == '*' || c == '_' || c == '`');
+    let trimmed = trimmed.trim_end_matches(':');
     let lower = trimmed.to_ascii_lowercase();
     lower.starts_with("@example") || lower.starts_with("example")
 }
@@ -867,6 +872,32 @@ mod tests {
         assert!(
             !sig.contains("const navItem"),
             "Should not return @example block. Got: {}",
+            sig
+        );
+    }
+
+    #[test]
+    fn test_extract_signature_ignores_italic_example_block() {
+        use lsp_types::{HoverContents, MarkupContent, MarkupKind};
+
+        let hover = HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: "\n```typescript\ninterface NavItem\n```\nNavigation item interface for all navigation components.\n\n*@example*  \n```typescript\nconst navItem: NavItem = {\n  id: 'dashboard-overview',\n  label: 'Dashboard',\n  path: '/dashboard',\n};\n```"
+                .to_string(),
+        });
+
+        let (sig, _) = extract_signature_and_docs(&hover);
+
+        assert!(sig.is_some(), "Should extract signature");
+        let sig = sig.unwrap();
+        assert!(
+            sig.contains("interface NavItem"),
+            "Should prefer definition signature. Got: {}",
+            sig
+        );
+        assert!(
+            !sig.contains("const navItem"),
+            "Should not return example block. Got: {}",
             sig
         );
     }
