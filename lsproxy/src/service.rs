@@ -2,12 +2,12 @@
 // ABOUTME: Provides async methods for symbol lookup, references, and file access.
 use crate::api_types::{
     CallHierarchyDirection, CallHierarchyItemInfo, CallHierarchyResponse, CallInfo, CodeContext,
-    Diagnostic, DiagnosticSeverity, DiagnosticsResponse, FileDiagnostics, FilePosition, FileRange,
-    HoverContents, HoverResponse, Identifier, ImplementationResponse, IncomingCallInfo,
-    IncomingCallsResponse, LspStatus, OutgoingCallInfo, OutgoingCallsResponse, Position,
-    PrepareCallHierarchyResponse, Range, ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse,
-    RelatedSymbols, SeverityCounts, SupportedLanguages, Symbol, WorkspaceSymbolInfo,
-    WorkspaceSymbolResponse,
+    DefinitionLocation, Diagnostic, DiagnosticSeverity, DiagnosticsResponse, FileDiagnostics,
+    FilePosition, FileRange, HoverContents, HoverResponse, Identifier, ImplementationResponse,
+    IncomingCallInfo, IncomingCallsResponse, LspStatus, OutgoingCallInfo, OutgoingCallsResponse,
+    Position, PrepareCallHierarchyResponse, Range, ReferenceWithSymbolDefinitions,
+    ReferencedSymbolsResponse, RelatedSymbols, SeverityCounts, SupportedLanguages, Symbol,
+    WorkspaceSymbolInfo, WorkspaceSymbolResponse,
 };
 use crate::lsp::manager::{LspManagerError, Manager};
 use crate::mcp_response::normalize_kind;
@@ -54,6 +54,15 @@ pub struct McpDefinitionLocation {
     /// Documentation string (JSDoc, docstring, etc.) from LSP hover
     #[serde(skip_serializing_if = "Option::is_none")]
     pub doc: Option<String>,
+    /// True if definition is in node_modules (external dependency)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external: Option<bool>,
+    /// Package info if external (name and version)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<PackageInfo>,
+    /// Number of references to this symbol in the workspace
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_count: Option<u32>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -282,6 +291,28 @@ pub fn filter_sibling_exports(siblings: Vec<Symbol>, limit: u32) -> Vec<Symbol> 
         .collect()
 }
 
+/// Default maximum length for signatures in responses
+pub const DEFAULT_MAX_SIGNATURE_LENGTH: usize = 200;
+
+/// Truncates a signature to a maximum length with unicode-safe boundary handling.
+/// Appends "..." when truncation occurs.
+pub fn truncate_signature(sig: &str, max_length: Option<usize>) -> String {
+    let limit = max_length.unwrap_or(DEFAULT_MAX_SIGNATURE_LENGTH);
+    if sig.len() <= limit {
+        sig.to_string()
+    } else {
+        // Find a safe char boundary for truncation
+        let truncate_at = limit.saturating_sub(3);
+        let end = sig
+            .char_indices()
+            .take_while(|(i, _)| *i < truncate_at)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(truncate_at);
+        format!("{}...", &sig[..end])
+    }
+}
+
 pub fn create_service(manager: Arc<Manager>) -> LspService {
     LspService { manager }
 }
@@ -477,6 +508,11 @@ async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &mut Symbol) 
                 symbol.jsdoc_summary = extract_docs_from_source(&source_code);
             }
         }
+    }
+
+    // Truncate signature if too long
+    if let Some(ref sig) = symbol.signature {
+        symbol.signature = Some(truncate_signature(sig, None));
     }
 
     // Best-effort: detect if exported
@@ -831,7 +867,10 @@ impl LspService {
             // Fetch hover info for signature and doc
             let (signature, doc) = self.fetch_hover_info(&path, &location.range.start).await;
 
-            definition_items.push(definition_item_from_location(&location, symbol, snippet, signature, doc));
+            // Get reference count for this definition
+            let reference_count = self.count_references(&path, &location.range.start).await;
+
+            definition_items.push(definition_item_from_location(&location, symbol, snippet, signature, doc, reference_count));
         }
 
         let related = compute_related_symbols(
@@ -1190,6 +1229,7 @@ impl LspService {
         file_path: &str,
         position: Position,
         include_raw_response: bool,
+        include_definition: bool,
     ) -> Result<HoverResponse, ServiceError> {
         let hover = self
             .manager
@@ -1225,10 +1265,52 @@ impl LspService {
             None => (None, None, None),
         };
 
+        // Optionally fetch definition location
+        let definition = if include_definition {
+            self.fetch_definition_location(file_path, position).await
+        } else {
+            None
+        };
+
         Ok(HoverResponse {
             raw_response,
             contents,
             range,
+            definition,
+        })
+    }
+
+    /// Fetches minimal definition location for hover response
+    async fn fetch_definition_location(
+        &self,
+        file_path: &str,
+        position: Position,
+    ) -> Option<DefinitionLocation> {
+        let lsp_position = LspPosition {
+            line: position.line.saturating_sub(1),
+            character: position.character.saturating_sub(1),
+        };
+
+        let definitions = self.manager.find_definition(file_path, lsp_position).await.ok()?;
+        let locations = match definitions {
+            GotoDefinitionResponse::Scalar(loc) => vec![loc],
+            GotoDefinitionResponse::Array(locs) => locs,
+            GotoDefinitionResponse::Link(links) => {
+                links.into_iter().map(|l| Location {
+                    uri: l.target_uri,
+                    range: l.target_selection_range,
+                }).collect()
+            }
+        };
+
+        let first = locations.first()?;
+        let path = uri_to_relative_path_string(&first.uri);
+        let external = if path.contains("node_modules") { Some(true) } else { None };
+
+        Some(DefinitionLocation {
+            path,
+            line: first.range.start.line + 1,
+            external,
         })
     }
 
@@ -1245,6 +1327,19 @@ impl LspService {
             Ok(Some(hover)) => extract_signature_and_docs(&hover.contents),
             _ => (None, None),
         }
+    }
+
+    /// Counts references to a symbol at the given position.
+    /// Used to populate reference_count in find_definition responses.
+    async fn count_references(
+        &self,
+        file_path: &str,
+        position: &LspPosition,
+    ) -> Option<u32> {
+        let references = self.manager.find_references(file_path, *position).await.ok()?;
+        // Don't include the definition itself in the count
+        let count = references.len().saturating_sub(1) as u32;
+        Some(count)
     }
 
     pub async fn workspace_symbol(
@@ -1963,6 +2058,7 @@ fn definition_item_from_location(
     snippet: Option<CodeContext>,
     signature: Option<String>,
     doc: Option<String>,
+    reference_count: Option<u32>,
 ) -> McpDefinitionLocation {
     let path = uri_to_relative_path_string(&location.uri);
     let position = Position {
@@ -1973,6 +2069,14 @@ fn definition_item_from_location(
         Some(symbol) => (symbol.file_range.range.clone(), Some(symbol.kind.clone())),
         None => (range_from_lsp(&location.range), None),
     };
+
+    // Derive external info from path
+    let external_info = ExternalInfo::from_path(&path);
+    let (external, package) = match external_info {
+        Some(info) => (Some(info.external), info.package),
+        None => (None, None),
+    };
+
     McpDefinitionLocation {
         path,
         position,
@@ -1981,6 +2085,9 @@ fn definition_item_from_location(
         snippet,
         signature,
         doc,
+        external,
+        package,
+        reference_count,
     }
 }
 
@@ -2450,6 +2557,7 @@ mod tests {
                     Some(snippet),
                     sig,
                     doc,
+                    None,
                 ))
             });
             handle.join().ok().flatten()
@@ -3127,6 +3235,9 @@ fn internal_helper() {
             snippet: None,
             signature: Some("(args: {classId: number}) => UseQueryResult<ClassDetails>".to_string()),
             doc: Some("Query hook for fetching class details by ID".to_string()),
+            external: None,
+            package: None,
+            reference_count: None,
         };
 
         assert!(
@@ -3152,6 +3263,9 @@ fn internal_helper() {
             snippet: None,
             signature: Some("fn example(x: i32) -> String".to_string()),
             doc: Some("Example function documentation".to_string()),
+            external: None,
+            package: None,
+            reference_count: None,
         };
 
         let json = serde_json::to_value(&def_location).expect("serialization failed");
@@ -3184,6 +3298,9 @@ fn internal_helper() {
             snippet: None,
             signature: None,
             doc: None,
+            external: None,
+            package: None,
+            reference_count: None,
         };
 
         let json = serde_json::to_value(&def_location).expect("serialization failed");
@@ -3196,6 +3313,35 @@ fn internal_helper() {
             json.get("doc").is_none(),
             "None doc must be skipped in serialization"
         );
+    }
+
+    #[test]
+    fn test_mcp_definition_location_includes_external_fields() {
+        let def_location = McpDefinitionLocation {
+            path: "node_modules/.pnpm/@reduxjs+toolkit@2.0.0/node_modules/@reduxjs/toolkit/dist/index.d.ts".to_string(),
+            position: Position { line: 100, character: 5 },
+            definition_range: Range {
+                start: Position { line: 100, character: 1 },
+                end: Position { line: 110, character: 1 },
+            },
+            symbol_kind: Some("function".to_string()),
+            snippet: None,
+            signature: Some("fn configureStore<S>() -> Store<S>".to_string()),
+            doc: None,
+            external: Some(true),
+            package: Some(PackageInfo {
+                name: "@reduxjs/toolkit".to_string(),
+                version: "2.0.0".to_string(),
+            }),
+            reference_count: Some(42),
+        };
+
+        let json = serde_json::to_value(&def_location).expect("serialization failed");
+
+        assert_eq!(json["external"], true, "external must be true");
+        assert_eq!(json["package"]["name"], "@reduxjs/toolkit", "package name must match");
+        assert_eq!(json["package"]["version"], "2.0.0", "package version must match");
+        assert_eq!(json["reference_count"], 42, "reference_count must match");
     }
 
     #[test]
@@ -3419,5 +3565,38 @@ fn internal_helper() {
         let filtered = filter_sibling_exports(siblings, 5);
 
         assert_eq!(filtered.len(), 5, "must respect siblings limit");
+    }
+
+    #[test]
+    fn test_truncate_signature_short_string_unchanged() {
+        let sig = "fn foo(x: i32) -> bool";
+        let result = truncate_signature(sig, Some(50));
+        assert_eq!(result, sig);
+    }
+
+    #[test]
+    fn test_truncate_signature_long_string_truncated() {
+        let sig = "fn configure_store(options: StoreOptions<State, Middleware, Enhancers>) -> EnhancedStore<State>";
+        let result = truncate_signature(sig, Some(50));
+        assert_eq!(result.len(), 50);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_signature_default_length() {
+        let sig = "a".repeat(250);
+        let result = truncate_signature(&sig, None);
+        assert!(result.len() <= DEFAULT_MAX_SIGNATURE_LENGTH);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_signature_unicode_safe() {
+        // Unicode chars that could be split unsafely
+        let sig = "fn 测试函数(参数: 类型) -> 返回值";
+        let result = truncate_signature(sig, Some(20));
+        // Should not panic and should be valid UTF-8
+        assert!(result.is_ascii() || result.chars().count() > 0);
+        assert!(result.ends_with("..."));
     }
 }

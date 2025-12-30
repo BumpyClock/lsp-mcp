@@ -609,6 +609,18 @@ pub enum HoverBatchItem {
     Error { error: String },
 }
 
+/// Minimal definition location for hover response
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+pub struct DefinitionLocation {
+    /// Path to the file containing the definition
+    pub path: String,
+    /// Line number (1-indexed)
+    pub line: u32,
+    /// True if definition is in node_modules
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external: Option<bool>,
+}
+
 /// Response to a hover request
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HoverResponse {
@@ -621,6 +633,9 @@ pub struct HoverResponse {
     /// The range of the symbol being hovered
     #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<Range>,
+    /// Definition location (optional, when include_definition is true)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub definition: Option<DefinitionLocation>,
 }
 
 /// The contents of a hover response
@@ -1637,5 +1652,55 @@ mod tests {
             diag.has_quick_fix, false,
             "diagnostic from LSP must have has_quick_fix set to false by default"
         );
+    }
+
+    #[test]
+    fn test_definition_location_serialization() {
+        let def_loc = DefinitionLocation {
+            path: "node_modules/@reduxjs/toolkit/dist/index.d.mts".to_string(),
+            line: 1847,
+            external: Some(true),
+        };
+
+        let json = serde_json::to_value(&def_loc).expect("failed to serialize");
+
+        assert_eq!(json["path"], "node_modules/@reduxjs/toolkit/dist/index.d.mts");
+        assert_eq!(json["line"], 1847);
+        assert_eq!(json["external"], true);
+    }
+
+    #[test]
+    fn test_hover_response_with_definition() {
+        let hover = HoverResponse {
+            raw_response: None,
+            contents: Some(HoverContents::Markup("```typescript\nfunction configureStore<S>(): EnhancedStore\n```".to_string())),
+            range: None,
+            definition: Some(DefinitionLocation {
+                path: "node_modules/@reduxjs/toolkit/dist/index.d.mts".to_string(),
+                line: 1847,
+                external: Some(true),
+            }),
+        };
+
+        let json = serde_json::to_value(&hover).expect("failed to serialize");
+
+        assert!(json.get("definition").is_some(), "definition must be present");
+        assert_eq!(json["definition"]["path"], "node_modules/@reduxjs/toolkit/dist/index.d.mts");
+        assert_eq!(json["definition"]["line"], 1847);
+        assert_eq!(json["definition"]["external"], true);
+    }
+
+    #[test]
+    fn test_hover_response_skips_none_definition() {
+        let hover = HoverResponse {
+            raw_response: None,
+            contents: Some(HoverContents::Markup("some docs".to_string())),
+            range: None,
+            definition: None,
+        };
+
+        let json = serde_json::to_value(&hover).expect("failed to serialize");
+
+        assert!(json.get("definition").is_none(), "None definition must be skipped in serialization");
     }
 }

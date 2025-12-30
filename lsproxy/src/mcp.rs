@@ -166,14 +166,16 @@ impl LspMcpServer {
         }
     }
 
-    #[tool(description = "Hover info at position. Use 'requests' for batch mode with array of {path, line, character}")]
+    #[tool(description = "Hover info at position. Use include_definition to also get definition location. Use 'requests' for batch mode with array of {path, line, character}")]
     async fn hover(
         &self,
         path: Option<String>,
         line: Option<u32>,
         character: Option<u32>,
+        include_definition: Option<bool>,
         requests: Option<String>,
     ) -> ToolOutput {
+        let include_def = include_definition.unwrap_or(false);
         if let Some(requests_json) = requests {
             let batch_requests: Vec<HoverRequest> = match serde_json::from_str(&requests_json) {
                 Ok(r) => r,
@@ -187,7 +189,7 @@ impl LspMcpServer {
                 };
                 match self
                     .service
-                    .hover(&req.path, pos, self.output_mode == OutputMode::Verbose)
+                    .hover(&req.path, pos, self.output_mode == OutputMode::Verbose, include_def)
                     .await
                 {
                     Ok(response) => results.push(HoverBatchItem::Success(response)),
@@ -210,7 +212,7 @@ impl LspMcpServer {
         let pos = Position { line, character };
         match self
             .service
-            .hover(&path, pos, self.output_mode == OutputMode::Verbose)
+            .hover(&path, pos, self.output_mode == OutputMode::Verbose, include_def)
             .await
         {
             Ok(response) => {
