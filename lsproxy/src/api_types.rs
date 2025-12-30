@@ -223,6 +223,10 @@ pub struct Symbol {
     /// Number of lines in the symbol's context range.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line_count: Option<u32>,
+
+    /// Nested child symbols (for hierarchical structure from LSP documentSymbol).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub children: Option<Vec<Symbol>>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]

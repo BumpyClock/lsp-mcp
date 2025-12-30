@@ -11,7 +11,7 @@ use crate::utils::file_utils::{
 };
 use crate::utils::workspace_documents::{WorkspaceDocuments, DEFAULT_EXCLUDE_PATTERNS};
 use log::{debug, error, info, warn};
-use lsp_types::{GotoDefinitionResponse, Location, Position, Range, Url};
+use lsp_types::{DocumentSymbolResponse, GotoDefinitionResponse, Location, Position, Range, Url};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult, DebouncedEvent};
 use std::collections::{HashMap, HashSet};
@@ -261,6 +261,30 @@ impl Manager {
             .map_err(|e| LspManagerError::InternalError(format!("Symbol retrieval failed: {}", e)))
     }
 
+    pub async fn document_symbol(
+        &self,
+        file_path: &str,
+    ) -> Result<Option<DocumentSymbolResponse>, LspManagerError> {
+        let full_path = get_mount_dir().join(file_path);
+        let full_path_str = full_path.to_str().unwrap_or_default();
+        let lsp_type = detect_language(full_path_str).map_err(|e| {
+            LspManagerError::InternalError(format!("Language detection failed: {}", e))
+        })?;
+
+        let client = self
+            .get_client(lsp_type)
+            .await
+            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let mut locked_client = client.lock().await;
+
+        locked_client
+            .text_document_document_symbol(full_path_str)
+            .await
+            .map_err(|e| {
+                LspManagerError::InternalError(format!("Document symbol retrieval failed: {}", e))
+            })
+    }
+
     pub async fn get_symbol_from_position(
         &self,
         file_path: &str,
@@ -395,14 +419,6 @@ impl Manager {
         file_path: &str,
         position: Position,
     ) -> Result<Option<lsp_types::Hover>, LspManagerError> {
-        let workspace_files = self.list_files().await.map_err(|e| {
-            LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
-        })?;
-
-        if !workspace_files.contains(&file_path.to_string()) {
-            return Err(LspManagerError::FileNotFound(file_path.to_string()));
-        }
-
         let full_path = get_mount_dir().join(file_path);
         let full_path_str = full_path.to_str().unwrap_or_default();
         let lsp_type = detect_language(full_path_str).map_err(|e| {

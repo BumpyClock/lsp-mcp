@@ -11,12 +11,12 @@ use log::{debug, error, warn};
 use lsp_types::{
     ClientCapabilities, CodeActionClientCapabilities, CodeActionContext, CodeActionKindLiteralSupport,
     CodeActionLiteralSupport, CodeActionOrCommand, CodeActionParams, DiagnosticTag,
-    DidOpenTextDocumentParams, DocumentSymbolClientCapabilities, GotoDefinitionParams,
-    GotoDefinitionResponse, InitializeParams, InitializeResult, Location, PartialResultParams,
-    Position, PublishDiagnosticsClientCapabilities, PublishDiagnosticsParams, Range,
-    ReferenceContext, ReferenceParams, TagSupport, TextDocumentClientCapabilities,
-    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
-    WorkDoneProgressParams, WorkspaceFolder,
+    DidOpenTextDocumentParams, DocumentSymbolClientCapabilities, DocumentSymbolParams,
+    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, InitializeParams,
+    InitializeResult, Location, PartialResultParams, Position, PublishDiagnosticsClientCapabilities,
+    PublishDiagnosticsParams, Range, ReferenceContext, ReferenceParams, TagSupport,
+    TextDocumentClientCapabilities, TextDocumentIdentifier, TextDocumentItem,
+    TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -454,6 +454,67 @@ pub trait LspClient: Send {
 
         debug!("Received hover response");
         Ok(hover_resp)
+    }
+
+    async fn text_document_document_symbol(
+        &mut self,
+        file_path: &str,
+    ) -> Result<Option<DocumentSymbolResponse>, Box<dyn Error + Send + Sync>> {
+        debug!("Requesting document symbols for {}", file_path);
+
+        let needs_open = {
+            let workspace_documents = self.get_workspace_documents();
+            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
+                && !workspace_documents.is_did_open_document(file_path)
+        };
+
+        if needs_open {
+            let document_text = self
+                .get_workspace_documents()
+                .read_text_document(&PathBuf::from(file_path), None)
+                .await?;
+
+            self.text_document_did_open(TextDocumentItem {
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+                language_id: detect_language_string(file_path)?,
+                version: 1,
+                text: document_text,
+            })
+            .await?;
+
+            self.get_workspace_documents()
+                .add_did_open_document(file_path);
+        }
+
+        let params = DocumentSymbolParams {
+            text_document: TextDocumentIdentifier {
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+
+        let result = self
+            .send_request(
+                "textDocument/documentSymbol",
+                Some(serde_json::to_value(params)?),
+            )
+            .await?;
+
+        let symbols: Option<DocumentSymbolResponse> = if result.is_null() {
+            None
+        } else {
+            serde_json::from_value(result)?
+        };
+
+        debug!(
+            "Received document symbol response: {:?} symbols",
+            symbols.as_ref().map(|s| match s {
+                DocumentSymbolResponse::Flat(v) => v.len(),
+                DocumentSymbolResponse::Nested(v) => v.len(),
+            })
+        );
+        Ok(symbols)
     }
 
     async fn text_document_code_action(
