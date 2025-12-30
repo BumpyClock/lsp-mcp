@@ -737,6 +737,11 @@ impl Manager {
         file_path: &str,
         position: Position,
     ) -> Result<Option<Vec<lsp_types::CallHierarchyItem>>, LspManagerError> {
+        debug!(
+            "prepare_call_hierarchy called: file={}, position=({}, {})",
+            file_path, position.line, position.character
+        );
+
         let workspace_files = self.list_files().await.map_err(|e| {
             LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
         })?;
@@ -751,18 +756,42 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
+        debug!("prepare_call_hierarchy: detected language {:?}", lsp_type);
+
         let client = self
             .get_client(lsp_type)
             .await
             .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
         let mut locked_client = client.lock().await;
 
-        locked_client
+        let result = locked_client
             .prepare_call_hierarchy(full_path_str, position)
             .await
             .map_err(|e| {
                 LspManagerError::InternalError(format!("Call hierarchy preparation failed: {}", e))
-            })
+            })?;
+
+        debug!(
+            "prepare_call_hierarchy raw response: {:?}",
+            result.as_ref().map(|items| items.len())
+        );
+        if let Some(ref items) = result {
+            for (i, item) in items.iter().enumerate() {
+                debug!(
+                    "  item[{}]: name={}, kind={:?}, uri={}, range=({},{})-({},{})",
+                    i,
+                    item.name,
+                    item.kind,
+                    uri_to_relative_path_string(&item.uri),
+                    item.range.start.line,
+                    item.range.start.character,
+                    item.range.end.line,
+                    item.range.end.character
+                );
+            }
+        }
+
+        Ok(result)
     }
 
     pub async fn incoming_calls(
@@ -770,6 +799,11 @@ impl Manager {
         file_path: &str,
         item: &lsp_types::CallHierarchyItem,
     ) -> Result<Vec<lsp_types::CallHierarchyIncomingCall>, LspManagerError> {
+        debug!(
+            "incoming_calls called: file={}, item.name={}, item.kind={:?}",
+            file_path, item.name, item.kind
+        );
+
         let full_path = get_mount_dir().join(file_path);
         let full_path_str = full_path.to_str().unwrap_or_default();
         let lsp_type = detect_language(full_path_str).map_err(|e| {
@@ -782,12 +816,24 @@ impl Manager {
             .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
         let mut locked_client = client.lock().await;
 
-        locked_client
+        let result = locked_client
             .call_hierarchy_incoming_calls(item)
             .await
             .map_err(|e| {
                 LspManagerError::InternalError(format!("Incoming calls retrieval failed: {}", e))
-            })
+            })?;
+
+        debug!("incoming_calls raw response: {} calls", result.len());
+        for (i, call) in result.iter().enumerate() {
+            debug!(
+                "  call[{}]: from={}, from_ranges={:?}",
+                i,
+                call.from.name,
+                call.from_ranges.len()
+            );
+        }
+
+        Ok(result)
     }
 
     pub async fn outgoing_calls(
@@ -795,6 +841,11 @@ impl Manager {
         file_path: &str,
         item: &lsp_types::CallHierarchyItem,
     ) -> Result<Vec<lsp_types::CallHierarchyOutgoingCall>, LspManagerError> {
+        debug!(
+            "outgoing_calls called: file={}, item.name={}, item.kind={:?}",
+            file_path, item.name, item.kind
+        );
+
         let full_path = get_mount_dir().join(file_path);
         let full_path_str = full_path.to_str().unwrap_or_default();
         let lsp_type = detect_language(full_path_str).map_err(|e| {
@@ -807,11 +858,23 @@ impl Manager {
             .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
         let mut locked_client = client.lock().await;
 
-        locked_client
+        let result = locked_client
             .call_hierarchy_outgoing_calls(item)
             .await
             .map_err(|e| {
                 LspManagerError::InternalError(format!("Outgoing calls retrieval failed: {}", e))
-            })
+            })?;
+
+        debug!("outgoing_calls raw response: {} calls", result.len());
+        for (i, call) in result.iter().enumerate() {
+            debug!(
+                "  call[{}]: to={}, from_ranges={:?}",
+                i,
+                call.to.name,
+                call.from_ranges.len()
+            );
+        }
+
+        Ok(result)
     }
 }

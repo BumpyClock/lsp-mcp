@@ -8,6 +8,7 @@ use crate::api_types::{
 };
 use crate::lsp::manager::Manager;
 use crate::utils::file_utils::uri_to_relative_path_string;
+use log::debug;
 use lsp_types::Position as LspPosition;
 use std::sync::Arc;
 
@@ -70,6 +71,7 @@ pub(crate) async fn incoming_calls_impl(
     let item = match items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) }) {
         Some(item) => item,
         None => {
+            debug!("incoming_calls_impl: prepare_call_hierarchy returned no items");
             return Ok(IncomingCallsResponse {
                 raw_response: None,
                 calls: vec![],
@@ -78,14 +80,20 @@ pub(crate) async fn incoming_calls_impl(
     };
 
     let calls = manager.incoming_calls(file_path, &item).await?;
+    debug!("incoming_calls_impl: got {} raw calls from LSP", calls.len());
 
     let workspace_files = manager.list_files().await?;
+    debug!("incoming_calls_impl: workspace has {} files", workspace_files.len());
 
     let converted_calls: Vec<IncomingCallInfo> = calls
         .into_iter()
         .filter(|call| {
             let path = uri_to_relative_path_string(&call.from.uri);
-            workspace_files.contains(&path)
+            let in_workspace = workspace_files.contains(&path);
+            if !in_workspace {
+                debug!("incoming_calls_impl: filtering out call from {} (not in workspace)", path);
+            }
+            in_workspace
         })
         .map(|call| IncomingCallInfo {
             from: call_hierarchy_item_to_info(&call.from),
@@ -139,6 +147,7 @@ pub(crate) async fn outgoing_calls_impl(
     let item = match items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) }) {
         Some(item) => item,
         None => {
+            debug!("outgoing_calls_impl: prepare_call_hierarchy returned no items");
             return Ok(OutgoingCallsResponse {
                 raw_response: None,
                 calls: vec![],
@@ -147,14 +156,20 @@ pub(crate) async fn outgoing_calls_impl(
     };
 
     let calls = manager.outgoing_calls(file_path, &item).await?;
+    debug!("outgoing_calls_impl: got {} raw calls from LSP", calls.len());
 
     let workspace_files = manager.list_files().await?;
+    debug!("outgoing_calls_impl: workspace has {} files", workspace_files.len());
 
     let converted_calls: Vec<OutgoingCallInfo> = calls
         .into_iter()
         .filter(|call| {
             let path = uri_to_relative_path_string(&call.to.uri);
-            workspace_files.contains(&path)
+            let in_workspace = workspace_files.contains(&path);
+            if !in_workspace {
+                debug!("outgoing_calls_impl: filtering out call to {} (not in workspace)", path);
+            }
+            in_workspace
         })
         .map(|call| OutgoingCallInfo {
             to: call_hierarchy_item_to_info(&call.to),

@@ -12,6 +12,7 @@ pub enum ServiceError {
     IdentifierSelection(PositionError),
     CallHierarchy(CallHierarchyError),
     Serialization(String),
+    InvalidPath(String),
 }
 
 impl fmt::Display for ServiceError {
@@ -27,6 +28,9 @@ impl fmt::Display for ServiceError {
             ServiceError::Serialization(message) => {
                 write!(f, "Serialization failed because {message}")
             }
+            ServiceError::InvalidPath(message) => {
+                write!(f, "Invalid path: {message}")
+            }
         }
     }
 }
@@ -36,7 +40,7 @@ impl ServiceError {
         match self {
             ServiceError::IdentifierSelection(e) => e.suggestions(),
             ServiceError::CallHierarchy(e) => e.suggestions(),
-            ServiceError::Lsp(_) | ServiceError::Serialization(_) => vec![],
+            ServiceError::Lsp(_) | ServiceError::Serialization(_) | ServiceError::InvalidPath(_) => vec![],
         }
     }
 }

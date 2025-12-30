@@ -9,6 +9,7 @@ Evaluate whether each tool response is actionable enough for real agentic coding
 ## Instructions
 
 - Use parallel tool calls whenever queries are independent.
+- Try with both absolute and relative file paths.
 - Use 2-3 representative code locations across the repo (not edge cases). Include at least:
   - A function or method
   - A type or interface

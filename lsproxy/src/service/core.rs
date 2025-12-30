@@ -8,6 +8,7 @@ use crate::api_types::{
     WorkspaceSymbolResponse,
 };
 use crate::lsp::manager::Manager;
+use crate::utils::file_utils::normalize_path;
 use lsp_types::Range as LspRange;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -43,6 +44,14 @@ pub fn create_service(manager: Arc<Manager>) -> LspService {
     LspService { manager }
 }
 
+fn normalize_file_path(file_path: &str) -> Result<String, ServiceError> {
+    normalize_path(file_path).map_err(|e| ServiceError::InvalidPath(e.to_string()))
+}
+
+fn normalize_optional_file_path(file_path: Option<&str>) -> Result<Option<String>, ServiceError> {
+    file_path.map(normalize_file_path).transpose()
+}
+
 impl LspService {
     /// Retrieves all symbol definitions in a file with enriched metadata.
     pub async fn definitions_in_file(
@@ -51,7 +60,8 @@ impl LspService {
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<McpSymbolsResponse, ServiceError> {
-        definitions::definitions_in_file_impl(&self.manager, file_path, limit, offset).await
+        let file_path = normalize_file_path(file_path)?;
+        definitions::definitions_in_file_impl(&self.manager, &file_path, limit, offset).await
     }
 
     /// Finds the definition of a symbol at the given position.
@@ -64,9 +74,10 @@ impl LspService {
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<McpDefinitionResponse, ServiceError> {
+        let file_path = normalize_file_path(file_path)?;
         definitions::find_definition_impl(
             &self.manager,
-            file_path,
+            &file_path,
             position,
             include_source_code,
             include_raw_response,
@@ -83,7 +94,8 @@ impl LspService {
         position: Position,
         include_raw_response: bool,
     ) -> Result<ImplementationResponse, ServiceError> {
-        definitions::find_implementation_impl(&self.manager, file_path, position, include_raw_response)
+        let file_path = normalize_file_path(file_path)?;
+        definitions::find_implementation_impl(&self.manager, &file_path, position, include_raw_response)
             .await
     }
 
@@ -97,9 +109,10 @@ impl LspService {
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<McpReferencesResponse, ServiceError> {
+        let file_path = normalize_file_path(file_path)?;
         references::find_references_impl(
             &self.manager,
-            file_path,
+            &file_path,
             position,
             include_raw_response,
             context_lines,
@@ -116,7 +129,8 @@ impl LspService {
         position: Position,
         full_scan: bool,
     ) -> Result<ReferencedSymbolsResponse, ServiceError> {
-        references::find_referenced_symbols_impl(&self.manager, file_path, position, full_scan).await
+        let file_path = normalize_file_path(file_path)?;
+        references::find_referenced_symbols_impl(&self.manager, &file_path, position, full_scan).await
     }
 
     /// Finds identifiers matching the given name in a file.
@@ -128,7 +142,8 @@ impl LspService {
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<McpIdentifierResponse, ServiceError> {
-        symbols::find_identifier_impl(&self.manager, file_path, name, position, limit, offset).await
+        let file_path = normalize_file_path(file_path)?;
+        symbols::find_identifier_impl(&self.manager, &file_path, name, position, limit, offset).await
     }
 
     /// Lists all files tracked by the workspace.
@@ -147,7 +162,8 @@ impl LspService {
         range: Option<Range>,
     ) -> Result<String, ServiceError> {
         let lsp_range = range.map(|range| LspRange::new(range.start.into(), range.end.into()));
-        Ok(self.manager.read_source_code(file_path, lsp_range).await?)
+        let file_path = normalize_file_path(file_path)?;
+        Ok(self.manager.read_source_code(&file_path, lsp_range).await?)
     }
 
     /// Returns health status for all supported language servers.
@@ -180,7 +196,8 @@ impl LspService {
         &self,
         file_path: Option<&str>,
     ) -> Result<DiagnosticsResponse, ServiceError> {
-        diagnostics::get_diagnostics_impl(&self.manager, file_path).await
+        let file_path = normalize_optional_file_path(file_path)?;
+        diagnostics::get_diagnostics_impl(&self.manager, file_path.as_deref()).await
     }
 
     /// Gets hover information (documentation, type info) for a symbol at a given position.
@@ -191,7 +208,8 @@ impl LspService {
         include_raw_response: bool,
         include_definition: bool,
     ) -> Result<HoverResponse, ServiceError> {
-        hover::hover_impl(&self.manager, file_path, position, include_raw_response, include_definition)
+        let file_path = normalize_file_path(file_path)?;
+        hover::hover_impl(&self.manager, &file_path, position, include_raw_response, include_definition)
             .await
     }
 
@@ -215,7 +233,8 @@ impl LspService {
         position: Position,
         include_raw_response: bool,
     ) -> Result<PrepareCallHierarchyResponse, ServiceError> {
-        call_hierarchy::prepare_call_hierarchy_impl(&self.manager, file_path, position, include_raw_response)
+        let file_path = normalize_file_path(file_path)?;
+        call_hierarchy::prepare_call_hierarchy_impl(&self.manager, &file_path, position, include_raw_response)
             .await
     }
 
@@ -226,7 +245,8 @@ impl LspService {
         position: Position,
         include_raw_response: bool,
     ) -> Result<IncomingCallsResponse, ServiceError> {
-        call_hierarchy::incoming_calls_impl(&self.manager, file_path, position, include_raw_response)
+        let file_path = normalize_file_path(file_path)?;
+        call_hierarchy::incoming_calls_impl(&self.manager, &file_path, position, include_raw_response)
             .await
     }
 
@@ -237,7 +257,8 @@ impl LspService {
         position: Position,
         include_raw_response: bool,
     ) -> Result<OutgoingCallsResponse, ServiceError> {
-        call_hierarchy::outgoing_calls_impl(&self.manager, file_path, position, include_raw_response)
+        let file_path = normalize_file_path(file_path)?;
+        call_hierarchy::outgoing_calls_impl(&self.manager, &file_path, position, include_raw_response)
             .await
     }
 
@@ -248,7 +269,8 @@ impl LspService {
         position: Position,
         direction: CallHierarchyDirection,
     ) -> Result<CallHierarchyResponse, ServiceError> {
-        call_hierarchy::call_hierarchy_impl(&self.manager, file_path, position, direction).await
+        let file_path = normalize_file_path(file_path)?;
+        call_hierarchy::call_hierarchy_impl(&self.manager, &file_path, position, direction).await
     }
 }
 
@@ -271,12 +293,14 @@ mod tests {
         workspace_symbol_info_from_lsp,
     };
     use crate::api_types::{CodeContext, FilePosition, FileRange, Identifier, Symbol};
+    use crate::api_types::{set_thread_local_mount_dir, unset_thread_local_mount_dir};
     use lsp_types::{
         CallHierarchyItem, Location, Position as LspPosition, Range as LspRange, SymbolInformation,
         SymbolKind, Url,
     };
     use crate::api_types::RelatedSymbols;
     use rand::{distr::Alphanumeric, Rng};
+    use std::path::PathBuf;
     use std::thread;
     use tempfile::TempDir;
     use crate::service::utils::pagination::paginate_items;
@@ -837,6 +861,35 @@ fn internal_helper() {
 
         assert!(internal_fn.line_count.is_some(), "line_count should be populated for all symbols");
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_normalize_file_path_converts_absolute_paths_to_relative() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        let workspace_root = temp_dir.path();
+        set_thread_local_mount_dir(workspace_root);
+
+        let unicode = char::from_u32(241).ok_or("negative: unicode should be valid")?;
+        let first_segment = format!("{}{}", random_irregular_string(), unicode);
+        let second_segment = random_irregular_string();
+        let relative_path = PathBuf::from(&first_segment).join(&second_segment);
+        let absolute_path = workspace_root.join(&relative_path);
+
+        let normalized = normalize_file_path(
+            absolute_path
+                .to_str()
+                .ok_or("negative: path should be valid utf8")?,
+        )
+        .expect("normalize_file_path should succeed for path within workspace");
+
+        assert_eq!(
+            normalized,
+            relative_path.to_string_lossy().into_owned(),
+            "negative: normalized path should match workspace-relative path"
+        );
+
+        unset_thread_local_mount_dir();
         Ok(())
     }
 
