@@ -26,8 +26,47 @@ fi
 archive="$(mktemp -t lsproxy-ast-grep-XXXXXX.tar.gz)"
 trap 'rm -f "$archive"' EXIT
 
-url="https://github.com/agentic-labs/lsproxy/releases/download/${version}/lsproxy-${version}-ast-grep-rules.tar.gz"
-curl -fsSL -o "$archive" "$url"
+rules_url="${AST_GREP_RULES_URL:-}"
+if [[ -z "$rules_url" ]]; then
+  rules_version="${AST_GREP_RULES_VERSION:-$version}"
+  rules_url="https://github.com/agentic-labs/lsproxy/releases/download/${rules_version}/lsproxy-${rules_version}-ast-grep-rules.tar.gz"
+fi
+
+if ! curl -fsSL -o "$archive" "$rules_url"; then
+  if [[ -n "${AST_GREP_RULES_URL:-}" || -n "${AST_GREP_RULES_VERSION:-}" ]]; then
+    echo "Failed to download ast-grep rules from ${rules_url}" >&2
+    exit 1
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 is required to resolve the latest ast-grep rules release" >&2
+    exit 1
+  fi
+
+  latest_url="$(python3 - <<'PY'
+import json
+import urllib.request
+
+url = "https://api.github.com/repos/agentic-labs/lsproxy/releases/latest"
+with urllib.request.urlopen(url) as response:
+    data = json.load(response)
+
+assets = data.get("assets", [])
+for asset in assets:
+    name = asset.get("name", "")
+    if "ast-grep-rules" in name:
+        print(asset.get("browser_download_url", ""))
+        break
+PY
+)"
+
+  if [[ -z "$latest_url" ]]; then
+    echo "Failed to resolve latest ast-grep rules download URL from GitHub" >&2
+    exit 1
+  fi
+
+  curl -fsSL -o "$archive" "$latest_url"
+fi
 
 if [[ "$(id -u)" -eq 0 ]]; then
   mkdir -p /usr/src

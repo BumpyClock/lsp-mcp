@@ -4,6 +4,7 @@
 use crate::config::OutputMode;
 use crate::markdown_formatter::ToMarkdown;
 use crate::service::ServiceError;
+use mcpkit::prelude::ToolOutput;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -98,6 +99,19 @@ pub fn format_error(error: &ServiceError) -> String {
     }
 
     result
+}
+
+/// Convert a ServiceError to a ToolOutput.
+///
+/// IdentifierSelection errors are returned as text messages (not MCP errors)
+/// because they are informational - providing suggestions for nearby identifiers.
+/// All other errors are returned as proper MCP errors.
+pub fn tool_output_from_error(error: ServiceError) -> ToolOutput {
+    let message = format_error(&error);
+    match error {
+        ServiceError::IdentifierSelection(_) => ToolOutput::text(message),
+        _ => ToolOutput::error(message),
+    }
 }
 
 /// Format a tool disabled message for MCP protocol-level error response
