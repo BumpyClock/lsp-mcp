@@ -25,8 +25,18 @@ impl ToMarkdown for McpReferencesResponse {
                 let line = reference.position.line;
                 match &reference.snippet {
                     Some(ctx) => {
-                        let first_line = ctx.source_code.lines().next().unwrap_or("");
-                        let escaped = escape_inline_code(first_line.trim());
+                        // Calculate which line within the context corresponds to the reference
+                        let context_start_line = ctx.range.range.start.line;
+                        let offset = line.saturating_sub(context_start_line) as usize;
+
+                        let target_line = ctx
+                            .source_code
+                            .lines()
+                            .nth(offset)
+                            .or_else(|| ctx.source_code.lines().next())
+                            .unwrap_or("");
+
+                        let escaped = escape_inline_code(target_line.trim());
                         output.push_str(&format!("- **Line {}**: `{}`\n", line, escaped));
                     }
                     None => {
@@ -530,6 +540,84 @@ mod tests {
         assert!(
             !markdown.contains('\n') || markdown.lines().all(|l| !l.contains("input: String")),
             "negative: multiline snippets should be trimmed or shown as first line only"
+        );
+    }
+
+    #[test]
+    fn it_displays_correct_line_from_context_window() {
+        // Bug scenario: reference is at line 27, but context starts at line 25 (context_lines=2)
+        // The formatter should display line 27's content, not line 25's
+        let ref_line = 27u32;
+        let context_start_line = 25u32;
+
+        // Context contains lines 25-29 (5 lines total)
+        let context_source = "line 25 content - WRONG\n\
+                              line 26 content - WRONG\n\
+                              line 27 content - CORRECT\n\
+                              line 28 content\n\
+                              line 29 content";
+
+        let reference = McpReferenceLocation {
+            path: None,
+            position: Position {
+                line: ref_line,
+                character: 5,
+            },
+            symbol_range: Range {
+                start: Position {
+                    line: ref_line,
+                    character: 5,
+                },
+                end: Position {
+                    line: ref_line,
+                    character: 15,
+                },
+            },
+            snippet: Some(CodeContext {
+                range: FileRange {
+                    path: "src/test.rs".to_string(),
+                    range: Range {
+                        start: Position {
+                            line: context_start_line,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: context_start_line + 4,
+                            character: 50,
+                        },
+                    },
+                },
+                source_code: context_source.to_string(),
+            }),
+        };
+
+        let response = McpReferencesResponse {
+            raw_response: None,
+            selected_identifier: create_test_identifier("testSymbol"),
+            limit: 50,
+            offset: 0,
+            truncated: false,
+            total_count: 1,
+            by_file: vec![FileGroup {
+                path: "src/test.rs".to_string(),
+                count: 1,
+                refs: vec![reference],
+            }],
+            by_type: Default::default(),
+        };
+
+        let markdown = response.to_markdown();
+
+        // Should display the CORRECT line (line 27), not the first line of context (line 25)
+        assert!(
+            markdown.contains("line 27 content - CORRECT"),
+            "negative: must display the actual reference line content, not first line of context. Got: {}",
+            markdown
+        );
+        assert!(
+            !markdown.contains("WRONG"),
+            "negative: must not display content from context lines before the reference. Got: {}",
+            markdown
         );
     }
 }
