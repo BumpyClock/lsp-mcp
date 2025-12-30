@@ -500,12 +500,22 @@ pub trait LspClient: Send {
             )
             .await?;
 
+        debug!("prepareCallHierarchy raw response: {}", result);
+
         let items: Option<Vec<lsp_types::CallHierarchyItem>> = if result.is_null() {
             None
         } else {
             serde_json::from_value(result)?
         };
 
+        if let Some(ref items) = items {
+            for (i, item) in items.iter().enumerate() {
+                debug!(
+                    "prepareCallHierarchy item[{}]: name={}, kind={:?}, uri={}, data={:?}",
+                    i, item.name, item.kind, item.uri, item.data
+                );
+            }
+        }
         debug!("Received call hierarchy prepare response");
         Ok(items)
     }
@@ -544,12 +554,24 @@ pub trait LspClient: Send {
         item: &lsp_types::CallHierarchyItem,
     ) -> Result<Vec<lsp_types::CallHierarchyOutgoingCall>, Box<dyn Error + Send + Sync>> {
         debug!("Requesting outgoing calls for {}", item.name);
+        debug!(
+            "outgoing_calls CallHierarchyItem: name={}, kind={:?}, uri={}, data={:?}",
+            item.name,
+            item.kind,
+            item.uri,
+            item.data
+        );
 
         let params = lsp_types::CallHierarchyOutgoingCallsParams {
             item: item.clone(),
             work_done_progress_params: WorkDoneProgressParams::default(),
             partial_result_params: PartialResultParams::default(),
         };
+
+        debug!(
+            "outgoing_calls request params JSON: {}",
+            serde_json::to_string(&params).unwrap_or_else(|_| "failed to serialize".to_string())
+        );
 
         let result = self
             .send_request(
@@ -558,6 +580,8 @@ pub trait LspClient: Send {
             )
             .await?;
 
+        debug!("outgoing_calls raw LSP response: {}", result);
+
         let calls: Vec<lsp_types::CallHierarchyOutgoingCall> = if result.is_null() {
             Vec::new()
         } else {
@@ -565,6 +589,12 @@ pub trait LspClient: Send {
         };
 
         debug!("Received {} outgoing calls", calls.len());
+        for (i, call) in calls.iter().enumerate() {
+            debug!(
+                "  outgoing call[{}]: to={}, uri={}, from_ranges={:?}",
+                i, call.to.name, call.to.uri, call.from_ranges
+            );
+        }
         Ok(calls)
     }
 

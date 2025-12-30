@@ -140,6 +140,18 @@ fn convert_symbol_information(sym_info: &lsp_types::SymbolInformation, _file_pat
     }
 }
 
+/// Recursively enriches a symbol and all its children with LSP hover data.
+/// Uses Box::pin to handle recursive async calls.
+async fn enrich_symbol_tree(manager: &Manager, file_path: &str, symbol: &mut Symbol) {
+    enrich_symbol(manager, file_path, symbol).await;
+
+    if let Some(ref mut children) = symbol.children {
+        for child in children {
+            Box::pin(enrich_symbol_tree(manager, file_path, child)).await;
+        }
+    }
+}
+
 /// Retrieves all symbol definitions in a file with enriched metadata.
 pub(crate) async fn definitions_in_file_impl(
     manager: &Arc<Manager>,
@@ -180,7 +192,7 @@ pub(crate) async fn definitions_in_file_impl(
     };
 
     for symbol in &mut symbols {
-        enrich_symbol(manager, file_path, symbol).await;
+        enrich_symbol_tree(manager, file_path, symbol).await;
     }
 
     let (symbols, pagination) = paginate_items(symbols, limit, offset);

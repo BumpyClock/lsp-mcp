@@ -16,9 +16,23 @@ use crate::service::utils::transformations::call_hierarchy_item_to_info;
 use lsp_types::Range as LspRange;
 
 /// Fetches 1-line source code snippets for each call site.
-async fn fetch_call_snippets(manager: &Arc<Manager>, mut calls: Vec<CallInfo>) -> Vec<CallInfo> {
+///
+/// For incoming calls: `call_ranges` are in the caller's file (`call.item.location.path`)
+/// For outgoing calls: `call_ranges` are in the original file being analyzed (`source_file_path`)
+async fn fetch_call_snippets(
+    manager: &Arc<Manager>,
+    mut calls: Vec<CallInfo>,
+    direction: CallHierarchyDirection,
+    source_file_path: &str,
+) -> Vec<CallInfo> {
     for call in &mut calls {
-        let file_path = &call.item.location.path;
+        // For incoming calls, read from the caller's file (call.item.location.path)
+        // For outgoing calls, read from the original source file being analyzed
+        let file_path = match direction {
+            CallHierarchyDirection::Incoming => &call.item.location.path,
+            CallHierarchyDirection::Outgoing => source_file_path,
+        };
+
         let mut snippets = Vec::with_capacity(call.call_ranges.len());
         for range in &call.call_ranges {
             let lsp_range = LspRange {
@@ -267,7 +281,7 @@ pub(crate) async fn call_hierarchy_impl(
     let workspace_files = manager.list_files().await?;
     debug!("call_hierarchy_impl: workspace has {} files", workspace_files.len());
 
-    let calls = match direction {
+    let calls: Vec<CallInfo> = match direction {
         CallHierarchyDirection::Incoming => {
             let lsp_calls = manager.incoming_calls(file_path, &item).await?;
             lsp_calls
@@ -330,7 +344,23 @@ pub(crate) async fn call_hierarchy_impl(
         }
     };
 
-    let calls = fetch_call_snippets(manager, calls).await;
+    debug!(
+        "call_hierarchy_impl: converted {} calls before fetch_snippets",
+        calls.len()
+    );
+    for (i, call) in calls.iter().enumerate() {
+        debug!(
+            "  converted call[{}]: name={}, path={}, external={:?}",
+            i, call.item.name, call.item.location.path, call.item.external
+        );
+    }
+
+    let calls = fetch_call_snippets(manager, calls, direction, file_path).await;
+
+    debug!(
+        "call_hierarchy_impl: returning {} calls after fetch_snippets",
+        calls.len()
+    );
 
     Ok(CallHierarchyResponse {
         direction,
