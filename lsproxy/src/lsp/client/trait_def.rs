@@ -1,56 +1,29 @@
 // ABOUTME: LSP client trait definition for language server communication
 // ABOUTME: Provides async methods for initialization, document operations, and diagnostics handling
 
-use crate::lsp::json_rpc::JsonRpc;
-use crate::lsp::process::Process;
+use super::capabilities::create_default_capabilities;
+use super::config::LspClientConfig;
+use crate::lsp::json_rpc::{JsonRpc, JsonRpcHandler};
+use crate::lsp::process::{Process, ProcessHandler};
 use crate::lsp::reconnect::{DocumentTracker, SpawnConfig};
-use crate::lsp::{DiagnosticsStore, ExpectedMessageKey, JsonRpcHandler, ProcessHandler};
+use crate::lsp::{DiagnosticsStore, ExpectedMessageKey, PendingRequests};
 use crate::utils::file_utils::{detect_language_string, search_directories};
 use async_trait::async_trait;
 use log::{debug, error, warn};
 use lsp_types::{
-    ClientCapabilities, CodeActionClientCapabilities, CodeActionContext, CodeActionKindLiteralSupport,
-    CodeActionLiteralSupport, CodeActionOrCommand, CodeActionParams, DiagnosticTag,
-    DidOpenTextDocumentParams, DocumentSymbolClientCapabilities, DocumentSymbolParams,
-    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, InitializeParams,
-    InitializeResult, Location, PartialResultParams, Position, PublishDiagnosticsClientCapabilities,
-    PublishDiagnosticsParams, Range, ReferenceContext, ReferenceParams, TagSupport,
-    TextDocumentClientCapabilities, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
+    ClientCapabilities, CodeActionContext, CodeActionOrCommand, CodeActionParams,
+    DidOpenTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse,
+    GotoDefinitionParams, GotoDefinitionResponse, InitializeParams, InitializeResult, Location,
+    PartialResultParams, Position, PublishDiagnosticsParams, Range, ReferenceContext,
+    ReferenceParams, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
+    WorkDoneProgressParams, WorkspaceFolder,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use crate::utils::workspace_documents::{
     DidOpenConfiguration, WorkspaceDocuments, WorkspaceDocumentsHandler, DEFAULT_EXCLUDE_PATTERNS,
 };
-
-use super::PendingRequests;
-
-/// Configuration for LSP client behavior
-#[derive(Clone, Debug)]
-pub struct LspClientConfig {
-    /// Timeout for individual LSP requests (default: 30 seconds)
-    pub request_timeout: Duration,
-    /// Maximum retry attempts for reconnection (default: 3)
-    pub max_reconnect_attempts: u32,
-    /// Base delay between reconnection attempts (default: 1 second)
-    pub reconnect_base_delay: Duration,
-    /// Maximum delay between reconnection attempts (default: 30 seconds)
-    pub reconnect_max_delay: Duration,
-}
-
-impl Default for LspClientConfig {
-    fn default() -> Self {
-        Self {
-            request_timeout: Duration::from_secs(30),
-            max_reconnect_attempts: 3,
-            reconnect_base_delay: Duration::from_secs(1),
-            reconnect_max_delay: Duration::from_secs(30),
-        }
-    }
-}
 
 #[async_trait]
 pub trait LspClient: Send {
@@ -74,46 +47,7 @@ pub trait LspClient: Send {
     }
 
     fn get_capabilities(&mut self) -> ClientCapabilities {
-        let mut capabilities = ClientCapabilities::default();
-        capabilities.text_document = Some(TextDocumentClientCapabilities {
-            document_symbol: Some(DocumentSymbolClientCapabilities {
-                dynamic_registration: Some(false),
-                hierarchical_document_symbol_support: Some(true),
-                ..Default::default()
-            }),
-            publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
-                related_information: Some(true),
-                tag_support: Some(TagSupport {
-                    value_set: vec![DiagnosticTag::UNNECESSARY, DiagnosticTag::DEPRECATED],
-                }),
-                code_description_support: Some(true),
-                data_support: Some(false),
-                version_support: Some(true),
-            }),
-            code_action: Some(CodeActionClientCapabilities {
-                dynamic_registration: Some(false),
-                code_action_literal_support: Some(CodeActionLiteralSupport {
-                    code_action_kind: CodeActionKindLiteralSupport {
-                        value_set: vec![
-                            lsp_types::CodeActionKind::QUICKFIX.as_str().to_string(),
-                            lsp_types::CodeActionKind::REFACTOR.as_str().to_string(),
-                            lsp_types::CodeActionKind::SOURCE.as_str().to_string(),
-                        ],
-                    },
-                }),
-                is_preferred_support: Some(true),
-                disabled_support: Some(true),
-                data_support: Some(true),
-                resolve_support: None,
-                honors_change_annotations: None,
-            }),
-            ..Default::default()
-        });
-
-        capabilities.experimental = Some(serde_json::json!({
-            "serverStatusNotification": true
-        }));
-        capabilities
+        create_default_capabilities()
     }
 
     async fn get_initialize_params(
@@ -124,7 +58,7 @@ pub trait LspClient: Send {
         Ok(InitializeParams {
             capabilities: self.get_capabilities(),
             workspace_folders: Some(workspace_folders),
-            root_uri: Some(Url::from_file_path(&root_path).unwrap()), // primarily for python
+            root_uri: Some(Url::from_file_path(&root_path).unwrap()),
             ..Default::default()
         })
     }
@@ -252,7 +186,6 @@ pub trait LspClient: Send {
         &mut self,
         item: lsp_types::TextDocumentItem,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Track the document for potential reconnection
         if let Some(path) = item.uri.to_file_path().ok() {
             if let Some(path_str) = path.to_str() {
                 self.track_opened_document(path_str, item.version).await;
@@ -283,30 +216,7 @@ pub trait LspClient: Send {
             file_path, position.line, position.character
         );
 
-        let needs_open = {
-            let workspace_documents = self.get_workspace_documents();
-            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
-                && !workspace_documents.is_did_open_document(file_path)
-        };
-
-        // If needed, read the document text and send didOpen
-        if needs_open {
-            let document_text = self
-                .get_workspace_documents()
-                .read_text_document(&PathBuf::from(file_path), None)
-                .await?;
-
-            self.text_document_did_open(TextDocumentItem {
-                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
-                language_id: detect_language_string(file_path)?,
-                version: 1,
-                text: document_text,
-            })
-            .await?;
-
-            self.get_workspace_documents()
-                .add_did_open_document(file_path);
-        }
+        self.ensure_document_open(file_path).await?;
 
         let params = GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -326,7 +236,6 @@ pub trait LspClient: Send {
             )
             .await?;
 
-        // If result is null, default to an empty array response instead of failing deserialization
         let goto_resp: GotoDefinitionResponse = if result.is_null() {
             GotoDefinitionResponse::Array(Vec::new())
         } else {
@@ -342,31 +251,7 @@ pub trait LspClient: Send {
         file_path: &str,
         position: Position,
     ) -> Result<Vec<Location>, Box<dyn Error + Send + Sync>> {
-        // Get the configuration and check if document is opened first
-        let needs_open = {
-            let workspace_documents = self.get_workspace_documents();
-            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
-                && !workspace_documents.is_did_open_document(file_path)
-        };
-
-        // If needed, read the document text and send didOpen
-        if needs_open {
-            let document_text = self
-                .get_workspace_documents()
-                .read_text_document(&PathBuf::from(file_path), None)
-                .await?;
-
-            self.text_document_did_open(TextDocumentItem {
-                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
-                language_id: detect_language_string(file_path)?,
-                version: 1,
-                text: document_text,
-            })
-            .await?;
-
-            self.get_workspace_documents()
-                .add_did_open_document(file_path);
-        }
+        self.ensure_document_open(file_path).await?;
 
         let params = ReferenceParams {
             text_document_position: TextDocumentPositionParams {
@@ -408,29 +293,7 @@ pub trait LspClient: Send {
             file_path, position.line, position.character
         );
 
-        let needs_open = {
-            let workspace_documents = self.get_workspace_documents();
-            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
-                && !workspace_documents.is_did_open_document(file_path)
-        };
-
-        if needs_open {
-            let document_text = self
-                .get_workspace_documents()
-                .read_text_document(&PathBuf::from(file_path), None)
-                .await?;
-
-            self.text_document_did_open(TextDocumentItem {
-                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
-                language_id: detect_language_string(file_path)?,
-                version: 1,
-                text: document_text,
-            })
-            .await?;
-
-            self.get_workspace_documents()
-                .add_did_open_document(file_path);
-        }
+        self.ensure_document_open(file_path).await?;
 
         let params = lsp_types::HoverParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -462,29 +325,7 @@ pub trait LspClient: Send {
     ) -> Result<Option<DocumentSymbolResponse>, Box<dyn Error + Send + Sync>> {
         debug!("Requesting document symbols for {}", file_path);
 
-        let needs_open = {
-            let workspace_documents = self.get_workspace_documents();
-            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
-                && !workspace_documents.is_did_open_document(file_path)
-        };
-
-        if needs_open {
-            let document_text = self
-                .get_workspace_documents()
-                .read_text_document(&PathBuf::from(file_path), None)
-                .await?;
-
-            self.text_document_did_open(TextDocumentItem {
-                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
-                language_id: detect_language_string(file_path)?,
-                version: 1,
-                text: document_text,
-            })
-            .await?;
-
-            self.get_workspace_documents()
-                .add_did_open_document(file_path);
-        }
+        self.ensure_document_open(file_path).await?;
 
         let params = DocumentSymbolParams {
             text_document: TextDocumentIdentifier {
@@ -528,29 +369,7 @@ pub trait LspClient: Send {
             file_path, range
         );
 
-        let needs_open = {
-            let workspace_documents = self.get_workspace_documents();
-            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
-                && !workspace_documents.is_did_open_document(file_path)
-        };
-
-        if needs_open {
-            let document_text = self
-                .get_workspace_documents()
-                .read_text_document(&PathBuf::from(file_path), None)
-                .await?;
-
-            self.text_document_did_open(TextDocumentItem {
-                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
-                language_id: detect_language_string(file_path)?,
-                version: 1,
-                text: document_text,
-            })
-            .await?;
-
-            self.get_workspace_documents()
-                .add_did_open_document(file_path);
-        }
+        self.ensure_document_open(file_path).await?;
 
         let params = CodeActionParams {
             text_document: TextDocumentIdentifier {
@@ -602,7 +421,6 @@ pub trait LspClient: Send {
             .send_request("workspace/symbol", Some(serde_json::to_value(params)?))
             .await?;
 
-        // workspace/symbol can return null or SymbolInformation[]
         let symbols: Vec<lsp_types::SymbolInformation> = if result.is_null() {
             Vec::new()
         } else {
@@ -623,31 +441,8 @@ pub trait LspClient: Send {
             file_path, position.line, position.character
         );
 
-        let needs_open = {
-            let workspace_documents = self.get_workspace_documents();
-            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
-                && !workspace_documents.is_did_open_document(file_path)
-        };
+        self.ensure_document_open(file_path).await?;
 
-        if needs_open {
-            let document_text = self
-                .get_workspace_documents()
-                .read_text_document(&PathBuf::from(file_path), None)
-                .await?;
-
-            self.text_document_did_open(TextDocumentItem {
-                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
-                language_id: detect_language_string(file_path)?,
-                version: 1,
-                text: document_text,
-            })
-            .await?;
-
-            self.get_workspace_documents()
-                .add_did_open_document(file_path);
-        }
-
-        // GotoImplementationParams is an alias for GotoDefinitionParams
         let params = GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
@@ -666,7 +461,6 @@ pub trait LspClient: Send {
             )
             .await?;
 
-        // GotoImplementationResponse is the same as GotoDefinitionResponse
         let impl_resp: GotoDefinitionResponse = if result.is_null() {
             GotoDefinitionResponse::Array(Vec::new())
         } else {
@@ -687,29 +481,7 @@ pub trait LspClient: Send {
             file_path, position.line, position.character
         );
 
-        let needs_open = {
-            let workspace_documents = self.get_workspace_documents();
-            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
-                && !workspace_documents.is_did_open_document(file_path)
-        };
-
-        if needs_open {
-            let document_text = self
-                .get_workspace_documents()
-                .read_text_document(&PathBuf::from(file_path), None)
-                .await?;
-
-            self.text_document_did_open(TextDocumentItem {
-                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
-                language_id: detect_language_string(file_path)?,
-                version: 1,
-                text: document_text,
-            })
-            .await?;
-
-            self.get_workspace_documents()
-                .add_did_open_document(file_path);
-        }
+        self.ensure_document_open(file_path).await?;
 
         let params = lsp_types::CallHierarchyPrepareParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -869,6 +641,7 @@ pub trait LspClient: Send {
 
         Ok(())
     }
+
     /// Sets up the workspace for the language server.
     ///
     /// Some language servers require specific commands to be run before
@@ -926,7 +699,6 @@ pub trait LspClient: Send {
         }
 
         if workspace_folders.is_empty() {
-            // Fallback: use the root_path itself as a workspace folder
             warn!("No workspace folders found. Using root path as workspace.");
             if let Ok(uri) = Url::from_file_path(&root_path) {
                 workspace_folders.push(WorkspaceFolder {
@@ -937,5 +709,37 @@ pub trait LspClient: Send {
         }
 
         Ok(workspace_folders.into_iter().collect())
+    }
+
+    /// Ensures a document is open for LSP operations that require it
+    async fn ensure_document_open(
+        &mut self,
+        file_path: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let needs_open = {
+            let workspace_documents = self.get_workspace_documents();
+            workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
+                && !workspace_documents.is_did_open_document(file_path)
+        };
+
+        if needs_open {
+            let document_text = self
+                .get_workspace_documents()
+                .read_text_document(&PathBuf::from(file_path), None)
+                .await?;
+
+            self.text_document_did_open(TextDocumentItem {
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+                language_id: detect_language_string(file_path)?,
+                version: 1,
+                text: document_text,
+            })
+            .await?;
+
+            self.get_workspace_documents()
+                .add_did_open_document(file_path);
+        }
+
+        Ok(())
     }
 }

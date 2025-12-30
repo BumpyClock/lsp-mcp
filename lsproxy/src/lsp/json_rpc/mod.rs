@@ -1,251 +1,15 @@
-// ABOUTME: JSON-RPC message handling for LSP communication
-// ABOUTME: Provides request/response routing, notification handling, and diagnostics storage
+// ABOUTME: JSON-RPC module for LSP protocol message handling
+// ABOUTME: Re-exports message types, handlers, pending requests, and diagnostics storage
 
-use lsp_types::{Diagnostic, Url};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
-use std::error::Error;
-use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use tokio::sync::broadcast::{channel, Receiver, Sender};
-use tokio::sync::mpsc;
-use tokio::sync::Mutex;
-use tokio::sync::RwLock;
+mod diagnostics;
+mod handler;
+mod message;
+mod pending;
 
-pub trait JsonRpc: Send + Sync {
-    fn create_success_response(&self, id: u64) -> String;
-    fn create_request(&self, method: &str, params: Option<Value>) -> (u64, String);
-    fn create_notification(&self, method: &str, params: Value) -> String;
-    fn parse_message(&self, data: &str) -> Result<JsonRpcMessage, JsonRpcError>;
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct JsonRpcMessage {
-    pub jsonrpc: String,
-    pub id: Option<u64>,
-    pub method: Option<String>,
-    pub params: Option<Value>,
-    pub result: Option<Value>,
-    pub error: Option<JsonRpcError>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct InnerMessage {
-    pub message: String,
-    pub r#type: String,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct JsonRpcError {
-    pub code: i32,
-    pub message: String,
-    pub data: Option<Value>,
-}
-
-impl fmt::Display for JsonRpcError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Error {}: {}", self.code, self.message)
-    }
-}
-
-impl std::error::Error for JsonRpcError {}
-
-#[derive(Clone)]
-pub struct JsonRpcHandler {
-    id_counter: Arc<AtomicU64>,
-}
-
-impl JsonRpcHandler {
-    pub fn new() -> Self {
-        Self {
-            id_counter: Arc::new(AtomicU64::new(0)),
-        }
-    }
-}
-
-impl JsonRpc for JsonRpcHandler {
-    fn create_success_response(&self, id: u64) -> String {
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": null
-        })
-        .to_string()
-    }
-
-    fn create_request(&self, method: &str, params: Option<Value>) -> (u64, String) {
-        let id = self.id_counter.fetch_add(1, Ordering::Relaxed);
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params.unwrap_or(serde_json::Value::Null)
-        })
-        .to_string();
-        (id, request)
-    }
-
-    fn create_notification(&self, method: &str, params: Value) -> String {
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params
-        })
-        .to_string()
-    }
-
-    fn parse_message(&self, data: &str) -> Result<JsonRpcMessage, JsonRpcError> {
-        serde_json::from_str(data).map_err(|e| JsonRpcError {
-            code: -32700,
-            message: e.to_string(),
-            data: None,
-        })
-    }
-}
-
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub struct ExpectedMessageKey {
-    pub method: String,
-    pub params: Value,
-}
-
-#[derive(Clone)]
-pub struct PendingRequests {
-    request_channels: Arc<Mutex<HashMap<u64, Sender<JsonRpcMessage>>>>,
-    notification_channels: Arc<Mutex<HashMap<ExpectedMessageKey, Sender<JsonRpcMessage>>>>,
-    method_handlers: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<JsonRpcMessage>>>>,
-}
-
-impl PendingRequests {
-    pub fn new() -> Self {
-        Self {
-            request_channels: Arc::new(Mutex::new(HashMap::new())),
-            notification_channels: Arc::new(Mutex::new(HashMap::new())),
-            method_handlers: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
-    pub async fn add_request(
-        &self,
-        id: u64,
-    ) -> Result<Receiver<JsonRpcMessage>, Box<dyn Error + Send + Sync>> {
-        let (tx, rx) = channel::<JsonRpcMessage>(16);
-        self.request_channels.lock().await.insert(id, tx);
-        Ok(rx)
-    }
-
-    pub async fn remove_request(
-        &self,
-        id: u64,
-    ) -> Result<Option<Sender<JsonRpcMessage>>, Box<dyn Error + Send + Sync>> {
-        Ok(self.request_channels.lock().await.remove(&id))
-    }
-
-    pub async fn add_notification(
-        &self,
-        expected_message: ExpectedMessageKey,
-    ) -> Result<Receiver<JsonRpcMessage>, Box<dyn Error + Send + Sync>> {
-        let (tx, rx) = channel::<JsonRpcMessage>(16);
-        self.notification_channels
-            .lock()
-            .await
-            .insert(expected_message, tx);
-        Ok(rx)
-    }
-
-    pub async fn remove_notification(
-        &self,
-        pattern: ExpectedMessageKey,
-    ) -> Option<Sender<JsonRpcMessage>> {
-        self.notification_channels.lock().await.remove(&pattern)
-    }
-
-    /// Register a handler for all notifications of a specific method
-    pub async fn register_method_handler(
-        &self,
-        method: String,
-    ) -> mpsc::UnboundedReceiver<JsonRpcMessage> {
-        let (tx, rx) = mpsc::unbounded_channel();
-        self.method_handlers.lock().await.insert(method, tx);
-        rx
-    }
-
-    /// Route a notification to a method handler if one exists
-    pub async fn route_to_method_handler(&self, method: &str, message: JsonRpcMessage) -> bool {
-        if let Some(sender) = self.method_handlers.lock().await.get(method) {
-            sender.send(message).is_ok()
-        } else {
-            false
-        }
-    }
-
-    /// Fail all pending requests with an error message
-    /// Called when the LSP process dies to notify all waiting requests
-    pub async fn fail_all_requests(&self, error_message: String) {
-        let mut channels = self.request_channels.lock().await;
-        for (id, sender) in channels.drain() {
-            let error_response = JsonRpcMessage {
-                jsonrpc: "2.0".to_string(),
-                id: Some(id),
-                method: None,
-                params: None,
-                result: None,
-                error: Some(JsonRpcError {
-                    code: -32099,
-                    message: error_message.clone(),
-                    data: None,
-                }),
-            };
-            let _ = sender.send(error_response);
-        }
-    }
-}
-
-/// Thread-safe storage for diagnostics received via publishDiagnostics notifications
-#[derive(Clone)]
-pub struct DiagnosticsStore {
-    diagnostics: Arc<RwLock<HashMap<Url, Vec<Diagnostic>>>>,
-}
-
-impl DiagnosticsStore {
-    pub fn new() -> Self {
-        Self {
-            diagnostics: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-
-    /// Update diagnostics for a file (replaces existing)
-    pub async fn update(&self, uri: Url, diagnostics: Vec<Diagnostic>) {
-        let mut store = self.diagnostics.write().await;
-        if diagnostics.is_empty() {
-            store.remove(&uri);
-        } else {
-            store.insert(uri, diagnostics);
-        }
-    }
-
-    /// Get diagnostics for a specific file
-    pub async fn get(&self, uri: &Url) -> Option<Vec<Diagnostic>> {
-        self.diagnostics.read().await.get(uri).cloned()
-    }
-
-    /// Get all diagnostics (for workspace-wide query)
-    pub async fn get_all(&self) -> HashMap<Url, Vec<Diagnostic>> {
-        self.diagnostics.read().await.clone()
-    }
-
-    /// Clear all diagnostics
-    pub async fn clear(&self) {
-        self.diagnostics.write().await.clear();
-    }
-}
-
-impl Default for DiagnosticsStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+pub use diagnostics::DiagnosticsStore;
+pub use handler::{JsonRpc, JsonRpcHandler};
+pub use message::{InnerMessage, JsonRpcError, JsonRpcMessage};
+pub use pending::{ExpectedMessageKey, PendingRequests};
 
 #[cfg(test)]
 mod tests {
@@ -254,8 +18,8 @@ mod tests {
     use std::time::Duration;
     use tokio::time::timeout;
 
-    fn create_test_diagnostic(message: &str) -> Diagnostic {
-        Diagnostic {
+    fn create_test_diagnostic(message: &str) -> lsp_types::Diagnostic {
+        lsp_types::Diagnostic {
             range: Range {
                 start: Position {
                     line: 0,
@@ -277,8 +41,8 @@ mod tests {
         }
     }
 
-    fn create_test_url(path: &str) -> Url {
-        Url::parse(&format!("file://{}", path)).expect("test URL should be valid")
+    fn create_test_url(path: &str) -> lsp_types::Url {
+        lsp_types::Url::parse(&format!("file://{}", path)).expect("test URL should be valid")
     }
 
     #[tokio::test]
@@ -544,7 +308,8 @@ mod tests {
 
         pending.fail_all_requests("test error".to_string()).await;
 
-        let channels = pending.request_channels.lock().await;
+        let binding = pending.request_channels_for_test();
+        let channels = binding.lock().await;
         assert!(
             channels.is_empty(),
             "expected request_channels to be empty after fail_all_requests"

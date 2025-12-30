@@ -1,23 +1,25 @@
+// ABOUTME: Core manager struct for coordinating multiple language server clients
+// ABOUTME: Provides workspace-wide LSP operations like definitions, references, and diagnostics
+
+use super::detection::detect_languages_in_workspace;
+use super::error::LspManagerError;
+use super::startup::create_lsp_client;
 use crate::api_types::{get_mount_dir, Identifier, SupportedLanguages, Symbol};
-use crate::config::LspMcpConfig;
-use std::str::FromStr;
 use crate::ast_grep::client::AstGrepClient;
 use crate::ast_grep::types::AstGrepMatch;
+use crate::config::LspMcpConfig;
 use crate::lsp::client::LspClient;
-use crate::lsp::registry::LanguageMetadata;
 use crate::utils::file_utils::uri_to_relative_path_string;
-use crate::utils::file_utils::{
-    absolute_path_to_relative_path_string, detect_language, search_files,
-};
-use crate::utils::workspace_documents::{WorkspaceDocuments, DEFAULT_EXCLUDE_PATTERNS};
+use crate::utils::file_utils::{absolute_path_to_relative_path_string, detect_language};
+use crate::utils::workspace_documents::WorkspaceDocuments;
 use log::{debug, error, info, warn};
 use lsp_types::{DocumentSymbolResponse, GotoDefinitionResponse, Location, Position, Range, Url};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult, DebouncedEvent};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::fmt;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::{channel, Sender};
@@ -52,7 +54,6 @@ impl Manager {
         )
         .expect("Failed to create debouncer");
 
-        // Watch the root path recursively
         debouncer
             .watcher()
             .watch(Path::new(root_path), RecursiveMode::Recursive)
@@ -77,40 +78,18 @@ impl Manager {
         self.pending_clients.lock().await.contains(&lang)
     }
 
-    /// Detects the languages in the workspace by searching for files that match the language server's file patterns, before LSPs are started.
-    fn detect_languages_in_workspace(&self, root_path: &str) -> Vec<SupportedLanguages> {
-        let mut detected_languages = Vec::new();
-
-        for metadata in LanguageMetadata::all() {
-            let patterns: Vec<String> = metadata.file_patterns.iter().map(|&s| s.to_string()).collect();
-            let exclude_patterns: Vec<String> = DEFAULT_EXCLUDE_PATTERNS.iter().map(|s| s.to_string()).collect();
-
-            let files_found = search_files(Path::new(root_path), patterns, exclude_patterns, true)
-                .map_err(|e| warn!("Error searching files for {:?}: {}", metadata.id, e))
-                .unwrap_or_default();
-
-            if !files_found.is_empty() {
-                detected_languages.push(metadata.id);
-            }
-        }
-
-        debug!("Starting LSPs: {:?}", detected_languages);
-        detected_languages
-    }
-
     pub async fn start_langservers(
         &mut self,
         workspace_path: &str,
         config: Option<&LspMcpConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let lsps = match config {
-            Some(cfg) => {
-                cfg.languages
-                    .iter()
-                    .filter_map(|s| SupportedLanguages::from_str(s).ok())
-                    .collect()
-            }
-            None => self.detect_languages_in_workspace(workspace_path),
+            Some(cfg) => cfg
+                .languages
+                .iter()
+                .filter_map(|s| SupportedLanguages::from_str(s).ok())
+                .collect(),
+            None => detect_languages_in_workspace(workspace_path),
         };
 
         let mut started_count = 0;
@@ -124,12 +103,13 @@ impl Manager {
                 .map(|s| s.as_str());
 
             debug!("Starting {:?} LSP", lsp);
-            let client_result = Self::create_lsp_client(
+            let client_result = create_lsp_client(
                 lsp,
                 workspace_path,
                 self.watch_events_sender.subscribe(),
                 binary,
-            ).await;
+            )
+            .await;
 
             match client_result {
                 Ok(mut client) => {
@@ -137,14 +117,23 @@ impl Manager {
                         Ok(_) => {
                             debug!("Setting up workspace for {:?}", lsp);
                             if let Err(e) = client.setup_workspace(workspace_path).await {
-                                warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
+                                warn!(
+                                    "Failed to setup workspace for {:?}: {}. Skipping",
+                                    lsp, e
+                                );
                                 continue;
                             }
-                            self.lsp_clients.write().await.insert(lsp, Arc::new(Mutex::new(client)));
+                            self.lsp_clients
+                                .write()
+                                .await
+                                .insert(lsp, Arc::new(Mutex::new(client)));
                             started_count += 1;
                         }
                         Err(e) => {
-                            warn!("Failed to initialize {:?} language server: {}. Skipping", lsp, e);
+                            warn!(
+                                "Failed to initialize {:?} language server: {}. Skipping",
+                                lsp, e
+                            );
                         }
                     }
                 }
@@ -166,19 +155,14 @@ impl Manager {
     /// background tasks for each language server. Language servers become available
     /// as they complete initialization. Check `pending_languages()` or `is_language_pending()`
     /// to determine initialization status.
-    pub async fn start_langservers_async(
-        &self,
-        workspace_path: &str,
-        config: Option<LspMcpConfig>,
-    ) {
+    pub async fn start_langservers_async(&self, workspace_path: &str, config: Option<LspMcpConfig>) {
         let lsps: Vec<SupportedLanguages> = match &config {
-            Some(cfg) => {
-                cfg.languages
-                    .iter()
-                    .filter_map(|s| SupportedLanguages::from_str(s).ok())
-                    .collect()
-            }
-            None => self.detect_languages_in_workspace(workspace_path),
+            Some(cfg) => cfg
+                .languages
+                .iter()
+                .filter_map(|s| SupportedLanguages::from_str(s).ok())
+                .collect(),
+            None => detect_languages_in_workspace(workspace_path),
         };
 
         for lsp in lsps {
@@ -201,28 +185,35 @@ impl Manager {
             tokio::spawn(async move {
                 debug!("Starting {:?} LSP in background", lsp);
                 let binary_ref = binary.as_deref();
-                let client_result = Self::create_lsp_client(lsp, &ws_path, events_rx, binary_ref).await;
+                let client_result = create_lsp_client(lsp, &ws_path, events_rx, binary_ref).await;
 
                 match client_result {
-                    Ok(mut client) => {
-                        match client.initialize(ws_path.clone()).await {
-                            Ok(_) => {
-                                debug!("Setting up workspace for {:?}", lsp);
-                                if let Err(e) = client.setup_workspace(&ws_path).await {
-                                    warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
-                                    pending_clients.lock().await.remove(&lsp);
-                                    return;
-                                }
-                                lsp_clients.write().await.insert(lsp, Arc::new(Mutex::new(client)));
+                    Ok(mut client) => match client.initialize(ws_path.clone()).await {
+                        Ok(_) => {
+                            debug!("Setting up workspace for {:?}", lsp);
+                            if let Err(e) = client.setup_workspace(&ws_path).await {
+                                warn!(
+                                    "Failed to setup workspace for {:?}: {}. Skipping",
+                                    lsp, e
+                                );
                                 pending_clients.lock().await.remove(&lsp);
-                                info!("{:?} language server is now ready", lsp);
+                                return;
                             }
-                            Err(e) => {
-                                warn!("Failed to initialize {:?} language server: {}. Skipping", lsp, e);
-                                pending_clients.lock().await.remove(&lsp);
-                            }
+                            lsp_clients
+                                .write()
+                                .await
+                                .insert(lsp, Arc::new(Mutex::new(client)));
+                            pending_clients.lock().await.remove(&lsp);
+                            info!("{:?} language server is now ready", lsp);
                         }
-                    }
+                        Err(e) => {
+                            warn!(
+                                "Failed to initialize {:?} language server: {}. Skipping",
+                                lsp, e
+                            );
+                            pending_clients.lock().await.remove(&lsp);
+                        }
+                    },
                     Err(e) => {
                         warn!("Failed to start {:?} language server: {}. Skipping", lsp, e);
                         pending_clients.lock().await.remove(&lsp);
@@ -230,18 +221,6 @@ impl Manager {
                 }
             });
         }
-    }
-
-    async fn create_lsp_client(
-        lsp: SupportedLanguages,
-        workspace_path: &str,
-        events_rx: tokio::sync::broadcast::Receiver<DebouncedEvent>,
-        binary: Option<&str>,
-    ) -> Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>> {
-        let metadata = LanguageMetadata::get(lsp)
-            .ok_or_else(|| format!("No registry entry found for language {:?}", lsp))?;
-
-        (metadata.factory)(workspace_path, events_rx, binary).await
     }
 
     pub async fn definitions_in_file_ast_grep(
@@ -331,7 +310,6 @@ impl Manager {
                 LspManagerError::InternalError(format!("Definition retrieval failed: {}", e))
             })?;
 
-        // Sort the locations if there are multiple
         match &mut definition {
             GotoDefinitionResponse::Array(locations) => {
                 locations.sort_by(|a, b| {
@@ -478,19 +456,16 @@ impl Manager {
         let mut all_symbols = Vec::new();
         let clients = self.lsp_clients.read().await;
 
-        // Query all available language servers
         for client in clients.values() {
             let mut locked_client = client.lock().await;
             match locked_client.workspace_symbol(query).await {
                 Ok(symbols) => all_symbols.extend(symbols),
                 Err(e) => {
                     log::warn!("Workspace symbol query failed for a client: {}", e);
-                    // Continue with other clients
                 }
             }
         }
 
-        // Sort by name for consistent results
         all_symbols.sort_by(|a, b| a.name.cmp(&b.name));
 
         Ok(all_symbols)
@@ -528,7 +503,6 @@ impl Manager {
                 LspManagerError::InternalError(format!("Implementation retrieval failed: {}", e))
             })?;
 
-        // Sort implementations for consistent output (same pattern as find_definition)
         match &mut implementations {
             GotoDefinitionResponse::Array(locations) => {
                 locations.sort_by(|a, b| {
@@ -547,7 +521,12 @@ impl Manager {
                     path_a
                         .cmp(&path_b)
                         .then(a.target_range.start.line.cmp(&b.target_range.start.line))
-                        .then(a.target_range.start.character.cmp(&b.target_range.start.character))
+                        .then(
+                            a.target_range
+                                .start
+                                .character
+                                .cmp(&b.target_range.start.character),
+                        )
                 });
             }
             _ => {}
@@ -577,16 +556,18 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        // Only Python and TypeScript/JavaScript are currently supported
         match lsp_type {
-            SupportedLanguages::Python | SupportedLanguages::TypeScriptJavaScript | SupportedLanguages::CSharp => (),
-            _ => return Err(LspManagerError::NotImplemented(
-                "Find referenced symbols is only implemented for Python, TypeScript/JavaScript, and C#"
-                    .to_string(),
-            )),
+            SupportedLanguages::Python
+            | SupportedLanguages::TypeScriptJavaScript
+            | SupportedLanguages::CSharp => (),
+            _ => {
+                return Err(LspManagerError::NotImplemented(
+                    "Find referenced symbols is only implemented for Python, TypeScript/JavaScript, and C#"
+                        .to_string(),
+                ))
+            }
         }
 
-        // Get the symbol and its references
         let (_, references_to_symbols) = match self
             .ast_grep
             .get_symbol_and_references(full_path_str, &position, full_scan)
@@ -608,7 +589,6 @@ impl Manager {
         let mut locked_client = client.lock().await;
         let mut definitions = Vec::new();
 
-        // Get direct definitions for each reference
         for ast_match in references_to_symbols.iter() {
             match locked_client
                 .text_document_definition(full_path_str, lsp_types::Position::from(ast_match))
@@ -618,7 +598,6 @@ impl Manager {
                     definitions.push((ast_match.clone(), definition));
                 }
                 Err(e) => {
-                    // Log the error but continue processing other references
                     log::warn!(
                         "Definition retrieval failed for reference: {}, error: {}",
                         ast_match.meta_variables.single.name.text,
@@ -628,7 +607,6 @@ impl Manager {
             }
         }
 
-        // Only return an error if we couldn't get any definitions at all
         if definitions.is_empty() && !references_to_symbols.is_empty() {
             return Err(LspManagerError::InternalError(
                 "Failed to retrieve any definitions for the referenced symbols".to_string(),
@@ -663,9 +641,10 @@ impl Manager {
         range: Option<Range>,
     ) -> Result<String, LspManagerError> {
         let lang = detect_language(file_path)?;
-        let client = self.get_client(lang).await.ok_or(
-            LspManagerError::LspClientNotFound(lang),
-        )?;
+        let client = self
+            .get_client(lang)
+            .await
+            .ok_or(LspManagerError::LspClientNotFound(lang))?;
         let full_path = get_mount_dir().join(file_path);
         let mut locked_client = client.lock().await;
         locked_client
@@ -713,7 +692,6 @@ impl Manager {
 
         match file_path {
             Some(path) => {
-                // Get diagnostics for a specific file
                 let full_path = get_mount_dir().join(path);
                 let full_path_str = full_path
                     .to_str()
@@ -723,20 +701,21 @@ impl Manager {
                     LspManagerError::InternalError(format!("Language detection failed: {}", e))
                 })?;
 
-                let client = self.get_client(lsp_type).await.ok_or_else(|| {
-                    LspManagerError::LspClientNotFound(lsp_type)
-                })?;
+                let client = self
+                    .get_client(lsp_type)
+                    .await
+                    .ok_or_else(|| LspManagerError::LspClientNotFound(lsp_type))?;
 
                 let locked_client = client.lock().await;
-                let uri = Url::from_file_path(&full_path)
-                    .map_err(|_| LspManagerError::InternalError("Invalid file path for URI".to_string()))?;
+                let uri = Url::from_file_path(&full_path).map_err(|_| {
+                    LspManagerError::InternalError("Invalid file path for URI".to_string())
+                })?;
 
                 if let Some(diagnostics) = locked_client.get_diagnostics_store().get(&uri).await {
                     all_diagnostics.insert(path.to_string(), diagnostics);
                 }
             }
             None => {
-                // Get all diagnostics from all language clients
                 let clients = self.lsp_clients.read().await;
                 for client in clients.values() {
                     let locked_client = client.lock().await;
@@ -836,38 +815,3 @@ impl Manager {
             })
     }
 }
-
-#[derive(Debug)]
-pub enum LspManagerError {
-    FileNotFound(String),
-    LspClientNotFound(SupportedLanguages),
-    LspClientInitializing(SupportedLanguages),
-    InternalError(String),
-    UnsupportedFileType(String),
-    NotImplemented(String),
-}
-
-impl fmt::Display for LspManagerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LspManagerError::FileNotFound(path) => {
-                write!(f, "File '{}' not found in workspace", path)
-            }
-            LspManagerError::LspClientNotFound(lang) => {
-                write!(f, "LSP client not found for {:?}", lang)
-            }
-            LspManagerError::LspClientInitializing(lang) => {
-                write!(f, "The {:?} language server is still initializing, please try again shortly", lang)
-            }
-            LspManagerError::InternalError(msg) => write!(f, "Internal error: {}", msg),
-            LspManagerError::UnsupportedFileType(path) => {
-                write!(f, "Unsupported file type: {}", path)
-            }
-            LspManagerError::NotImplemented(msg) => {
-                write!(f, "Not implemented: {}", msg)
-            }
-        }
-    }
-}
-
-impl std::error::Error for LspManagerError {}
