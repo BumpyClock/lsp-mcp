@@ -191,26 +191,37 @@ fn parse_pnpm_package_info(path: &str) -> Option<PackageInfo> {
         return None;
     }
 
-    // Find the pnpm package segment: .pnpm/{package}@{version}/
+    // Find the pnpm segment
     let pnpm_start = path.find(".pnpm/")?;
     let after_pnpm = &path[pnpm_start + 6..];
-    let segment_end = after_pnpm.find("/node_modules/")?;
-    let package_segment = &after_pnpm[..segment_end];
 
-    // Parse format: @scope+name@version or name@version
-    let at_version_pos = package_segment.rfind('@')?;
-    if at_version_pos == 0 {
-        return None;
-    }
+    // Find the node_modules inside pnpm
+    let nm_in_pnpm = after_pnpm.find("/node_modules/")?;
+    let package_segment = &after_pnpm[..nm_in_pnpm];
 
-    let name_part = &package_segment[..at_version_pos];
-    let version = &package_segment[at_version_pos + 1..];
+    // Get package name from AFTER /node_modules/ (the actual package path)
+    let after_nm = &after_pnpm[nm_in_pnpm + 14..];
+    let name = if after_nm.starts_with('@') {
+        // Scoped: @scope/name/rest
+        let first_slash = after_nm.find('/')?;
+        let rest = &after_nm[first_slash + 1..];
+        let second_slash = rest.find('/').unwrap_or(rest.len());
+        &after_nm[..first_slash + 1 + second_slash]
+    } else {
+        // Regular: name/rest
+        let slash = after_nm.find('/').unwrap_or(after_nm.len());
+        &after_nm[..slash]
+    };
 
-    // Convert + back to / for scoped packages
-    let name = name_part.replace('+', "/");
+    // Extract version: stop at first _ (peer deps separator)
+    let version_segment = package_segment.split('_').next()?;
+    // Parse @scope+name@version or name@version
+    let at_pos = version_segment.rfind('@')?;
+    if at_pos == 0 { return None; }
+    let version = &version_segment[at_pos + 1..];
 
     Some(PackageInfo {
-        name,
+        name: name.to_string(),
         version: version.to_string(),
     })
 }
@@ -532,21 +543,21 @@ async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &mut Symbol) 
     // Best-effort: detect if exported
     symbol.exported = detect_exported(&symbol.kind);
 
-    // Best-effort: detect dependencies from source code
-    if let Ok(source_code) = manager.read_source_code(
-        file_path,
-        Some(LspRange::new(
-            LspPosition {
-                line: symbol.file_range.range.start.line.saturating_sub(1),
-                character: 0,
-            },
-            LspPosition {
-                line: symbol.file_range.range.end.line.saturating_sub(1),
-                character: 0,
-            },
-        )),
-    ).await {
-        symbol.dependencies = extract_dependencies_from_source(&source_code);
+    // Get dependencies using find_referenced_symbols (more accurate than regex)
+    let position = lsp_types::Position {
+        line: symbol.identifier_position.position.line.saturating_sub(1),
+        character: symbol.identifier_position.position.character.saturating_sub(1),
+    };
+    if let Ok(referenced) = manager.find_referenced_symbols(file_path, position, false).await {
+        let deps: Vec<String> = referenced
+            .into_iter()
+            .map(|(ast_match, _)| ast_match.meta_variables.single.name.text)
+            .collect();
+        if !deps.is_empty() {
+            let mut unique_deps: Vec<String> = deps.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect();
+            unique_deps.sort();
+            symbol.dependencies = Some(unique_deps);
+        }
     }
 }
 
@@ -618,6 +629,58 @@ fn extract_signature_and_docs(contents: &lsp_types::HoverContents) -> (Option<St
     };
 
     (signature, jsdoc)
+}
+
+/// Fetches signatures for multiple positions concurrently.
+/// Returns a Vec of Option<String> in the same order as input.
+async fn batch_hover_for_signatures(
+    manager: &Manager,
+    positions: Vec<(&str, Position)>,
+) -> Vec<Option<String>> {
+    use futures::future::join_all;
+
+    let futures = positions.into_iter().map(|(path, pos)| {
+        let path = path.to_string();
+        async move {
+            let lsp_pos = LspPosition {
+                line: pos.line.saturating_sub(1),
+                character: pos.character.saturating_sub(1),
+            };
+            match manager.hover(&path, lsp_pos).await {
+                Ok(Some(hover)) => {
+                    let (sig, _) = extract_signature_and_docs(&hover.contents);
+                    sig.map(|s| truncate_signature(&s, None))
+                }
+                _ => None,
+            }
+        }
+    });
+
+    join_all(futures).await
+}
+
+/// Extracts the identifier name from hover contents.
+/// Takes the first identifier-like word from the signature.
+fn extract_identifier_name_from_hover(contents: &lsp_types::HoverContents) -> String {
+    use lsp_types::{HoverContents, MarkedString, MarkupContent};
+
+    let text = match contents {
+        HoverContents::Scalar(MarkedString::String(s)) => s.clone(),
+        HoverContents::Scalar(MarkedString::LanguageString(ls)) => ls.value.clone(),
+        HoverContents::Markup(MarkupContent { value, .. }) => value.clone(),
+        HoverContents::Array(arr) => {
+            arr.first().map(|m| match m {
+                MarkedString::String(s) => s.clone(),
+                MarkedString::LanguageString(ls) => ls.value.clone(),
+            }).unwrap_or_default()
+        }
+    };
+
+    // Extract first identifier-like word
+    text.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .find(|s| !s.is_empty())
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 /// Extracts signature from source code (fallback when LSP unavailable)
@@ -709,60 +772,6 @@ fn extract_docs_from_source(source: &str) -> Option<String> {
         Some(docs.join(" ").trim().to_string())
     }
 }
-
-/// Extracts dependencies/imports used in source code (best-effort)
-fn extract_dependencies_from_source(source: &str) -> Option<Vec<String>> {
-    use std::collections::HashSet;
-    let mut deps = HashSet::new();
-
-    // Pattern: look for common identifiers that appear to be function calls or type references
-    // This is very simplified - just looks for PascalCase and camelCase identifiers
-    // that might be external dependencies
-
-    let identifier_regex = regex::Regex::new(r"\b([A-Z][a-zA-Z0-9]*|[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*)\b").ok()?;
-
-    for line in source.lines() {
-        let trimmed = line.trim();
-        // Skip comments and import/use statements (we want usage, not declarations)
-        if trimmed.starts_with("//") || trimmed.starts_with("#") ||
-           trimmed.starts_with("import ") || trimmed.starts_with("use ") ||
-           trimmed.starts_with("from ") {
-            continue;
-        }
-
-        // Find all identifiers in the line
-        for cap in identifier_regex.captures_iter(trimmed) {
-            if let Some(ident) = cap.get(1) {
-                let id = ident.as_str();
-                // Skip very common keywords and short names
-                if id.len() > 2 && !is_common_keyword(id) {
-                    deps.insert(id.to_string());
-                }
-            }
-        }
-    }
-
-    if deps.is_empty() {
-        None
-    } else {
-        let mut result: Vec<String> = deps.into_iter().collect();
-        result.sort();
-        Some(result)
-    }
-}
-
-/// Check if a word is a common language keyword to avoid including in dependencies
-fn is_common_keyword(word: &str) -> bool {
-    matches!(word.to_lowercase().as_str(),
-        "if" | "else" | "for" | "while" | "return" | "let" | "const" | "var" |
-        "fn" | "func" | "function" | "def" | "class" | "struct" | "enum" |
-        "pub" | "public" | "private" | "protected" | "static" | "async" |
-        "await" | "try" | "catch" | "finally" | "throw" | "new" | "this" |
-        "self" | "super" | "true" | "false" | "null" | "undefined" | "None" |
-        "Some" | "Ok" | "Err" | "String" | "Vec" | "Option" | "Result"
-    )
-}
-
 impl LspService {
     pub async fn definitions_in_file(
         &self,
@@ -791,6 +800,7 @@ impl LspService {
             .into_iter()
             .filter(|s| s.rule_id != "local-variable")
             .map(Symbol::from)
+            .filter(|s| !is_internal_builder_symbol(&s.name))
             .collect();
 
         // Enrich each symbol
@@ -921,15 +931,18 @@ impl LspService {
         offset: Option<u32>,
     ) -> Result<McpReferencesResponse, ServiceError> {
         let file_identifiers = self.manager.get_file_identifiers(file_path).await?;
-        let selected_identifier = find_identifier_at_position(
+
+        // Try to find identifier at position first
+        let identifier_result = find_identifier_at_position(
             file_identifiers,
             &FilePosition {
                 path: file_path.to_string(),
                 position: position.clone(),
             },
         )
-        .await?;
+        .await;
 
+        // Always get references from LSP
         let all_references = find_and_filter_references(
             &self.manager,
             &FilePosition {
@@ -938,6 +951,54 @@ impl LspService {
             },
         )
         .await?;
+
+        // Determine selected_identifier
+        let selected_identifier = match identifier_result {
+            Ok(id) => id,
+            Err(PositionError::IdentifierNotFound { closest }) => {
+                // Fallback: if LSP found references, construct identifier from hover
+                if all_references.is_empty() {
+                    // LSP also found nothing - return original error
+                    return Err(ServiceError::IdentifierSelection(
+                        PositionError::IdentifierNotFound { closest }
+                    ));
+                }
+
+                // LSP found references, so position is valid
+                // Construct identifier from hover info
+                let hover_pos = LspPosition {
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
+                };
+
+                if let Ok(Some(hover)) = self.manager.hover(file_path, hover_pos).await {
+                    let name = extract_identifier_name_from_hover(&hover.contents);
+                    Identifier {
+                        name,
+                        kind: Some("unknown".to_string()),
+                        file_range: FileRange {
+                            path: file_path.to_string(),
+                            range: Range {
+                                start: position.clone(),
+                                end: position.clone(),
+                            },
+                        },
+                    }
+                } else {
+                    Identifier {
+                        name: "unknown".to_string(),
+                        kind: Some("unknown".to_string()),
+                        file_range: FileRange {
+                            path: file_path.to_string(),
+                            range: Range {
+                                start: position.clone(),
+                                end: position.clone(),
+                            },
+                        },
+                    }
+                }
+            }
+        };
 
         let total_count = all_references.len() as u32;
 
@@ -1389,6 +1450,16 @@ impl LspService {
             filtered_symbols.push(info);
         }
 
+        // Fetch signatures for all filtered symbols in batch
+        let positions: Vec<_> = filtered_symbols
+            .iter()
+            .map(|s| (s.location.path.as_str(), s.location.position.clone()))
+            .collect();
+        let signatures = batch_hover_for_signatures(&self.manager, positions).await;
+        for (symbol, sig) in filtered_symbols.iter_mut().zip(signatures.into_iter()) {
+            symbol.signature = sig;
+        }
+
         let raw_response = if include_raw_response {
             serde_json::to_value(&filtered_symbols).ok()
         } else {
@@ -1737,6 +1808,7 @@ fn workspace_symbol_info_from_lsp(
         container_name: sym.container_name,
         match_kind: None,
         match_score: None,
+        signature: None,
     }
 }
 
@@ -2343,6 +2415,65 @@ mod tests {
         let info = call_hierarchy_item_to_info(&item);
 
         assert_eq!(info.kind, "type-parameter");
+    }
+
+    #[test]
+    fn test_parse_pnpm_package_scoped_with_peer_deps() {
+        // Real-world case: @reduxjs/toolkit with peer deps including React
+        let path = "node_modules/.pnpm/@reduxjs+toolkit@2.9.1_react-redux@9.2.0_react@18.3.1__react@18.3.1/node_modules/@reduxjs/toolkit/dist/index.js";
+        let result = parse_pnpm_package_info(path);
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.name, "@reduxjs/toolkit");
+        assert_eq!(info.version, "2.9.1");
+    }
+
+    #[test]
+    fn test_parse_pnpm_package_non_scoped_with_peer_deps() {
+        let path = "node_modules/.pnpm/lodash@4.17.21_react@18.3.1/node_modules/lodash/index.js";
+        let result = parse_pnpm_package_info(path);
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.name, "lodash");
+        assert_eq!(info.version, "4.17.21");
+    }
+
+    #[test]
+    fn test_parse_pnpm_package_scoped_no_peer_deps() {
+        let path = "node_modules/.pnpm/@types+node@20.10.0/node_modules/@types/node/index.d.ts";
+        let result = parse_pnpm_package_info(path);
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.name, "@types/node");
+        assert_eq!(info.version, "20.10.0");
+    }
+
+    #[test]
+    fn test_parse_pnpm_package_non_scoped_no_peer_deps() {
+        let path = "node_modules/.pnpm/react@18.3.1/node_modules/react/index.js";
+        let result = parse_pnpm_package_info(path);
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.name, "react");
+        assert_eq!(info.version, "18.3.1");
+    }
+
+    #[test]
+    fn test_parse_pnpm_package_complex_peer_deps() {
+        // Multiple peer deps with version ranges
+        let path = "node_modules/.pnpm/@emotion+react@11.11.0_@types+react@18.2.0_react@18.3.1/node_modules/@emotion/react/dist/index.js";
+        let result = parse_pnpm_package_info(path);
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.name, "@emotion/react");
+        assert_eq!(info.version, "11.11.0");
+    }
+
+    #[test]
+    fn test_parse_pnpm_package_not_pnpm_path() {
+        let path = "node_modules/react/index.js";
+        let result = parse_pnpm_package_info(path);
+        assert!(result.is_none());
     }
 
     #[tokio::test]
@@ -3646,5 +3777,87 @@ fn internal_helper() {
         let result = truncate_signature(sig, Some(50));
         assert!(result.len() <= 50);
         assert!(result.ends_with("..."));
+    }
+
+    #[allow(deprecated)]
+    #[test]
+    fn workspace_symbol_info_from_lsp_initializes_signature_as_none() {
+        let uri = Url::from_file_path("/tmp/test.rs").expect("Expected file path url");
+        let range = LspRange {
+            start: LspPosition {
+                line: 5,
+                character: 2,
+            },
+            end: LspPosition {
+                line: 5,
+                character: 10,
+            },
+        };
+        let sym = SymbolInformation {
+            name: "test_func".to_string(),
+            kind: SymbolKind::FUNCTION,
+            tags: None,
+            deprecated: None,
+            location: Location { uri, range },
+            container_name: None,
+        };
+
+        let info = workspace_symbol_info_from_lsp(sym, "src/lib.rs".to_string());
+
+        assert!(
+            info.signature.is_none(),
+            "signature field must be initialized as None in workspace_symbol_info_from_lsp"
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_hover_for_signatures_returns_vec_of_same_length_as_input() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let workspace_path = temp_dir.path().to_str().expect("Expected valid path");
+
+        let manager = Manager::new(workspace_path)
+            .await
+            .expect("Failed to create manager");
+
+        let positions = vec![
+            ("test_file.rs", Position { line: 1, character: 1 }),
+            ("another.rs", Position { line: 2, character: 3 }),
+        ];
+
+        let results = batch_hover_for_signatures(&manager, positions.clone()).await;
+
+        assert_eq!(
+            results.len(),
+            positions.len(),
+            "batch_hover_for_signatures must return same number of results as input positions"
+        );
+    }
+
+    #[test]
+    fn workspace_symbol_assigns_signatures_to_filtered_symbols() {
+        let mut symbol1 = WorkspaceSymbolInfo {
+            name: "func1".to_string(),
+            kind: "function".to_string(),
+            location: FilePosition {
+                path: "src/lib.rs".to_string(),
+                position: Position { line: 10, character: 5 },
+            },
+            container_name: None,
+            match_kind: Some("exact".to_string()),
+            match_score: Some(1.0),
+            signature: None,
+        };
+
+        let signatures = vec![Some("fn func1() -> i32".to_string())];
+
+        for (symbol, sig) in std::iter::once(&mut symbol1).zip(signatures.into_iter()) {
+            symbol.signature = sig;
+        }
+
+        assert_eq!(
+            symbol1.signature,
+            Some("fn func1() -> i32".to_string()),
+            "signature must be assigned to symbol from batch hover results"
+        );
     }
 }

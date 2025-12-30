@@ -689,6 +689,9 @@ pub struct WorkspaceSymbolInfo {
     pub match_kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub match_score: Option<f32>,
+    /// Type signature from LSP hover (e.g., "fn example() -> Result<T, E>")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }
 
 /// A call hierarchy item representing a function/method
