@@ -543,7 +543,7 @@ async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &mut Symbol) 
     // Best-effort: detect if exported
     symbol.exported = detect_exported(&symbol.kind);
 
-    // Get dependencies using find_referenced_symbols (more accurate than regex)
+    // Get dependencies using find_referenced_symbols, filtering by definition location
     let position = lsp_types::Position {
         line: symbol.identifier_position.position.line.saturating_sub(1),
         character: symbol.identifier_position.position.character.saturating_sub(1),
@@ -551,7 +551,34 @@ async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &mut Symbol) 
     if let Ok(referenced) = manager.find_referenced_symbols(file_path, position, false).await {
         let deps: Vec<String> = referenced
             .into_iter()
-            .map(|(ast_match, _)| ast_match.meta_variables.single.name.text)
+            .filter_map(|(ast_match, def_response)| {
+                // Extract locations from definition response
+                let locations = match def_response {
+                    lsp_types::GotoDefinitionResponse::Scalar(loc) => vec![loc],
+                    lsp_types::GotoDefinitionResponse::Array(locs) => locs,
+                    lsp_types::GotoDefinitionResponse::Link(links) => {
+                        links.into_iter()
+                            .map(|l| lsp_types::Location {
+                                uri: l.target_uri,
+                                range: l.target_selection_range,
+                            })
+                            .collect()
+                    }
+                };
+
+                // Filter: must have at least one definition outside current file
+                // and not be a .d.ts type definition (built-ins)
+                let has_external_def = locations.iter().any(|loc| {
+                    let def_path = loc.uri.path();
+                    def_path != file_path && !def_path.ends_with(".d.ts")
+                });
+
+                if has_external_def {
+                    Some(ast_match.meta_variables.single.name.text)
+                } else {
+                    None
+                }
+            })
             .collect();
         if !deps.is_empty() {
             let mut unique_deps: Vec<String> = deps.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect();
