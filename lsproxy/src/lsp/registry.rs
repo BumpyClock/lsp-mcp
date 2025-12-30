@@ -1,10 +1,151 @@
 // ABOUTME: Language registry providing a single source of truth for language server metadata
-// ABOUTME: Centralizes file patterns, extensions, and binary names for all supported languages
+// ABOUTME: Centralizes file patterns, extensions, binary names, and factory functions for all supported languages
 
 use crate::api_types::SupportedLanguages;
+use crate::lsp::client::LspClient;
+use crate::lsp::languages::{
+    ClangdClient, CSharpClient, GoplsClient, JdtlsClient, JediClient, PhpactorClient, RubyClient,
+    RustAnalyzerClient, TypeScriptLanguageClient,
+};
+use notify_debouncer_mini::DebouncedEvent;
+use std::future::Future;
+use std::pin::Pin;
+use tokio::sync::broadcast::Receiver;
+
+/// Type alias for the async factory function that creates LSP clients
+pub type LspClientFactory = fn(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>>;
+
+fn create_python_client(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    let workspace_path = workspace_path.to_string();
+    let binary = binary.map(|s| s.to_string());
+    Box::pin(async move {
+        JediClient::new(&workspace_path, events_rx, binary.as_deref())
+            .await
+            .map(|c| Box::new(c) as Box<dyn LspClient>)
+    })
+}
+
+fn create_typescript_client(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    let workspace_path = workspace_path.to_string();
+    let binary = binary.map(|s| s.to_string());
+    Box::pin(async move {
+        TypeScriptLanguageClient::new(&workspace_path, events_rx, binary.as_deref())
+            .await
+            .map(|c| Box::new(c) as Box<dyn LspClient>)
+    })
+}
+
+fn create_rust_client(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    let workspace_path = workspace_path.to_string();
+    let binary = binary.map(|s| s.to_string());
+    Box::pin(async move {
+        RustAnalyzerClient::new(&workspace_path, events_rx, binary.as_deref())
+            .await
+            .map(|c| Box::new(c) as Box<dyn LspClient>)
+    })
+}
+
+fn create_cpp_client(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    let workspace_path = workspace_path.to_string();
+    let binary = binary.map(|s| s.to_string());
+    Box::pin(async move {
+        ClangdClient::new(&workspace_path, events_rx, binary.as_deref())
+            .await
+            .map(|c| Box::new(c) as Box<dyn LspClient>)
+    })
+}
+
+fn create_csharp_client(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    let workspace_path = workspace_path.to_string();
+    let binary = binary.map(|s| s.to_string());
+    Box::pin(async move {
+        CSharpClient::new(&workspace_path, events_rx, binary.as_deref())
+            .await
+            .map(|c| Box::new(c) as Box<dyn LspClient>)
+    })
+}
+
+fn create_java_client(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    let workspace_path = workspace_path.to_string();
+    let binary = binary.map(|s| s.to_string());
+    Box::pin(async move {
+        JdtlsClient::new(&workspace_path, events_rx, binary.as_deref())
+            .await
+            .map(|c| Box::new(c) as Box<dyn LspClient>)
+    })
+}
+
+fn create_golang_client(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    let workspace_path = workspace_path.to_string();
+    let binary = binary.map(|s| s.to_string());
+    Box::pin(async move {
+        GoplsClient::new(&workspace_path, events_rx, binary.as_deref())
+            .await
+            .map(|c| Box::new(c) as Box<dyn LspClient>)
+    })
+}
+
+fn create_php_client(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    let workspace_path = workspace_path.to_string();
+    let binary = binary.map(|s| s.to_string());
+    Box::pin(async move {
+        PhpactorClient::new(&workspace_path, events_rx, binary.as_deref())
+            .await
+            .map(|c| Box::new(c) as Box<dyn LspClient>)
+    })
+}
+
+fn create_ruby_client(
+    workspace_path: &str,
+    events_rx: Receiver<DebouncedEvent>,
+    binary: Option<&str>,
+) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+    let workspace_path = workspace_path.to_string();
+    let binary = binary.map(|s| s.to_string());
+    Box::pin(async move {
+        RubyClient::new(&workspace_path, events_rx, binary.as_deref())
+            .await
+            .map(|c| Box::new(c) as Box<dyn LspClient>)
+    })
+}
 
 /// Static metadata for a language server
-#[derive(Debug, Clone)]
 pub struct LanguageMetadata {
     /// Enum variant identifier
     pub id: SupportedLanguages,
@@ -18,6 +159,8 @@ pub struct LanguageMetadata {
     pub file_patterns: &'static [&'static str],
     /// File extensions (without dots)
     pub extensions: &'static [&'static str],
+    /// Factory function for creating LSP client instances
+    pub factory: LspClientFactory,
 }
 
 /// The language registry - single source of truth for all language metadata
@@ -36,6 +179,7 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
         ],
         file_patterns: &["**/*.py", "**/*.pyx", "**/*.pyi"],
         extensions: &["py", "pyx", "pyi"],
+        factory: create_python_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::TypeScriptJavaScript,
@@ -44,6 +188,7 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
         root_files: &["tsconfig.json", "jsconfig.json", "package.json"],
         file_patterns: &["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
         extensions: &["ts", "tsx", "js", "jsx"],
+        factory: create_typescript_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Rust,
@@ -52,6 +197,7 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
         root_files: &["Cargo.toml"],
         file_patterns: &["**/*.rs"],
         extensions: &["rs"],
+        factory: create_rust_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::CPP,
@@ -71,6 +217,7 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
             "**/*.cpp", "**/*.cc", "**/*.c", "**/*.cxx", "**/*.h", "**/*.hpp", "**/*.hxx", "**/*.hh",
         ],
         extensions: &["cpp", "cc", "c", "cxx", "h", "hpp", "hxx", "hh"],
+        factory: create_cpp_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::CSharp,
@@ -79,6 +226,7 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
         root_files: &["*.sln", "*.csproj", "*.vcxproj"],
         file_patterns: &["**/*.cs"],
         extensions: &["cs"],
+        factory: create_csharp_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Java,
@@ -87,6 +235,7 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
         root_files: &["gradlew", ".git", "mvnw"],
         file_patterns: &["**/*.java"],
         extensions: &["java"],
+        factory: create_java_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Golang,
@@ -95,6 +244,7 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
         root_files: &["go.mod", "go.work"],
         file_patterns: &["**/*.go", "**/*.gomod", "**/*.gowork", "**/*.gotmpl"],
         extensions: &["go"],
+        factory: create_golang_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::PHP,
@@ -118,6 +268,7 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
             "**/*.php8",
         ],
         extensions: &["php", "phtml", "phps", "php5", "php7", "php8"],
+        factory: create_php_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Ruby,
@@ -126,6 +277,7 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
         root_files: &["Gemfile", "Rakefile", ".ruby-version", "config.ru", ".gemspec"],
         file_patterns: &["**/*.rb", "**/*.erb"],
         extensions: &["rb", "erb"],
+        factory: create_ruby_client,
     },
 ];
 

@@ -4,19 +4,12 @@ use std::str::FromStr;
 use crate::ast_grep::client::AstGrepClient;
 use crate::ast_grep::types::AstGrepMatch;
 use crate::lsp::client::LspClient;
-use crate::lsp::languages::{
-    CSharpClient, ClangdClient, GoplsClient, JdtlsClient, JediClient, PhpactorClient, RubyClient,
-    RustAnalyzerClient, TypeScriptLanguageClient,
-};
+use crate::lsp::registry::LanguageMetadata;
 use crate::utils::file_utils::uri_to_relative_path_string;
 use crate::utils::file_utils::{
     absolute_path_to_relative_path_string, detect_language, search_files,
 };
-use crate::utils::workspace_documents::{
-    WorkspaceDocuments, CSHARP_FILE_PATTERNS, C_AND_CPP_FILE_PATTERNS, DEFAULT_EXCLUDE_PATTERNS,
-    GOLANG_FILE_PATTERNS, JAVA_FILE_PATTERNS, PHP_FILE_PATTERNS, PYTHON_FILE_PATTERNS,
-    RUBY_FILE_PATTERNS, RUST_FILE_PATTERNS, TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS,
-};
+use crate::utils::workspace_documents::{WorkspaceDocuments, DEFAULT_EXCLUDE_PATTERNS};
 use log::{debug, error, info, warn};
 use lsp_types::{GotoDefinitionResponse, Location, Position, Range, Url};
 use notify::RecursiveMode;
@@ -86,70 +79,23 @@ impl Manager {
 
     /// Detects the languages in the workspace by searching for files that match the language server's file patterns, before LSPs are started.
     fn detect_languages_in_workspace(&self, root_path: &str) -> Vec<SupportedLanguages> {
-        let mut lsps = Vec::new();
-        for lsp in [
-            SupportedLanguages::Python,
-            SupportedLanguages::TypeScriptJavaScript,
-            SupportedLanguages::Rust,
-            SupportedLanguages::CPP,
-            SupportedLanguages::CSharp,
-            SupportedLanguages::Java,
-            SupportedLanguages::Golang,
-            SupportedLanguages::PHP,
-            SupportedLanguages::Ruby,
-        ] {
-            let patterns = match lsp {
-                SupportedLanguages::Python => PYTHON_FILE_PATTERNS
-                    .iter()
-                    .map(|&s| s.to_string())
-                    .collect(),
-                SupportedLanguages::TypeScriptJavaScript => TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS
-                    .iter()
-                    .map(|&s| s.to_string())
-                    .collect(),
-                SupportedLanguages::Rust => {
-                    RUST_FILE_PATTERNS.iter().map(|&s| s.to_string()).collect()
-                }
-                SupportedLanguages::CPP => C_AND_CPP_FILE_PATTERNS
-                    .iter()
-                    .map(|&s| s.to_string())
-                    .collect(),
-                SupportedLanguages::CSharp => CSHARP_FILE_PATTERNS
-                    .iter()
-                    .map(|&s| s.to_string())
-                    .collect(),
-                SupportedLanguages::Java => {
-                    JAVA_FILE_PATTERNS.iter().map(|&s| s.to_string()).collect()
-                }
-                SupportedLanguages::Golang => GOLANG_FILE_PATTERNS
-                    .iter()
-                    .map(|&s| s.to_string())
-                    .collect(),
-                SupportedLanguages::PHP => {
-                    PHP_FILE_PATTERNS.iter().map(|&s| s.to_string()).collect()
-                }
-                SupportedLanguages::Ruby => {
-                    RUBY_FILE_PATTERNS.iter().map(|&s| s.to_string()).collect()
-                }
-            };
-            if !search_files(
-                Path::new(root_path),
-                patterns,
-                DEFAULT_EXCLUDE_PATTERNS
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-                true,
-            )
-            .map_err(|e| warn!("Error searching files: {}", e))
-            .unwrap_or_default()
-            .is_empty()
-            {
-                lsps.push(lsp);
+        let mut detected_languages = Vec::new();
+
+        for metadata in LanguageMetadata::all() {
+            let patterns: Vec<String> = metadata.file_patterns.iter().map(|&s| s.to_string()).collect();
+            let exclude_patterns: Vec<String> = DEFAULT_EXCLUDE_PATTERNS.iter().map(|s| s.to_string()).collect();
+
+            let files_found = search_files(Path::new(root_path), patterns, exclude_patterns, true)
+                .map_err(|e| warn!("Error searching files for {:?}: {}", metadata.id, e))
+                .unwrap_or_default();
+
+            if !files_found.is_empty() {
+                detected_languages.push(metadata.id);
             }
         }
-        debug!("Starting LSPs: {:?}", lsps);
-        lsps
+
+        debug!("Starting LSPs: {:?}", detected_languages);
+        detected_languages
     }
 
     pub async fn start_langservers(
@@ -178,57 +124,12 @@ impl Manager {
                 .map(|s| s.as_str());
 
             debug!("Starting {:?} LSP", lsp);
-            let client_result: Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>> = match lsp {
-                SupportedLanguages::Python => {
-                    JediClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
-                        .await
-                        .map(|c| Box::new(c) as Box<dyn LspClient>)
-                }
-                SupportedLanguages::TypeScriptJavaScript => {
-                    TypeScriptLanguageClient::new(
-                        workspace_path,
-                        self.watch_events_sender.subscribe(),
-                        binary,
-                    )
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-                }
-                SupportedLanguages::Rust => {
-                    RustAnalyzerClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
-                        .await
-                        .map(|c| Box::new(c) as Box<dyn LspClient>)
-                }
-                SupportedLanguages::CPP => {
-                    ClangdClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
-                        .await
-                        .map(|c| Box::new(c) as Box<dyn LspClient>)
-                }
-                SupportedLanguages::CSharp => {
-                    CSharpClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
-                        .await
-                        .map(|c| Box::new(c) as Box<dyn LspClient>)
-                }
-                SupportedLanguages::Java => {
-                    JdtlsClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
-                        .await
-                        .map(|c| Box::new(c) as Box<dyn LspClient>)
-                }
-                SupportedLanguages::Golang => {
-                    GoplsClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
-                        .await
-                        .map(|c| Box::new(c) as Box<dyn LspClient>)
-                }
-                SupportedLanguages::PHP => {
-                    PhpactorClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
-                        .await
-                        .map(|c| Box::new(c) as Box<dyn LspClient>)
-                }
-                SupportedLanguages::Ruby => {
-                    RubyClient::new(workspace_path, self.watch_events_sender.subscribe(), binary)
-                        .await
-                        .map(|c| Box::new(c) as Box<dyn LspClient>)
-                }
-            };
+            let client_result = Self::create_lsp_client(
+                lsp,
+                workspace_path,
+                self.watch_events_sender.subscribe(),
+                binary,
+            ).await;
 
             match client_result {
                 Ok(mut client) => {
@@ -337,53 +238,10 @@ impl Manager {
         events_rx: tokio::sync::broadcast::Receiver<DebouncedEvent>,
         binary: Option<&str>,
     ) -> Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>> {
-        match lsp {
-            SupportedLanguages::Python => {
-                JediClient::new(workspace_path, events_rx, binary)
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-            }
-            SupportedLanguages::TypeScriptJavaScript => {
-                TypeScriptLanguageClient::new(workspace_path, events_rx, binary)
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-            }
-            SupportedLanguages::Rust => {
-                RustAnalyzerClient::new(workspace_path, events_rx, binary)
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-            }
-            SupportedLanguages::CPP => {
-                ClangdClient::new(workspace_path, events_rx, binary)
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-            }
-            SupportedLanguages::CSharp => {
-                CSharpClient::new(workspace_path, events_rx, binary)
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-            }
-            SupportedLanguages::Java => {
-                JdtlsClient::new(workspace_path, events_rx, binary)
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-            }
-            SupportedLanguages::Golang => {
-                GoplsClient::new(workspace_path, events_rx, binary)
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-            }
-            SupportedLanguages::PHP => {
-                PhpactorClient::new(workspace_path, events_rx, binary)
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-            }
-            SupportedLanguages::Ruby => {
-                RubyClient::new(workspace_path, events_rx, binary)
-                    .await
-                    .map(|c| Box::new(c) as Box<dyn LspClient>)
-            }
-        }
+        let metadata = LanguageMetadata::get(lsp)
+            .ok_or_else(|| format!("No registry entry found for language {:?}", lsp))?;
+
+        (metadata.factory)(workspace_path, events_rx, binary).await
     }
 
     pub async fn definitions_in_file_ast_grep(

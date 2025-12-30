@@ -2,6 +2,7 @@
 // ABOUTME: Organizes types and utilities into sub-modules with public re-exports.
 
 mod core;
+pub(crate) mod operations;
 pub mod types;
 pub mod utils;
 
