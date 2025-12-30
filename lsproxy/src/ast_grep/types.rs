@@ -137,23 +137,28 @@ impl From<AstGrepMatch> for Symbol {
             identifier_position: FilePosition {
                 path: path.clone(),
                 position: Position {
-                    line: ast_match.range.start.line,
-                    character: ast_match.range.start.column,
+                    line: ast_match.range.start.line + 1,
+                    character: ast_match.range.start.column + 1,
                 },
             },
             file_range: FileRange {
                 path: path.clone(),
                 range: Range {
                     start: Position {
-                        line: match_range.start.line,
-                        character: 0, // TODO: this is not technically true, we're returning the whole line for consistency
+                        line: match_range.start.line + 1,
+                        character: 1, // Returning the whole line for consistency
                     },
                     end: Position {
-                        line: match_range.end.line,
-                        character: match_range.end.column,
+                        line: match_range.end.line + 1,
+                        character: match_range.end.column + 1,
                     },
                 },
             },
+            signature: None,
+            exported: None,
+            jsdoc_summary: None,
+            dependencies: None,
+            line_count: None,
         }
     }
 }
@@ -174,12 +179,12 @@ impl From<AstGrepMatch> for Identifier {
                 path: path.clone(),
                 range: Range {
                     start: Position {
-                        line: match_range.start.line,
-                        character: match_range.start.column,
+                        line: match_range.start.line + 1,
+                        character: match_range.start.column + 1,
                     },
                     end: Position {
-                        line: match_range.end.line,
-                        character: match_range.end.column,
+                        line: match_range.end.line + 1,
+                        character: match_range.end.column + 1,
                     },
                 },
             },

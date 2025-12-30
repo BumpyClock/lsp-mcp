@@ -41,10 +41,6 @@ pub fn php_sample_path() -> String {
     "/mnt/lsproxy_root/sample_project/php".to_string()
 }
 
-pub fn ruby_sample_path() -> String {
-    "/mnt/lsproxy_root/sample_project/ruby".to_string()
-}
-
 pub struct TestContext {
     pub manager: Option<Manager>,
 }

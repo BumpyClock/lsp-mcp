@@ -7,6 +7,30 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+/// Output formatting mode for MCP tool responses.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputMode {
+    /// Compact output format (default)
+    Default,
+    /// Verbose output format with all details
+    Verbose,
+}
+
+impl Default for OutputMode {
+    fn default() -> Self {
+        OutputMode::Default
+    }
+}
+
+/// Configuration for MCP output formatting.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct OutputConfig {
+    /// Output mode (default or verbose)
+    #[serde(default)]
+    pub mode: OutputMode,
+}
+
 /// Configuration for which MCP tools are enabled/disabled.
 ///
 /// Tools are selected based on a preset, then refined with explicit enable/disable lists.
@@ -79,7 +103,10 @@ impl ToolsConfig {
 ///   "tools": {
 ///     "preset": "standard",
 ///     "enable": ["find_referenced_symbols"],
-///     "disable": ["incoming_calls"]
+///     "disable": ["call_hierarchy"]
+///   },
+///   "output": {
+///     "mode": "verbose"
 ///   }
 /// }
 /// ```
@@ -91,6 +118,8 @@ pub struct LspMcpConfig {
     pub binaries: HashMap<String, String>,
     #[serde(default)]
     pub tools: ToolsConfig,
+    #[serde(default)]
+    pub output: Option<OutputConfig>,
 }
 
 impl LspMcpConfig {
@@ -166,6 +195,8 @@ impl LspMcpConfig {
             },
             // Merge tools config
             tools: self.tools.merge(project.tools),
+            // Project output config overrides global
+            output: project.output.or(self.output),
         }
     }
 
@@ -177,17 +208,25 @@ impl LspMcpConfig {
     pub fn enabled_tools(&self) -> HashSet<String> {
         self.tools.enabled_tools()
     }
+
+    /// Get the resolved output mode, defaulting when not configured
+    pub fn output_mode(&self) -> OutputMode {
+        self.output
+            .as_ref()
+            .map(|output| output.mode)
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::distributions::Alphanumeric;
+    use rand::distr::Alphanumeric;
     use rand::Rng;
     use tempfile::TempDir;
 
     fn random_suffix() -> String {
-        rand::thread_rng()
+        rand::rng()
             .sample_iter(&Alphanumeric)
             .take(8)
             .map(char::from)
@@ -343,7 +382,7 @@ mod tests {
             "tools": {
                 "preset": "standard",
                 "enable": ["find_referenced_symbols"],
-                "disable": ["incoming_calls"]
+                "disable": ["call_hierarchy"]
             }
         }"#;
         let config_path = temp_dir.path().join(".lsp-mcp.json");
@@ -354,7 +393,7 @@ mod tests {
 
         assert_eq!(config.tools.preset, ToolPreset::Standard);
         assert!(config.tools.enable.contains(&"find_referenced_symbols".to_string()));
-        assert!(config.tools.disable.contains(&"incoming_calls".to_string()));
+        assert!(config.tools.disable.contains(&"call_hierarchy".to_string()));
     }
 
     #[test]
@@ -377,16 +416,15 @@ mod tests {
         let config = LspMcpConfig::default();
         let tools = config.enabled_tools();
 
-        // Standard preset should have 8 tools
-        assert_eq!(tools.len(), 8);
+        // Standard preset should have 7 tools
+        assert_eq!(tools.len(), 7);
         assert!(tools.contains("find_definition"));
         assert!(tools.contains("find_references"));
         assert!(tools.contains("hover"));
         assert!(tools.contains("get_diagnostics"));
         assert!(tools.contains("workspace_symbol"));
         assert!(tools.contains("definitions_in_file"));
-        assert!(tools.contains("incoming_calls"));
-        assert!(tools.contains("outgoing_calls"));
+        assert!(tools.contains("call_hierarchy"));
     }
 
     #[test]
@@ -401,8 +439,8 @@ mod tests {
         };
         let tools = config.enabled_tools();
 
-        // Should have 8 + 1 = 9 tools
-        assert_eq!(tools.len(), 9);
+        // Should have 7 + 1 = 8 tools
+        assert_eq!(tools.len(), 8);
         assert!(tools.contains("find_referenced_symbols"));
     }
 
@@ -412,15 +450,15 @@ mod tests {
             tools: ToolsConfig {
                 preset: ToolPreset::Standard,
                 enable: vec![],
-                disable: vec!["incoming_calls".to_string()],
+                disable: vec!["call_hierarchy".to_string()],
             },
             ..Default::default()
         };
         let tools = config.enabled_tools();
 
-        // Should have 8 - 1 = 7 tools
-        assert_eq!(tools.len(), 7);
-        assert!(!tools.contains("incoming_calls"));
+        // Should have 7 - 1 = 6 tools
+        assert_eq!(tools.len(), 6);
+        assert!(!tools.contains("call_hierarchy"));
     }
 
     #[test]
@@ -596,5 +634,93 @@ mod tests {
         assert!(config.languages.is_empty());
         assert!(config.binaries.is_empty());
         assert_eq!(config.tools.preset, ToolPreset::Standard);
+    }
+
+    // ========== Output Config Tests ==========
+
+    #[test]
+    fn it_parses_output_mode_from_config_file() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let config_content = r#"{"output": {"mode": "verbose"}}"#;
+        let config_path = temp_dir.path().join(".lsp-mcp.json");
+        std::fs::write(&config_path, config_content).expect("Failed to write config");
+
+        let result = LspMcpConfig::load(temp_dir.path());
+        let config = result.expect("Expected config to load");
+
+        assert_eq!(
+            config
+                .output
+                .as_ref()
+                .expect("Expected output config to be present")
+                .mode,
+            OutputMode::Verbose
+        );
+    }
+
+    #[test]
+    fn it_defaults_to_default_output_mode() {
+        let config = LspMcpConfig::default();
+        assert_eq!(config.output_mode(), OutputMode::Default);
+    }
+
+    #[test]
+    fn it_parses_default_output_mode_from_config_file() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let config_content = r#"{"output": {"mode": "default"}}"#;
+        let config_path = temp_dir.path().join(".lsp-mcp.json");
+        std::fs::write(&config_path, config_content).expect("Failed to write config");
+
+        let result = LspMcpConfig::load(temp_dir.path());
+        let config = result.expect("Expected config to load");
+
+        assert_eq!(
+            config
+                .output
+                .as_ref()
+                .expect("Expected output config to be present")
+                .mode,
+            OutputMode::Default
+        );
+    }
+
+    #[test]
+    fn test_config_merge_output_mode_project_overrides() {
+        let global = LspMcpConfig {
+            output: Some(OutputConfig {
+                mode: OutputMode::Default,
+            }),
+            ..Default::default()
+        };
+        let project = LspMcpConfig {
+            output: Some(OutputConfig {
+                mode: OutputMode::Verbose,
+            }),
+            ..Default::default()
+        };
+
+        let merged = global.merge(project);
+
+        // Project output mode should override global
+        assert_eq!(merged.output_mode(), OutputMode::Verbose);
+    }
+
+    #[test]
+    fn test_config_merge_output_mode_uses_global_when_project_missing() {
+        let global = LspMcpConfig {
+            output: Some(OutputConfig {
+                mode: OutputMode::Verbose,
+            }),
+            ..Default::default()
+        };
+        let project = LspMcpConfig {
+            output: None,
+            ..Default::default()
+        };
+
+        let merged = global.merge(project);
+
+        // Global output mode should be preserved when project does not set output
+        assert_eq!(merged.output_mode(), OutputMode::Verbose);
     }
 }

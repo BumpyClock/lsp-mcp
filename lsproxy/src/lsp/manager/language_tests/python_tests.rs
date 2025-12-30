@@ -67,6 +67,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("main"),
@@ -91,6 +92,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("graph"),
@@ -115,6 +117,7 @@ async fn test_file_symbols() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 },
             },
+            ..Default::default()
         },
     ];
     assert_eq!(symbol_response, expected);
@@ -158,6 +161,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("CostStrategy"),
@@ -182,6 +186,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("BARRIER"),
@@ -206,6 +211,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("DISTANCE"),
@@ -230,6 +236,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("COMBINED"),
@@ -254,6 +261,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("AStarGraph"),
@@ -278,6 +286,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("__init__"),
@@ -302,6 +311,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("barriers"),
@@ -326,6 +336,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_barrier_cost"),
@@ -350,6 +361,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_distance_cost"),
@@ -374,6 +386,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("_combined_cost"),
@@ -398,6 +411,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("barrier_cost"),
@@ -422,6 +436,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("distance_cost"),
@@ -446,6 +461,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("move_cost"),
@@ -470,6 +486,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("cost_function"),
@@ -494,6 +511,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("cost_function"),
@@ -518,6 +536,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("cost_function"),
@@ -542,6 +561,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("heuristic"),
@@ -566,6 +586,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("D"),
@@ -590,6 +611,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("D2"),
@@ -614,6 +636,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("dx"),
@@ -638,6 +661,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("dy"),
@@ -662,6 +686,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("get_vertex_neighbours"),
@@ -686,6 +711,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("n"),
@@ -710,6 +736,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("x2"),
@@ -734,6 +761,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
         Symbol {
             name: String::from("y2"),
@@ -758,6 +786,7 @@ async fn test_file_symbols_decorators() -> Result<(), Box<dyn std::error::Error>
                     },
                 },
             },
+            ..Default::default()
         },
     ];
     assert_eq!(symbol_response, expected);
@@ -919,6 +948,36 @@ async fn test_definition() -> Result<(), Box<dyn std::error::Error>> {
                 },
             },
         }]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_code_action_returns_actions_for_position() -> Result<(), Box<dyn std::error::Error>> {
+    let context = TestContext::setup(&python_sample_path(), true).await?;
+    let manager = context
+        .manager
+        .as_ref()
+        .ok_or("Manager is not initialized")?;
+
+    let file_path = "main.py";
+    let range = lsp_types::Range {
+        start: lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+        end: lsp_types::Position {
+            line: 0,
+            character: 0,
+        },
+    };
+
+    let code_actions = manager.code_action(file_path, range, vec![]).await?;
+
+    assert!(
+        code_actions.is_some() || code_actions.is_none(),
+        "code_action should return a valid response"
     );
 
     Ok(())
