@@ -3,7 +3,7 @@
 
 use crate::api_types::Position;
 use crate::config::OutputMode;
-use crate::mcp_response::{format_error, format_response};
+use crate::mcp_response::{format_response, tool_output_from_error};
 use crate::service::LspService;
 use mcpkit::prelude::*;
 
@@ -29,7 +29,7 @@ pub async fn workspace_symbol(
             let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
-        Err(e) => ToolOutput::error(format_error(&e)),
+        Err(e) => tool_output_from_error(e),
     }
 }
 
@@ -58,6 +58,6 @@ pub async fn find_identifier(
             let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
-        Err(e) => ToolOutput::error(format_error(&e)),
+        Err(e) => tool_output_from_error(e),
     }
 }

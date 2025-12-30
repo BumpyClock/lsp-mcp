@@ -32,15 +32,15 @@ For each tool, include:
 ## Required Output Structure
 
 1) Short verdict summary (2-4 sentences max)
-2) Per-tool evaluation table with these columns:
+2) Per-tool evaluation  with these details:
    - Tool
    - Scenario
    - Minimum info needed
    - lsp-mcp actionability (Yes / Partial / No)
    - Redundant-call savings (Yes / Partial / No)
-   - Token efficiency (High / Medium / Low)
+   - Token efficiency (High / Medium / Low)s
    - Key gaps
-3) lsp-mcp vs native LSP comparison table with these columns:
+3) lsp-mcp vs native LSP comparison table with these columns (only when you have a native LSP tool):
    - Tool
    - Better for agentic coding (lsp-mcp / native / tie)
    - Why (1-2 sentences)

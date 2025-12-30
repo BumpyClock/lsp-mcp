@@ -4,7 +4,7 @@
 use crate::api_types::{HoverBatchItem, HoverRequest, Position};
 use crate::config::OutputMode;
 use crate::markdown_formatter::HoverBatchResponse;
-use crate::mcp_response::{format_error, format_response};
+use crate::mcp_response::{format_error, format_response, tool_output_from_error};
 use crate::service::LspService;
 use mcpkit::prelude::*;
 
@@ -56,6 +56,6 @@ pub async fn hover(
             let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
-        Err(e) => ToolOutput::error(format_error(&e)),
+        Err(e) => tool_output_from_error(e),
     }
 }

@@ -103,13 +103,15 @@ pub fn format_error(error: &ServiceError) -> String {
 
 /// Convert a ServiceError to a ToolOutput.
 ///
-/// IdentifierSelection errors are returned as text messages (not MCP errors)
-/// because they are informational - providing suggestions for nearby identifiers.
-/// All other errors are returned as proper MCP errors.
+/// IdentifierSelection and CallHierarchy errors are returned as text messages
+/// (not MCP errors) because they are informational - providing suggestions for
+/// nearby identifiers or callables. All other errors are returned as MCP errors.
 pub fn tool_output_from_error(error: ServiceError) -> ToolOutput {
     let message = format_error(&error);
     match error {
-        ServiceError::IdentifierSelection(_) => ToolOutput::text(message),
+        ServiceError::IdentifierSelection(_) | ServiceError::CallHierarchy(_) => {
+            ToolOutput::text(message)
+        }
         _ => ToolOutput::error(message),
     }
 }
@@ -433,6 +435,81 @@ mod tests {
         assert_eq!(
             default_result, verbose_result,
             "negative: format_response should return same markdown regardless of OutputMode"
+        );
+    }
+
+    fn is_error_output(tool_output: &ToolOutput) -> bool {
+        matches!(tool_output, ToolOutput::RecoverableError { .. })
+    }
+
+    #[test]
+    fn tool_output_from_error_returns_text_for_identifier_selection() {
+        use crate::api_types::{FileRange, Identifier, Position, Range};
+        use crate::service::PositionError;
+
+        let identifier = Identifier {
+            name: "Button".to_string(),
+            file_range: FileRange {
+                path: "src/test.rs".to_string(),
+                range: Range {
+                    start: Position { line: 1, character: 1 },
+                    end: Position { line: 1, character: 6 },
+                },
+            },
+            kind: None,
+        };
+        let error = ServiceError::IdentifierSelection(PositionError::IdentifierNotFound {
+            closest: vec![identifier],
+        });
+
+        let output = tool_output_from_error(error);
+        assert!(
+            !is_error_output(&output),
+            "negative: identifier selection should not be an error output"
+        );
+    }
+
+    #[test]
+    fn tool_output_from_error_returns_error_for_other_errors() {
+        let error = ServiceError::Serialization("test error".to_string());
+
+        let output = tool_output_from_error(error);
+        assert!(
+            is_error_output(&output),
+            "negative: non-identifier-selection errors should be error output"
+        );
+    }
+
+    #[test]
+    fn tool_output_from_error_returns_text_for_call_hierarchy() {
+        use crate::api_types::{FilePosition, FileRange, Position, Range, Symbol};
+        use crate::service::CallHierarchyError;
+
+        let nearby = vec![Symbol {
+            name: "nearby_function".to_string(),
+            kind: "function".to_string(),
+            identifier_position: FilePosition {
+                path: "test.rs".to_string(),
+                position: Position { line: 10, character: 4 },
+            },
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position { line: 10, character: 1 },
+                    end: Position { line: 15, character: 1 },
+                },
+            },
+            ..Default::default()
+        }];
+
+        let error = ServiceError::CallHierarchy(CallHierarchyError::NoItemAtPosition {
+            nearby_callables: nearby,
+        });
+
+        let output = tool_output_from_error(error);
+        assert!(
+            !is_error_output(&output),
+            "negative: call hierarchy errors should not be MCP errors"
         );
     }
 }

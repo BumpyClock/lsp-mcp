@@ -3,7 +3,7 @@
 
 use crate::api_types::{CallHierarchyDirection, Position};
 use crate::config::OutputMode;
-use crate::mcp_response::{format_error, format_response};
+use crate::mcp_response::{format_response, tool_output_from_error};
 use crate::service::LspService;
 use mcpkit::prelude::*;
 
@@ -31,7 +31,7 @@ pub async fn call_hierarchy(
             let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
-        Err(e) => ToolOutput::error(format_error(&e)),
+        Err(e) => tool_output_from_error(e),
     }
 }
 
@@ -51,6 +51,6 @@ pub async fn go_to_implementation(
             let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
-        Err(e) => ToolOutput::error(format_error(&e)),
+        Err(e) => tool_output_from_error(e),
     }
 }

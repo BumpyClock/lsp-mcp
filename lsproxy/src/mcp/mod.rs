@@ -37,7 +37,8 @@ impl LspMcpServer {
 
 #[mcp_server(
     name = "lsp-mcp",
-    version = "0.4.4"
+    version = "0.4.4",
+    instructions = "All line and character positions use 1-based indexing (first line is 1, first character is 1). This matches what editors display to users."
 )]
 impl LspMcpServer {
     #[tool(description = "Symbols defined in a file")]
