@@ -13,6 +13,33 @@ use std::sync::Arc;
 
 use crate::service::types::errors::ServiceError;
 use crate::service::utils::transformations::call_hierarchy_item_to_info;
+use lsp_types::Range as LspRange;
+
+/// Fetches 1-line source code snippets for each call site.
+async fn fetch_call_snippets(manager: &Arc<Manager>, mut calls: Vec<CallInfo>) -> Vec<CallInfo> {
+    for call in &mut calls {
+        let file_path = &call.item.location.path;
+        let mut snippets = Vec::with_capacity(call.call_ranges.len());
+        for range in &call.call_ranges {
+            let lsp_range = LspRange {
+                start: LspPosition {
+                    line: range.start.line.saturating_sub(1),
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: range.start.line,
+                    character: 0,
+                },
+            };
+            match manager.read_source_code(file_path, Some(lsp_range)).await {
+                Ok(code) => snippets.push(code.trim().to_string()),
+                Err(_) => snippets.push(String::new()),
+            }
+        }
+        call.call_snippets = Some(snippets);
+    }
+    calls
+}
 
 /// Prepares the call hierarchy at the given position.
 pub(crate) async fn prepare_call_hierarchy_impl(
@@ -251,21 +278,22 @@ pub(crate) async fn call_hierarchy_impl(
                         item.external = Some(true);
                     }
                     CallInfo {
-                        item,
-                    call_ranges: call
-                        .from_ranges
-                        .into_iter()
-                        .map(|r| Range {
-                            start: Position {
-                                line: r.start.line + 1,
-                                character: r.start.character + 1,
-                            },
-                            end: Position {
-                                line: r.end.line + 1,
-                                character: r.end.character + 1,
-                            },
-                        })
-                        .collect(),
+                        item: item.clone(),
+                        call_ranges: call
+                            .from_ranges
+                            .into_iter()
+                            .map(|r| Range {
+                                start: Position {
+                                    line: r.start.line + 1,
+                                    character: r.start.character + 1,
+                                },
+                                end: Position {
+                                    line: r.end.line + 1,
+                                    character: r.end.character + 1,
+                                },
+                            })
+                            .collect(),
+                        call_snippets: None,
                     }
                 })
                 .collect()
@@ -280,26 +308,29 @@ pub(crate) async fn call_hierarchy_impl(
                         item.external = Some(true);
                     }
                     CallInfo {
-                        item,
-                    call_ranges: call
-                        .from_ranges
-                        .into_iter()
-                        .map(|r| Range {
-                            start: Position {
-                                line: r.start.line + 1,
-                                character: r.start.character + 1,
-                            },
-                            end: Position {
-                                line: r.end.line + 1,
-                                character: r.end.character + 1,
-                            },
-                        })
-                        .collect(),
+                        item: item.clone(),
+                        call_ranges: call
+                            .from_ranges
+                            .into_iter()
+                            .map(|r| Range {
+                                start: Position {
+                                    line: r.start.line + 1,
+                                    character: r.start.character + 1,
+                                },
+                                end: Position {
+                                    line: r.end.line + 1,
+                                    character: r.end.character + 1,
+                                },
+                            })
+                            .collect(),
+                        call_snippets: None,
                     }
                 })
                 .collect()
         }
     };
+
+    let calls = fetch_call_snippets(manager, calls).await;
 
     Ok(CallHierarchyResponse {
         direction,

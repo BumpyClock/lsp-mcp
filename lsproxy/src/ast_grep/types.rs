@@ -11,7 +11,7 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 pub struct AstGrepMatch {
     pub text: String,
-    range: AstGrepRange,
+    pub range: AstGrepRange,
     pub file: String,
     pub lines: String,
     pub char_count: CharCount,

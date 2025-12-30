@@ -1,7 +1,7 @@
 // ABOUTME: Markdown formatter for call hierarchy response types.
 // ABOUTME: Converts incoming/outgoing call results to readable markdown.
 
-use super::{format_file_position, ToMarkdown};
+use super::{escape_inline_code, format_file_position, ToMarkdown};
 use crate::api_types::{
     CallHierarchyDirection, CallHierarchyResponse, CallInfo, ImplementationResponse,
 };
@@ -70,7 +70,17 @@ fn format_call_info(call: &CallInfo) -> String {
     let ranges: Vec<String> = call
         .call_ranges
         .iter()
-        .map(|range| format!("- Line {}: call site", range.start.line))
+        .enumerate()
+        .map(|(i, range)| {
+            let line_col = format!("{}:{}", range.start.line, range.start.character);
+            match call.call_snippets.as_ref().and_then(|s| s.get(i)) {
+                Some(snippet) if !snippet.is_empty() => {
+                    let escaped = escape_inline_code(snippet.trim());
+                    format!("- **Line {}**: `{}`", line_col, escaped)
+                }
+                _ => format!("- **Line {}**: call site", line_col),
+            }
+        })
         .collect();
 
     format!("{}\n{}", header, ranges.join("\n"))
@@ -163,6 +173,7 @@ mod tests {
                     },
                 })
                 .collect(),
+            call_snippets: None,
         }
     }
 
@@ -267,6 +278,7 @@ mod tests {
                     external: None,
                 },
                 call_ranges: vec![],
+                call_snippets: None,
             }],
         };
 
@@ -312,6 +324,7 @@ mod tests {
                     external: None,
                 },
                 call_ranges: vec![],
+                call_snippets: None,
             }],
         };
 
@@ -348,6 +361,7 @@ mod tests {
                     external: Some(true),
                 },
                 call_ranges: vec![],
+                call_snippets: None,
             }],
         };
 
@@ -391,19 +405,20 @@ mod tests {
                         },
                     },
                 ],
+                call_snippets: None,
             }],
         };
 
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("Line {}", call_line_1)),
-            "must include first call line number: got {}",
+            markdown.contains(&format!("Line {}:5", call_line_1)),
+            "must include first call line:col number: got {}",
             markdown
         );
         assert!(
-            markdown.contains(&format!("Line {}", call_line_2)),
-            "must include second call line number: got {}",
+            markdown.contains(&format!("Line {}:10", call_line_2)),
+            "must include second call line:col number: got {}",
             markdown
         );
     }
@@ -586,6 +601,7 @@ mod tests {
                     external: None,
                 },
                 call_ranges: vec![],
+                call_snippets: None,
             }],
         };
 

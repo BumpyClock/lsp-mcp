@@ -88,6 +88,9 @@ pub struct CallInfo {
     pub item: CallHierarchyItemInfo,
     /// The ranges where the call occurs
     pub call_ranges: Vec<Range>,
+    /// Source code snippets for each call site (parallel to call_ranges)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_snippets: Option<Vec<String>>,
 }
 
 /// Unified response for call hierarchy requests (both incoming and outgoing)
@@ -193,6 +196,7 @@ mod tests {
                     character: 25,
                 },
             }],
+            call_snippets: None,
         };
 
         let json = serde_json::to_value(&call_info).expect("failed to serialize call info");
@@ -232,6 +236,7 @@ mod tests {
                     start: Position { line: 7, character: 5 },
                     end: Position { line: 7, character: 20 },
                 }],
+                call_snippets: None,
             }],
         };
 
@@ -333,6 +338,7 @@ mod tests {
                     end: Position { line: 108, character: 20 },
                 },
             ],
+            call_snippets: None,
         };
 
         let json = serde_json::to_value(&call_info).expect("failed to serialize");

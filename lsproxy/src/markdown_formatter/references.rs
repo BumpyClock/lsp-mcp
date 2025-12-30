@@ -37,10 +37,10 @@ impl ToMarkdown for McpReferencesResponse {
                             .unwrap_or("");
 
                         let escaped = escape_inline_code(target_line.trim());
-                        output.push_str(&format!("- **Line {}**: `{}`\n", line, escaped));
+                        output.push_str(&format!("- **Line {}:{}**: `{}`\n", line, reference.position.character, escaped));
                     }
                     None => {
-                        output.push_str(&format!("- **Line {}**\n", line));
+                        output.push_str(&format!("- **Line {}:{}**\n", line, reference.position.character));
                     }
                 }
             }
@@ -118,21 +118,12 @@ impl ToMarkdown for ReferencedSymbolsResponse {
             }
         }
 
-        // Not found symbols
+        // Not found symbols (collapsed to single summary line)
         if !self.not_found.is_empty() {
-            output.push_str(&format!("\n### Not Found ({})\n", total_not_found));
-            for nf in &self.not_found {
-                let name = escape_inline_code(&nf.name);
-                let kind = nf.kind_or_default();
-                output.push_str(&format!(
-                    "- `{}` ({}) at {}:{}:{}\n",
-                    name,
-                    kind,
-                    nf.file_range.path,
-                    nf.file_range.range.start.line,
-                    nf.file_range.range.start.character
-                ));
-            }
+            output.push_str(&format!(
+                "\n### Not Found\n{} unresolved symbols (likely stdlib/builtins)\n",
+                total_not_found
+            ));
         }
 
         output
@@ -286,8 +277,8 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("- **Line {}**:", line)),
-            "negative: must show line number in bold"
+            markdown.contains(&format!("- **Line {}:5**:", line)),
+            "negative: must show line:column in bold"
         );
         assert!(
             markdown.contains(&format!("`{}`", snippet_code)),
@@ -317,8 +308,8 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("- **Line {}**", line)),
-            "negative: must show line number in bold even without snippet"
+            markdown.contains(&format!("- **Line {}:5**", line)),
+            "negative: must show line:column in bold even without snippet"
         );
     }
 
