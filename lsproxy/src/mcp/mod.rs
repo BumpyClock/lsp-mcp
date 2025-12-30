@@ -303,14 +303,16 @@ mod tests {
 
         if is_error_output(&output) {
             let error_msg = extract_text_content(&output);
+            // Error messages should be plain text, not JSON
             assert!(!error_msg.contains("\"ok\""));
             assert!(!error_msg.starts_with('{'));
         } else {
             let text = extract_text_content(&output);
+            // Markdown output expectations
             assert!(!text.contains("\"ok\""));
-            assert!(text.contains("\"identifiers\""));
+            assert!(text.contains("## Identifiers"), "Expected markdown header");
+            assert!(text.contains("**main**"), "Expected bold identifier name");
             assert!(!text.contains("\"meta\""));
-            assert!(!text.contains('\n'));
         }
     }
 
@@ -320,30 +322,33 @@ mod tests {
         let output = server.list_files(None, None).await;
         let text = extract_text_content(&output);
 
+        // Markdown output expectations
         assert!(!text.contains("\"ok\""));
-        assert!(text.contains("\"files\""));
+        assert!(
+            text.contains("## Workspace Files"),
+            "Expected markdown header"
+        );
+        // Note: Files may not be indexed in test environment, so we just check format
+        assert!(text.contains("total)"), "Expected total count in header");
         assert!(!text.contains("\"meta\""));
     }
 
     #[tokio::test]
-    async fn test_list_files_verbose_has_meta_sibling() {
+    async fn test_list_files_verbose_returns_markdown() {
+        // Verbose mode now returns markdown, same as default mode
+        // (format_response always produces markdown)
         let (server, _temp) = create_test_server_with_mode(OutputMode::Verbose).await;
         let output = server.list_files(None, None).await;
         let text = extract_text_content(&output);
 
-        let parsed: serde_json::Value =
-            serde_json::from_str(&text).expect("Expected JSON response");
-
-        assert!(parsed.get("ok").is_none());
-        assert!(parsed.get("files").is_some());
-        assert!(parsed.get("meta").is_some());
-        assert_eq!(
-            parsed
-                .get("meta")
-                .and_then(|meta| meta.get("mode"))
-                .and_then(|mode| mode.as_str()),
-            Some("verbose")
+        // Should be markdown, not JSON
+        assert!(
+            text.contains("## Workspace Files"),
+            "Expected markdown header even in verbose mode"
         );
+        // Note: Files may not be indexed in test environment, so we just check format
+        assert!(text.contains("total)"), "Expected total count in header");
+        // Markdown output has newlines
         assert!(text.contains('\n'));
     }
 
@@ -356,14 +361,17 @@ mod tests {
 
         if is_error_output(&output) {
             let error_msg = extract_text_content(&output);
+            // Error messages should be plain text, not JSON
             assert!(!error_msg.contains("\"ok\""));
             assert!(!error_msg.starts_with('{'));
         } else {
             let text = extract_text_content(&output);
+            // Markdown output expectations
             assert!(!text.contains("\"ok\""));
-            assert!(text.contains("\"source\""));
+            assert!(text.contains("## Source: test.rs"), "Expected markdown source header");
+            assert!(text.contains("```rust"), "Expected rust code fence");
+            assert!(text.contains("fn main()"), "Expected source content");
             assert!(!text.contains("\"meta\""));
-            assert!(!text.contains('\n'));
         }
     }
 
@@ -373,9 +381,14 @@ mod tests {
         let output = server.health().await;
         let text = extract_text_content(&output);
 
+        // Markdown output expectations
         assert!(!text.contains("\"ok\":true"));
-        assert!(text.contains("\"status\""));
-        assert!(text.contains("\"version\""));
+        assert!(
+            text.contains("## LSP-MCP Health"),
+            "Expected markdown health header"
+        );
+        assert!(text.contains("**Status:**"), "Expected markdown status field");
+        assert!(text.contains("**Version:**"), "Expected markdown version field");
         assert!(!text.contains("\"meta\""));
     }
 
@@ -385,7 +398,12 @@ mod tests {
         let output = server.get_diagnostics(None).await;
         let text = extract_text_content(&output);
 
+        // Markdown output expectations
         assert!(!text.contains("\"ok\""));
+        assert!(
+            text.contains("## Diagnostics"),
+            "Expected markdown diagnostics header"
+        );
         assert!(!text.contains("\"meta\""));
     }
 
