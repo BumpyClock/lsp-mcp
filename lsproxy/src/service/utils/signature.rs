@@ -69,8 +69,17 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
     for line in lines {
         if line.starts_with("```") {
             if in_code_block {
-                if signature.is_none() && !code_lines.is_empty() {
-                    signature = Some(code_lines.join("\n"));
+                if !code_lines.is_empty() {
+                    let block_content = code_lines.join("\n");
+                    // rust-analyzer returns module name first, then signature
+                    // Skip blocks that are just a single word (module/crate name)
+                    // and prefer blocks that look like actual signatures
+                    if is_likely_signature(&block_content) {
+                        signature = Some(block_content);
+                    } else if signature.is_none() && code_lines.len() == 1 {
+                        // Single word - likely just module name, skip for now
+                        // but remember it as fallback
+                    }
                     code_lines.clear();
                 }
                 in_code_block = false;
@@ -79,8 +88,18 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
             }
         } else if in_code_block {
             code_lines.push(line);
-        } else if !line.is_empty() {
+        } else if !line.is_empty() && line != "---" {
             docs.push(line);
+        }
+    }
+
+    // Fallback: if no code blocks found, try to extract signature from first lines
+    if signature.is_none() && !docs.is_empty() {
+        signature = extract_signature_from_plain_text(&docs);
+        if signature.is_some() {
+            docs = docs.into_iter()
+                .filter(|line| !looks_like_signature(line))
+                .collect();
         }
     }
 
@@ -91,6 +110,114 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
     };
 
     (signature, jsdoc)
+}
+
+/// Checks if a code block looks like an actual signature vs just a module name
+fn is_likely_signature(block: &str) -> bool {
+    let trimmed = block.trim();
+    // Single word without spaces/parens is likely just a module name
+    if !trimmed.contains(' ') && !trimmed.contains('(') && !trimmed.contains('<') {
+        return false;
+    }
+    // Look for signature patterns
+    trimmed.starts_with("fn ") ||
+    trimmed.starts_with("pub ") ||
+    trimmed.starts_with("async ") ||
+    trimmed.starts_with("const ") ||
+    trimmed.starts_with("static ") ||
+    trimmed.starts_with("type ") ||
+    trimmed.starts_with("struct ") ||
+    trimmed.starts_with("enum ") ||
+    trimmed.starts_with("trait ") ||
+    trimmed.starts_with("impl ") ||
+    trimmed.starts_with("impl<") ||
+    trimmed.starts_with("mod ") ||
+    trimmed.starts_with("use ") ||
+    trimmed.starts_with("macro") ||
+    // TypeScript/JavaScript
+    trimmed.starts_with("function ") ||
+    trimmed.starts_with("class ") ||
+    trimmed.starts_with("interface ") ||
+    trimmed.starts_with("export ") ||
+    trimmed.starts_with("const ") ||
+    trimmed.starts_with("let ") ||
+    trimmed.starts_with("var ") ||
+    // Python
+    trimmed.starts_with("def ") ||
+    trimmed.starts_with("class ") ||
+    // Go
+    trimmed.starts_with("func ") ||
+    // Has parens (likely a function signature)
+    trimmed.contains('(')
+}
+
+/// Checks if a line looks like a code signature
+fn looks_like_signature(line: &str) -> bool {
+    let trimmed = line.trim();
+    // Rust signatures
+    trimmed.starts_with("fn ") ||
+    trimmed.starts_with("pub fn ") ||
+    trimmed.starts_with("pub(") ||
+    trimmed.starts_with("async fn ") ||
+    trimmed.starts_with("pub async fn ") ||
+    trimmed.starts_with("const ") ||
+    trimmed.starts_with("pub const ") ||
+    trimmed.starts_with("static ") ||
+    trimmed.starts_with("pub static ") ||
+    trimmed.starts_with("type ") ||
+    trimmed.starts_with("pub type ") ||
+    trimmed.starts_with("struct ") ||
+    trimmed.starts_with("pub struct ") ||
+    trimmed.starts_with("enum ") ||
+    trimmed.starts_with("pub enum ") ||
+    trimmed.starts_with("trait ") ||
+    trimmed.starts_with("pub trait ") ||
+    trimmed.starts_with("impl ") ||
+    trimmed.starts_with("impl<") ||
+    trimmed.starts_with("mod ") ||
+    trimmed.starts_with("pub mod ") ||
+    // TypeScript/JavaScript signatures
+    trimmed.starts_with("function ") ||
+    trimmed.starts_with("class ") ||
+    trimmed.starts_with("interface ") ||
+    trimmed.starts_with("export ") ||
+    // Python signatures
+    trimmed.starts_with("def ") ||
+    trimmed.starts_with("async def ") ||
+    trimmed.starts_with("class ") ||
+    // Go signatures
+    trimmed.starts_with("func ") ||
+    trimmed.starts_with("func (")
+}
+
+/// Extracts signature from plain text (no code fences)
+fn extract_signature_from_plain_text(lines: &[&str]) -> Option<String> {
+    let mut sig_lines = Vec::new();
+
+    for line in lines {
+        if looks_like_signature(line) {
+            sig_lines.push(*line);
+            // For multi-line signatures, continue collecting until we hit a closing brace/paren
+            // or empty line
+        } else if !sig_lines.is_empty() {
+            // Check if this continues a signature (e.g., generic bounds, return type on next line)
+            let trimmed = line.trim();
+            if trimmed.starts_with("->") ||
+               trimmed.starts_with("where") ||
+               trimmed.starts_with("<") ||
+               (trimmed.len() > 0 && !trimmed.ends_with(".") && !trimmed.starts_with("//")) {
+                sig_lines.push(*line);
+            } else {
+                break;
+            }
+        }
+    }
+
+    if sig_lines.is_empty() {
+        None
+    } else {
+        Some(sig_lines.join("\n"))
+    }
 }
 
 /// Extracts signature from source code (fallback when LSP unavailable)
@@ -426,5 +553,53 @@ mod tests {
         let result = truncate_signature(sig, Some(50));
         assert!(result.len() <= 53);
         assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_extract_signature_rust_analyzer_format() {
+        use lsp_types::{HoverContents, MarkupContent, MarkupKind};
+
+        // rust-analyzer returns module name first, then actual signature
+        let hover = HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: "\n```rust\nlsproxy\n```\n\n```rust\npub async fn initialize_manager(path: &Path) -> Result<Manager>\n```\n\n---\n\nInitialize a workspace manager".to_string(),
+        });
+
+        let (sig, doc) = extract_signature_and_docs(&hover);
+
+        assert!(sig.is_some(), "Should extract signature");
+        let sig = sig.unwrap();
+        assert!(sig.starts_with("pub async fn"), "Should get actual signature, not module name. Got: {}", sig);
+        assert!(sig.contains("initialize_manager"), "Should contain function name");
+
+        assert!(doc.is_some(), "Should extract docs");
+        assert!(doc.unwrap().contains("Initialize"), "Docs should contain description");
+    }
+
+    #[test]
+    fn test_extract_signature_skips_module_name() {
+        use lsp_types::{HoverContents, MarkupContent, MarkupKind};
+
+        // Just module name should not be treated as signature
+        let hover = HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: "```rust\nsome_module\n```".to_string(),
+        });
+
+        let (sig, _) = extract_signature_and_docs(&hover);
+        assert!(sig.is_none(), "Single word module name should not be signature");
+    }
+
+    #[test]
+    fn test_is_likely_signature() {
+        assert!(is_likely_signature("pub fn example() -> String"));
+        assert!(is_likely_signature("fn example()"));
+        assert!(is_likely_signature("async fn example()"));
+        assert!(is_likely_signature("pub struct Foo<T>"));
+        assert!(is_likely_signature("impl<T> Foo<T>"));
+
+        assert!(!is_likely_signature("lsproxy"));
+        assert!(!is_likely_signature("some_module"));
+        assert!(!is_likely_signature("MyType"));
     }
 }

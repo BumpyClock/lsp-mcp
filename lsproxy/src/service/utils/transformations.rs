@@ -115,7 +115,7 @@ pub(crate) fn reference_item_from_location(
         character: location.range.start.character + 1,
     };
     McpReferenceLocation {
-        path,
+        path: Some(path),
         position,
         symbol_range: range_from_lsp(&location.range),
         snippet,

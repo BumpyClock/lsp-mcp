@@ -50,7 +50,9 @@ pub struct McpDefinitionResponse {
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct McpReferenceLocation {
-    pub path: String,
+    /// Path to file (omitted when grouped by file, as FileGroup provides it)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     pub position: Position,
     pub symbol_range: Range,
     #[serde(skip_serializing_if = "Option::is_none")]

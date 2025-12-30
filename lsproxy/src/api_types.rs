@@ -110,7 +110,9 @@ pub struct Position {
 /// A position within a specific file in the workspace
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FilePosition {
-    /// Path to the file, relative to the workspace root
+    /// Path to the file, relative to the workspace root.
+    /// Omitted when parent context provides the path (e.g., in McpSymbolsResponse).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub path: String,
     /// Position within the file
     pub position: Position,
@@ -120,6 +122,8 @@ pub struct FilePosition {
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FileRange {
     /// The path to the file.
+    /// Omitted when parent context provides the path (e.g., in McpSymbolsResponse).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub path: String,
     /// The range within the file
     pub range: Range,
