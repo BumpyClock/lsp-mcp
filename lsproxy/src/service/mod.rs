@@ -8,7 +8,6 @@ pub mod utils;
 
 pub use core::{create_service, LspService};
 pub use types::errors::{CallHierarchyError, PositionError, ServiceError};
-pub use types::request::FindDefinitionParams;
 pub use types::response::{
     CompactDefinitionResponse, FileGroup, McpDefinitionLocation, McpDefinitionResponse,
     McpIdentifierResponse, McpListFilesResponse, McpReferenceLocation, McpReferencesResponse,

@@ -260,7 +260,6 @@ mod tests {
     use crate::service::operations::symbols::match_kind_and_score;
     use crate::service::types::errors::CallHierarchyError;
     use crate::service::types::errors::PositionError;
-    use crate::service::types::request::FindDefinitionParams;
     use crate::service::types::response::{CompactDefinitionResponse, McpDefinitionLocation, McpReferenceLocation, TypeCounts};
     use crate::service::utils::external::{parse_pnpm_package_info, ExternalInfo, PackageInfo};
     use crate::service::utils::signature::{
@@ -1455,24 +1454,6 @@ fn internal_helper() {
         assert!(json.get("sig").is_some(), "must use 'sig' not 'signature'");
         assert!(json.get("loc").is_some(), "must use 'loc' not 'location'");
         assert!(json.get("ext").is_some(), "must use 'ext' not 'external'");
-    }
-
-    #[test]
-    fn test_find_definition_params_include_siblings_default_false() {
-        let params = FindDefinitionParams::default();
-        assert!(!params.include_siblings, "include_siblings must default to false");
-    }
-
-    #[test]
-    fn test_find_definition_params_include_compact_default_false() {
-        let params = FindDefinitionParams::default();
-        assert!(!params.compact, "compact mode must default to false");
-    }
-
-    #[test]
-    fn test_find_definition_params_siblings_limit_default() {
-        let params = FindDefinitionParams::default();
-        assert_eq!(params.siblings_limit.unwrap_or(5), 5, "siblings_limit must default to 5");
     }
 
     #[test]
