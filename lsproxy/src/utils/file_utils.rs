@@ -1,18 +1,80 @@
 use crate::{
     api_types::{get_mount_dir, SupportedLanguages},
-    lsp::manager::LspManagerError,
+    lsp::{manager::LspManagerError, registry::LanguageMetadata},
 };
 use ignore::WalkBuilder;
 use log::{debug, error, warn};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use url::Url;
 
-use super::workspace_documents::{
-    CPP_EXTENSIONS, CSHARP_EXTENSIONS, C_AND_CPP_EXTENSIONS, C_EXTENSIONS, GOLANG_EXTENSIONS,
-    JAVASCRIPTREACT_EXTENSIONS, JAVASCRIPT_EXTENSIONS, JAVA_EXTENSIONS, PHP_EXTENSIONS,
-    PYTHON_EXTENSIONS, RUBY_EXTENSIONS, RUST_EXTENSIONS, TYPESCRIPTREACT_EXTENSIONS,
-    TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS, TYPESCRIPT_EXTENSIONS,
-};
+/// Error returned when path normalization fails.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PathNormalizationError {
+    OutsideWorkspace { path: String, workspace: String },
+}
+
+impl std::fmt::Display for PathNormalizationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OutsideWorkspace { path, workspace } => {
+                write!(f, "Path '{}' is outside workspace '{}'", path, workspace)
+            }
+        }
+    }
+}
+
+impl std::error::Error for PathNormalizationError {}
+
+/// Normalizes a file path to be relative to the workspace.
+///
+/// Accepts both absolute and relative paths:
+/// - Relative paths: validated to not escape workspace via `..`
+/// - Absolute paths within workspace: converted to relative
+/// - Paths outside workspace: returns error
+pub fn normalize_path(path: &str) -> Result<String, PathNormalizationError> {
+    let mount_dir = get_mount_dir();
+    let input_path = PathBuf::from(path);
+
+    // Handle empty or current directory
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "." {
+        return Ok(String::new());
+    }
+
+    // Compute full path
+    let full_path = if input_path.is_absolute() {
+        input_path
+    } else {
+        mount_dir.join(&input_path)
+    };
+
+    // Lexically normalize to resolve `.` and `..`
+    let normalized = lexically_normalize(&full_path);
+
+    // Validate path is within workspace and convert to relative
+    normalized
+        .strip_prefix(&mount_dir)
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|_| PathNormalizationError::OutsideWorkspace {
+            path: path.to_string(),
+            workspace: mount_dir.to_string_lossy().into_owned(),
+        })
+}
+
+/// Lexically normalizes a path by resolving `.` and `..` components without filesystem access.
+fn lexically_normalize(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                result.pop();
+            }
+            _ => result.push(component),
+        }
+    }
+    result
+}
 
 pub fn search_files(
     path: &std::path::Path,
@@ -121,20 +183,9 @@ pub fn detect_language(file_path: &str) -> Result<SupportedLanguages, LspManager
         .and_then(|ext| ext.to_str())
         .ok_or_else(|| LspManagerError::UnsupportedFileType(file_path.to_string()))?;
 
-    match extension {
-        ext if PYTHON_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Python),
-        ext if TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS.contains(&ext) => {
-            Ok(SupportedLanguages::TypeScriptJavaScript)
-        }
-        ext if RUST_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Rust),
-        ext if C_AND_CPP_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::CPP),
-        ext if CSHARP_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::CSharp),
-        ext if JAVA_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Java),
-        ext if GOLANG_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Golang),
-        ext if PHP_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::PHP),
-        ext if RUBY_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Ruby),
-        _ => Err(LspManagerError::UnsupportedFileType(file_path.to_string())),
-    }
+    LanguageMetadata::from_extension(extension)
+        .map(|m| m.id)
+        .ok_or_else(|| LspManagerError::UnsupportedFileType(file_path.to_string()))
 }
 
 pub fn detect_language_string(file_path: &str) -> Result<String, LspManagerError> {
@@ -144,20 +195,105 @@ pub fn detect_language_string(file_path: &str) -> Result<String, LspManagerError
         .and_then(|ext| ext.to_str())
         .ok_or_else(|| LspManagerError::UnsupportedFileType(file_path.to_string()))?;
 
+    // Handle TypeScript/JavaScript variants specially for LSP language IDs
     match extension {
-        ext if PYTHON_EXTENSIONS.contains(&ext) => Ok("python".to_string()),
-        ext if TYPESCRIPT_EXTENSIONS.contains(&ext) => Ok("typescript".to_string()),
-        ext if TYPESCRIPTREACT_EXTENSIONS.contains(&ext) => Ok("typescriptreact".to_string()),
-        ext if JAVASCRIPT_EXTENSIONS.contains(&ext) => Ok("javascript".to_string()),
-        ext if JAVASCRIPTREACT_EXTENSIONS.contains(&ext) => Ok("javascriptreact".to_string()),
-        ext if RUST_EXTENSIONS.contains(&ext) => Ok("rust".to_string()),
-        ext if C_EXTENSIONS.contains(&ext) => Ok("c".to_string()),
-        ext if CPP_EXTENSIONS.contains(&ext) => Ok("cpp".to_string()),
-        ext if CSHARP_EXTENSIONS.contains(&ext) => Ok("csharp".to_string()),
-        ext if JAVA_EXTENSIONS.contains(&ext) => Ok("java".to_string()),
-        ext if GOLANG_EXTENSIONS.contains(&ext) => Ok("golang".to_string()),
-        ext if PHP_EXTENSIONS.contains(&ext) => Ok("php".to_string()),
-        ext if RUBY_EXTENSIONS.contains(&ext) => Ok("ruby".to_string()),
-        _ => Err(LspManagerError::UnsupportedFileType(file_path.to_string())),
+        "ts" => Ok("typescript".to_string()),
+        "tsx" => Ok("typescriptreact".to_string()),
+        "js" => Ok("javascript".to_string()),
+        "jsx" => Ok("javascriptreact".to_string()),
+        "c" => Ok("c".to_string()),
+        "cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh" => Ok("cpp".to_string()),
+        "h" => Ok("c".to_string()), // Headers are typically C
+        _ => LanguageMetadata::from_extension(extension)
+            .map(|m| m.name.to_lowercase().replace("/", ""))
+            .ok_or_else(|| LspManagerError::UnsupportedFileType(file_path.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api_types::{set_thread_local_mount_dir, unset_thread_local_mount_dir};
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_normalize_path_relative_unchanged() {
+        let temp = TempDir::new().unwrap();
+        set_thread_local_mount_dir(temp.path());
+
+        let result = normalize_path("src/main.rs");
+        assert_eq!(result.unwrap(), "src/main.rs");
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn test_normalize_path_absolute_within_workspace() {
+        let temp = TempDir::new().unwrap();
+        set_thread_local_mount_dir(temp.path());
+
+        let absolute = temp.path().join("src/lib.rs");
+        let result = normalize_path(absolute.to_str().unwrap());
+        assert_eq!(result.unwrap(), "src/lib.rs");
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn test_normalize_path_outside_workspace_returns_error() {
+        let temp = TempDir::new().unwrap();
+        set_thread_local_mount_dir(temp.path());
+
+        let result = normalize_path("/etc/passwd");
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(matches!(err, PathNormalizationError::OutsideWorkspace { .. }));
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn test_normalize_path_escaping_via_dotdot_returns_error() {
+        let temp = TempDir::new().unwrap();
+        set_thread_local_mount_dir(temp.path());
+
+        let result = normalize_path("../../etc/passwd");
+        assert!(result.is_err());
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn test_normalize_path_with_dot_components() {
+        let temp = TempDir::new().unwrap();
+        set_thread_local_mount_dir(temp.path());
+
+        let result = normalize_path("src/../src/main.rs");
+        assert_eq!(result.unwrap(), "src/main.rs");
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn test_normalize_path_empty_string() {
+        let temp = TempDir::new().unwrap();
+        set_thread_local_mount_dir(temp.path());
+
+        let result = normalize_path("");
+        assert_eq!(result.unwrap(), "");
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn test_normalize_path_current_dir() {
+        let temp = TempDir::new().unwrap();
+        set_thread_local_mount_dir(temp.path());
+
+        let result = normalize_path(".");
+        assert_eq!(result.unwrap(), "");
+
+        unset_thread_local_mount_dir();
     }
 }

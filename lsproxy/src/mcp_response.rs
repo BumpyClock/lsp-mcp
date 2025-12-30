@@ -2,6 +2,7 @@
 // ABOUTME: Returns data directly on success, with optional metadata in verbose mode.
 
 use crate::config::OutputMode;
+use crate::markdown_formatter::ToMarkdown;
 use crate::service::ServiceError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -105,6 +106,14 @@ pub fn tool_disabled_message(tool_name: &str) -> String {
         "Tool '{}' is disabled. Enable it in your .lsp-mcp.json config.",
         tool_name
     )
+}
+
+/// Format a response as markdown using the ToMarkdown trait.
+///
+/// Currently always produces markdown output. The `OutputMode` parameter is
+/// reserved for future use (e.g., to support JSON output mode).
+pub fn format_response<T: ToMarkdown>(response: &T, _output_mode: OutputMode) -> String {
+    response.to_markdown()
 }
 
 #[cfg(test)]
@@ -366,6 +375,50 @@ mod tests {
         assert!(
             !result.contains("Suggestion"),
             "negative: simple errors should not include suggestions section"
+        );
+    }
+
+    // Test struct for format_response tests
+    struct TestMarkdownResponse {
+        content: String,
+    }
+
+    impl crate::markdown_formatter::ToMarkdown for TestMarkdownResponse {
+        fn to_markdown(&self) -> String {
+            format!("# Test Response\n\n{}", self.content)
+        }
+    }
+
+    #[test]
+    fn it_formats_response_using_to_markdown_trait() {
+        let response = TestMarkdownResponse {
+            content: "Hello, World!".to_string(),
+        };
+
+        let result = format_response(&response, OutputMode::Default);
+
+        assert!(
+            result.contains("# Test Response"),
+            "negative: format_response must call to_markdown on the response"
+        );
+        assert!(
+            result.contains("Hello, World!"),
+            "negative: format_response must include the response content"
+        );
+    }
+
+    #[test]
+    fn it_ignores_output_mode_and_returns_markdown() {
+        let response = TestMarkdownResponse {
+            content: "test content".to_string(),
+        };
+
+        let default_result = format_response(&response, OutputMode::Default);
+        let verbose_result = format_response(&response, OutputMode::Verbose);
+
+        assert_eq!(
+            default_result, verbose_result,
+            "negative: format_response should return same markdown regardless of OutputMode"
         );
     }
 }

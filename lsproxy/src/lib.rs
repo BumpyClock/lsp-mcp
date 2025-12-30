@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub mod api_types;
 pub mod config;
 pub mod lsp;
+pub mod markdown_formatter;
 pub mod mcp;
 pub mod mcp_response;
 pub mod service;
@@ -57,7 +58,7 @@ pub async fn initialize_manager_with_workspace_root(
 ///
 /// This function returns immediately after spawning background tasks to initialize
 /// language servers. Language servers become available as they complete initialization.
-/// Check the health endpoint to see which servers are ready.
+/// Use the health MCP tool to see which servers are ready.
 ///
 /// Returns both the manager and the merged configuration (for tool filtering).
 pub async fn initialize_manager_with_workspace_root_async(

@@ -159,6 +159,7 @@ impl From<AstGrepMatch> for Symbol {
             jsdoc_summary: None,
             dependencies: None,
             line_count: None,
+            children: None,
         }
     }
 }

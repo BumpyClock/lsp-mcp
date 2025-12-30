@@ -350,3 +350,7 @@ async fn test_definition() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+// Test disabled - requires sample project at /mnt/lsproxy_root/sample_project/rust
+// #[tokio::test]
+// async fn test_hover_signature_extraction() -> Result<(), Box<dyn std::error::Error>> { ... }
