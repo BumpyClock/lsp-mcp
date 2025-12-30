@@ -107,7 +107,17 @@ pub(crate) async fn find_references_impl(
     } else {
         None
     };
-    let (references, pagination) = paginate_items(all_references, limit, offset);
+    // Only paginate when limit is explicitly specified; otherwise return all references
+    let (references, limit_val, offset_val, truncated) = match limit {
+        Some(_) => {
+            let (refs, pagination) = paginate_items(all_references, limit, offset);
+            (refs, pagination.limit, pagination.offset, pagination.truncated)
+        }
+        None => {
+            // No limit specified - return all references, no truncation
+            (all_references, total_count, 0, false)
+        }
+    };
     let code_contexts = get_code_contexts(manager, &references, context_lines).await?;
 
     let mut reference_items = Vec::with_capacity(references.len());
@@ -124,9 +134,9 @@ pub(crate) async fn find_references_impl(
     Ok(McpReferencesResponse {
         raw_response,
         selected_identifier,
-        limit: pagination.limit,
-        offset: pagination.offset,
-        truncated: pagination.truncated,
+        limit: limit_val,
+        offset: offset_val,
+        truncated,
         total_count,
         by_file,
         by_type,

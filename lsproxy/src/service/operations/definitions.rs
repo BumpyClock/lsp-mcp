@@ -6,18 +6,20 @@ use crate::api_types::{
     RelatedSymbols, Symbol,
 };
 use crate::lsp::manager::Manager;
+use crate::utils::external_file::{is_external_path, read_file_range};
 use crate::utils::file_utils::uri_to_relative_path_string;
 use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Location, Position as LspPosition, Range as LspRange, SymbolKind};
 use std::sync::Arc;
 
-use crate::service::types::errors::ServiceError;
+use crate::service::types::errors::{PositionError, ServiceError};
 use crate::service::types::response::{McpDefinitionResponse, McpSymbolsResponse};
 use crate::service::utils::identifiers::find_identifier_at_position;
 use crate::service::utils::pagination::paginate_items;
-use crate::service::utils::signature::enrich_symbol;
+use crate::service::utils::signature::{enrich_symbol, extract_identifier_name_from_hover};
 use crate::service::utils::transformations::{
     definition_item_from_location, definition_locations, definition_locations_lsp,
 };
+use log::{debug, warn};
 
 use super::hover::{count_references_impl, fetch_hover_info_impl};
 
@@ -204,28 +206,79 @@ pub(crate) async fn find_definition_impl(
     offset: Option<u32>,
 ) -> Result<McpDefinitionResponse, ServiceError> {
     let file_identifiers = manager.get_file_identifiers(file_path).await?;
-    let selected_identifier = find_identifier_at_position(
+
+    // Try to find identifier at position first
+    let identifier_result = find_identifier_at_position(
         file_identifiers,
         &FilePosition {
             path: file_path.to_string(),
             position: position.clone(),
         },
     )
-    .await?;
+    .await;
 
-    let definitions = manager
-        .find_definition(
-            file_path,
-            LspPosition {
-                line: position.line.saturating_sub(1),
-                character: position.character.saturating_sub(1),
-            },
-        )
-        .await?;
+    // Try to get definitions from LSP regardless of identifier result
+    let lsp_position = LspPosition {
+        line: position.line.saturating_sub(1),
+        character: position.character.saturating_sub(1),
+    };
+    let definitions = manager.find_definition(file_path, lsp_position).await?;
+    let all_definition_locations = definition_locations_lsp(&definitions);
 
-    let definition_locations = definition_locations_lsp(&definitions);
+    // Determine selected_identifier with LSP hover fallback
+    let selected_identifier = match identifier_result {
+        Ok(id) => id,
+        Err(PositionError::IdentifierNotFound { closest }) => {
+            debug!(
+                "find_definition_impl: identifier not found at position, trying LSP hover fallback"
+            );
+
+            // Check if LSP found definitions - if so, position is valid
+            if all_definition_locations.is_empty() {
+                // LSP also found nothing - return original error
+                debug!("find_definition_impl: LSP also found no definitions, returning error");
+                return Err(ServiceError::IdentifierSelection(
+                    PositionError::IdentifierNotFound { closest },
+                ));
+            }
+
+            // LSP found definitions, construct identifier from hover info
+            if let Ok(Some(hover)) = manager.hover(file_path, lsp_position).await {
+                let name = extract_identifier_name_from_hover(&hover.contents);
+                debug!(
+                    "find_definition_impl: constructed identifier '{}' from hover",
+                    name
+                );
+                Identifier {
+                    name,
+                    kind: Some("unknown".to_string()),
+                    file_range: FileRange {
+                        path: file_path.to_string(),
+                        range: Range {
+                            start: position.clone(),
+                            end: position.clone(),
+                        },
+                    },
+                }
+            } else {
+                debug!("find_definition_impl: hover also failed, using 'unknown' identifier");
+                Identifier {
+                    name: "unknown".to_string(),
+                    kind: Some("unknown".to_string()),
+                    file_range: FileRange {
+                        path: file_path.to_string(),
+                        range: Range {
+                            start: position.clone(),
+                            end: position.clone(),
+                        },
+                    },
+                }
+            }
+        }
+    };
+
     let (definition_locations, pagination) =
-        paginate_items(definition_locations, limit, offset);
+        paginate_items(all_definition_locations, limit, offset);
 
     let workspace_files = manager.list_files().await.unwrap_or_default();
 
@@ -301,24 +354,76 @@ pub(crate) async fn find_implementation_impl(
     include_raw_response: bool,
 ) -> Result<ImplementationResponse, ServiceError> {
     let file_identifiers = manager.get_file_identifiers(file_path).await?;
-    let selected_identifier = find_identifier_at_position(
+
+    // Try to find identifier at position first
+    let identifier_result = find_identifier_at_position(
         file_identifiers,
         &FilePosition {
             path: file_path.to_string(),
             position: position.clone(),
         },
     )
-    .await?;
+    .await;
 
-    let implementations = manager
-        .find_implementation(
-            file_path,
-            LspPosition {
-                line: position.line.saturating_sub(1),
-                character: position.character.saturating_sub(1),
-            },
-        )
-        .await?;
+    // Try to get implementations from LSP regardless of identifier result
+    let lsp_position = LspPosition {
+        line: position.line.saturating_sub(1),
+        character: position.character.saturating_sub(1),
+    };
+    let implementations = manager.find_implementation(file_path, lsp_position).await?;
+    let all_impl_locations = definition_locations(&implementations);
+
+    // Determine selected_identifier with LSP hover fallback
+    let selected_identifier = match identifier_result {
+        Ok(id) => id,
+        Err(PositionError::IdentifierNotFound { closest }) => {
+            debug!(
+                "find_implementation_impl: identifier not found at position, trying LSP hover fallback"
+            );
+
+            // Check if LSP found implementations - if so, position is valid
+            if all_impl_locations.is_empty() {
+                // LSP also found nothing - return original error
+                debug!("find_implementation_impl: LSP also found no implementations, returning error");
+                return Err(ServiceError::IdentifierSelection(
+                    PositionError::IdentifierNotFound { closest },
+                ));
+            }
+
+            // LSP found implementations, construct identifier from hover info
+            if let Ok(Some(hover)) = manager.hover(file_path, lsp_position).await {
+                let name = extract_identifier_name_from_hover(&hover.contents);
+                debug!(
+                    "find_implementation_impl: constructed identifier '{}' from hover",
+                    name
+                );
+                Identifier {
+                    name,
+                    kind: Some("unknown".to_string()),
+                    file_range: FileRange {
+                        path: file_path.to_string(),
+                        range: Range {
+                            start: position.clone(),
+                            end: position.clone(),
+                        },
+                    },
+                }
+            } else {
+                debug!("find_implementation_impl: hover also failed, using 'unknown' identifier");
+                Identifier {
+                    name: "unknown".to_string(),
+                    kind: Some("unknown".to_string()),
+                    file_range: FileRange {
+                        path: file_path.to_string(),
+                        range: Range {
+                            start: position.clone(),
+                            end: position.clone(),
+                        },
+                    },
+                }
+            }
+        }
+    };
 
     let raw_response = if include_raw_response {
         Some(serde_json::to_value(&implementations)?)
@@ -328,20 +433,55 @@ pub(crate) async fn find_implementation_impl(
 
     Ok(ImplementationResponse {
         raw_response,
-        implementations: definition_locations(&implementations),
+        implementations: all_impl_locations,
         selected_identifier,
     })
 }
 
 /// Fetches full source code context for definition locations.
 /// Source code is truncated to MAX_SOURCE_CODE_LINES (100 lines).
+///
+/// For workspace files: uses ast_grep for precise symbol bounds.
+/// For external files (e.g., node_modules): reads file directly with context around definition.
 pub(crate) async fn fetch_definition_source_code(
     manager: &Manager,
     definitions: &[Location],
 ) -> Result<Vec<CodeContext>, ServiceError> {
     let mut code_contexts = Vec::new();
+
     for definition in definitions.iter() {
         let relative_path = uri_to_relative_path_string(&definition.uri);
+
+        if is_external_path(&relative_path) {
+            let start_line = definition.range.start.line.saturating_sub(3);
+            let end_line = definition.range.end.line.saturating_add(10);
+
+            match read_file_range(&relative_path, start_line, end_line).await {
+                Ok(source_code) => {
+                    code_contexts.push(CodeContext {
+                        range: FileRange {
+                            path: relative_path,
+                            range: Range {
+                                start: Position {
+                                    line: start_line + 1,
+                                    character: 1,
+                                },
+                                end: Position {
+                                    line: end_line + 1,
+                                    character: 1,
+                                },
+                            },
+                        },
+                        source_code: truncate_source_code(&source_code, MAX_SOURCE_CODE_LINES),
+                    });
+                }
+                Err(e) => {
+                    warn!("Failed to read external file {}: {}", relative_path, e);
+                }
+            }
+            continue;
+        }
+
         let file_symbols = manager.definitions_in_file_ast_grep(&relative_path).await?;
         let symbol = file_symbols.iter().find(|s| {
             s.get_identifier_range().start.line == definition.range.start.line
@@ -402,6 +542,9 @@ pub(crate) async fn fetch_definition_source_code(
 }
 
 /// Computes related symbols for a definition (sibling exports, implements, extends).
+///
+/// For external files (e.g., node_modules): returns empty RelatedSymbols since ast_grep
+/// cannot parse files outside the workspace.
 pub(crate) async fn compute_related_symbols(
     manager: &Manager,
     definition_file_path: Option<&str>,
@@ -412,6 +555,10 @@ pub(crate) async fn compute_related_symbols(
     let Some(def_path) = definition_file_path else {
         return related;
     };
+
+    if is_external_path(def_path) {
+        return related;
+    }
 
     if let Ok(file_symbols) = manager.definitions_in_file_ast_grep(def_path).await {
         let sibling_exports: Vec<Symbol> = file_symbols

@@ -212,6 +212,11 @@ pub(crate) async fn call_hierarchy_impl(
     position: Position,
     direction: CallHierarchyDirection,
 ) -> Result<CallHierarchyResponse, ServiceError> {
+    debug!(
+        "call_hierarchy_impl: file={}, position=({},{}), direction={:?}",
+        file_path, position.line, position.character, direction
+    );
+
     // First prepare the call hierarchy to get the item
     let items = manager
         .prepare_call_hierarchy(
@@ -226,6 +231,7 @@ pub(crate) async fn call_hierarchy_impl(
     let item = match items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) }) {
         Some(item) => item,
         None => {
+            debug!("call_hierarchy_impl: prepare_call_hierarchy returned no items");
             return Ok(CallHierarchyResponse {
                 direction,
                 raw_response: None,
@@ -234,7 +240,10 @@ pub(crate) async fn call_hierarchy_impl(
         }
     };
 
+    debug!("call_hierarchy_impl: got item name={}", item.name);
+
     let workspace_files = manager.list_files().await?;
+    debug!("call_hierarchy_impl: workspace has {} files", workspace_files.len());
 
     let calls = match direction {
         CallHierarchyDirection::Incoming => {
