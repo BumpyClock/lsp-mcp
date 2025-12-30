@@ -3,11 +3,10 @@
 
 use crate::api_types::{Position, Range};
 use crate::config::OutputMode;
-use crate::mcp_response::{format_error, success_response};
-use crate::service::{LspService, ServiceError};
+use crate::markdown_formatter::SourceCodeResponse;
+use crate::mcp_response::{format_error, format_response};
+use crate::service::LspService;
 use mcpkit::prelude::*;
-use serde_json::json;
-use std::collections::HashMap;
 
 pub async fn list_files(
     service: &LspService,
@@ -17,16 +16,7 @@ pub async fn list_files(
 ) -> ToolOutput {
     match service.list_files(limit, offset).await {
         Ok(response) => {
-            let data = match serde_json::to_value(&response) {
-                Ok(v) => v,
-                Err(e) => {
-                    let err = ServiceError::Serialization(e.to_string());
-                    return ToolOutput::error(format_error(&err));
-                }
-            };
-            let mut counts = HashMap::new();
-            counts.insert("files".to_string(), response.files.len());
-            let resp = success_response("list_files", data, output_mode, Some(counts));
+            let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => ToolOutput::error(format_error(&e)),
@@ -55,12 +45,23 @@ pub async fn read_source_code(
         }),
         _ => None,
     };
+    // Capture range info before moving into the service call
+    let range_info = range.as_ref().map(|r| (r.start.line, r.end.line));
     match service.read_source_code(&path, range).await {
         Ok(source_code) => {
-            let data = json!({"source": source_code});
-            let mut counts = HashMap::new();
-            counts.insert("chars".to_string(), source_code.len());
-            let resp = success_response("read_source_code", data, output_mode, Some(counts));
+            let line_count = source_code.lines().count() as u32;
+            let (actual_start, actual_end, total) = match range_info {
+                Some((start, end)) => (start, end, line_count + start - 1),
+                None => (1, line_count, line_count),
+            };
+            let response = SourceCodeResponse {
+                path: path.clone(),
+                content: source_code,
+                start_line: actual_start,
+                end_line: actual_end,
+                total_lines: total,
+            };
+            let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => ToolOutput::error(format_error(&e)),

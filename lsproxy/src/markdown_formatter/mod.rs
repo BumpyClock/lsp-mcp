@@ -10,6 +10,8 @@ mod hover;
 mod references;
 mod symbols;
 
+pub use files::SourceCodeResponse;
+
 /// Trait for converting types to markdown representation.
 ///
 /// Implementors produce human-readable markdown output optimized for
