@@ -3,10 +3,9 @@
 
 use crate::api_types::Position;
 use crate::config::OutputMode;
-use crate::mcp_response::{format_error, success_response};
-use crate::service::{LspService, ServiceError};
+use crate::mcp_response::{format_error, format_response};
+use crate::service::LspService;
 use mcpkit::prelude::*;
-use std::collections::HashMap;
 
 pub async fn find_references(
     service: &LspService,
@@ -31,17 +30,7 @@ pub async fn find_references(
         .await
     {
         Ok(response) => {
-            let data = match serde_json::to_value(&response) {
-                Ok(v) => v,
-                Err(e) => {
-                    let err = ServiceError::Serialization(e.to_string());
-                    return ToolOutput::error(format_error(&err));
-                }
-            };
-            let mut counts = HashMap::new();
-            let reference_count: usize = response.by_file.iter().map(|g| g.refs.len()).sum();
-            counts.insert("references".to_string(), reference_count);
-            let resp = success_response("find_references", data, output_mode, Some(counts));
+            let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => ToolOutput::error(format_error(&e)),
@@ -62,18 +51,7 @@ pub async fn find_referenced_symbols(
         .await
     {
         Ok(response) => {
-            let data = match serde_json::to_value(&response) {
-                Ok(v) => v,
-                Err(e) => {
-                    let err = ServiceError::Serialization(e.to_string());
-                    return ToolOutput::error(format_error(&err));
-                }
-            };
-            let mut counts = HashMap::new();
-            counts.insert("workspace_symbols".to_string(), response.workspace_symbols.len());
-            counts.insert("external_symbols".to_string(), response.external_symbols.len());
-            counts.insert("not_found".to_string(), response.not_found.len());
-            let resp = success_response("find_referenced_symbols", data, output_mode, Some(counts));
+            let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => ToolOutput::error(format_error(&e)),

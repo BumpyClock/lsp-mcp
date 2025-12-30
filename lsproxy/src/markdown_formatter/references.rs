@@ -1,7 +1,8 @@
 // ABOUTME: Markdown formatter for references response types.
-// ABOUTME: Converts ReferencesResponse to readable markdown with file grouping.
+// ABOUTME: Converts ReferencesResponse and ReferencedSymbolsResponse to readable markdown.
 
 use super::{escape_inline_code, ToMarkdown};
+use crate::api_types::ReferencedSymbolsResponse;
 use crate::service::types::response::McpReferencesResponse;
 
 impl ToMarkdown for McpReferencesResponse {
@@ -41,6 +42,87 @@ impl ToMarkdown for McpReferencesResponse {
                 "\n[Showing {} of {} - truncated]\n",
                 shown, self.total_count
             ));
+        }
+
+        output
+    }
+}
+
+impl ToMarkdown for ReferencedSymbolsResponse {
+    fn to_markdown(&self) -> String {
+        let mut output = String::new();
+
+        let total_workspace = self.workspace_symbols.len();
+        let total_external = self.external_symbols.len();
+        let total_not_found = self.not_found.len();
+        let grand_total = total_workspace + total_external + total_not_found;
+
+        output.push_str(&format!("## Referenced Symbols ({} total)\n", grand_total));
+
+        // Workspace symbols with definitions
+        if !self.workspace_symbols.is_empty() {
+            output.push_str(&format!("\n### Workspace Symbols ({})\n", total_workspace));
+            for ws in &self.workspace_symbols {
+                let ref_name = escape_inline_code(&ws.reference.name);
+                let kind = ws.reference.kind_or_default();
+                output.push_str(&format!("\n#### `{}` ({})\n", ref_name, kind));
+                output.push_str(&format!(
+                    "- **Reference**: {}:{}:{}\n",
+                    ws.reference.file_range.path,
+                    ws.reference.file_range.range.start.line,
+                    ws.reference.file_range.range.start.character
+                ));
+                if ws.definitions.is_empty() {
+                    output.push_str("- **Definitions**: none\n");
+                } else {
+                    output.push_str(&format!("- **Definitions** ({}):\n", ws.definitions.len()));
+                    for def in &ws.definitions {
+                        let def_name = escape_inline_code(&def.name);
+                        output.push_str(&format!(
+                            "  - `{}` ({}) at {}:{}:{}\n",
+                            def_name,
+                            def.kind,
+                            def.identifier_position.path,
+                            def.identifier_position.position.line,
+                            def.identifier_position.position.character
+                        ));
+                    }
+                }
+            }
+        }
+
+        // External symbols
+        if !self.external_symbols.is_empty() {
+            output.push_str(&format!("\n### External Symbols ({})\n", total_external));
+            for ext in &self.external_symbols {
+                let name = escape_inline_code(&ext.name);
+                let kind = ext.kind_or_default();
+                output.push_str(&format!(
+                    "- `{}` ({}) at {}:{}:{}\n",
+                    name,
+                    kind,
+                    ext.file_range.path,
+                    ext.file_range.range.start.line,
+                    ext.file_range.range.start.character
+                ));
+            }
+        }
+
+        // Not found symbols
+        if !self.not_found.is_empty() {
+            output.push_str(&format!("\n### Not Found ({})\n", total_not_found));
+            for nf in &self.not_found {
+                let name = escape_inline_code(&nf.name);
+                let kind = nf.kind_or_default();
+                output.push_str(&format!(
+                    "- `{}` ({}) at {}:{}:{}\n",
+                    name,
+                    kind,
+                    nf.file_range.path,
+                    nf.file_range.range.start.line,
+                    nf.file_range.range.start.character
+                ));
+            }
         }
 
         output
