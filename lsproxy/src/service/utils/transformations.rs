@@ -165,6 +165,7 @@ pub(crate) fn call_hierarchy_item_to_info(item: &lsp_types::CallHierarchyItem) -
             },
         },
         detail: item.detail.clone(),
+        external: None,
     }
 }
 

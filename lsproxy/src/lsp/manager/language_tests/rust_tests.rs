@@ -309,6 +309,41 @@ async fn test_references() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
+async fn test_referenced_symbols_are_available_for_rust() -> Result<(), Box<dyn std::error::Error>> {
+    let root_path = std::env::current_dir()?;
+    let sample_path = root_path.join("../sample_project/rust");
+    let sample_path = sample_path.canonicalize()?;
+    let sample_path = sample_path
+        .to_str()
+        .ok_or("Sample project path is invalid")?;
+    let context = TestContext::setup(sample_path, true).await?;
+    let manager = context
+        .manager
+        .as_ref()
+        .ok_or("Manager is not initialized")?;
+
+    sleep(Duration::from_secs(5)).await;
+
+    let referenced_symbols = manager
+        .find_referenced_symbols(
+            "src/astar.rs",
+            lsp_types::Position {
+                line: 14,
+                character: 11,
+            },
+            false,
+        )
+        .await;
+
+    assert!(
+        referenced_symbols.is_ok(),
+        "referenced symbols must not be blocked for rust"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_definition() -> Result<(), Box<dyn std::error::Error>> {
     let context = TestContext::setup(&rust_sample_path(), true).await?;
     let manager = context

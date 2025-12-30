@@ -37,4 +37,15 @@ else
   sudo tar -xzf "$archive" -C /usr/src --no-same-owner
 fi
 
+custom_reference_rules="${repo_root}/ast_grep/reference/rules"
+if [[ -d "$custom_reference_rules" ]]; then
+  if [[ "$(id -u)" -eq 0 ]]; then
+    mkdir -p /usr/src/ast_grep/reference/rules
+    cp -R "${custom_reference_rules}/." /usr/src/ast_grep/reference/rules/
+  else
+    sudo mkdir -p /usr/src/ast_grep/reference/rules
+    sudo cp -R "${custom_reference_rules}/." /usr/src/ast_grep/reference/rules/
+  fi
+fi
+
 echo "ast-grep rules installed under /usr/src/ast_grep"

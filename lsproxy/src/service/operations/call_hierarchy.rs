@@ -7,7 +7,6 @@ use crate::api_types::{
     PrepareCallHierarchyResponse, Range,
 };
 use crate::lsp::manager::Manager;
-use crate::utils::file_utils::uri_to_relative_path_string;
 use log::debug;
 use lsp_types::Position as LspPosition;
 use std::sync::Arc;
@@ -87,16 +86,13 @@ pub(crate) async fn incoming_calls_impl(
 
     let converted_calls: Vec<IncomingCallInfo> = calls
         .into_iter()
-        .filter(|call| {
-            let path = uri_to_relative_path_string(&call.from.uri);
-            let in_workspace = workspace_files.contains(&path);
-            if !in_workspace {
-                debug!("incoming_calls_impl: filtering out call from {} (not in workspace)", path);
+        .map(|call| {
+            let mut from = call_hierarchy_item_to_info(&call.from);
+            if !workspace_files.contains(&from.location.path) {
+                from.external = Some(true);
             }
-            in_workspace
-        })
-        .map(|call| IncomingCallInfo {
-            from: call_hierarchy_item_to_info(&call.from),
+            IncomingCallInfo {
+                from,
             from_ranges: call
                 .from_ranges
                 .into_iter()
@@ -111,6 +107,7 @@ pub(crate) async fn incoming_calls_impl(
                     },
                 })
                 .collect(),
+            }
         })
         .collect();
 
@@ -163,16 +160,13 @@ pub(crate) async fn outgoing_calls_impl(
 
     let converted_calls: Vec<OutgoingCallInfo> = calls
         .into_iter()
-        .filter(|call| {
-            let path = uri_to_relative_path_string(&call.to.uri);
-            let in_workspace = workspace_files.contains(&path);
-            if !in_workspace {
-                debug!("outgoing_calls_impl: filtering out call to {} (not in workspace)", path);
+        .map(|call| {
+            let mut to = call_hierarchy_item_to_info(&call.to);
+            if !workspace_files.contains(&to.location.path) {
+                to.external = Some(true);
             }
-            in_workspace
-        })
-        .map(|call| OutgoingCallInfo {
-            to: call_hierarchy_item_to_info(&call.to),
+            OutgoingCallInfo {
+                to,
             from_ranges: call
                 .from_ranges
                 .into_iter()
@@ -187,6 +181,7 @@ pub(crate) async fn outgoing_calls_impl(
                     },
                 })
                 .collect(),
+            }
         })
         .collect();
 
@@ -250,12 +245,13 @@ pub(crate) async fn call_hierarchy_impl(
             let lsp_calls = manager.incoming_calls(file_path, &item).await?;
             lsp_calls
                 .into_iter()
-                .filter(|call| {
-                    let path = uri_to_relative_path_string(&call.from.uri);
-                    workspace_files.contains(&path)
-                })
-                .map(|call| CallInfo {
-                    item: call_hierarchy_item_to_info(&call.from),
+                .map(|call| {
+                    let mut item = call_hierarchy_item_to_info(&call.from);
+                    if !workspace_files.contains(&item.location.path) {
+                        item.external = Some(true);
+                    }
+                    CallInfo {
+                        item,
                     call_ranges: call
                         .from_ranges
                         .into_iter()
@@ -270,6 +266,7 @@ pub(crate) async fn call_hierarchy_impl(
                             },
                         })
                         .collect(),
+                    }
                 })
                 .collect()
         }
@@ -277,12 +274,13 @@ pub(crate) async fn call_hierarchy_impl(
             let lsp_calls = manager.outgoing_calls(file_path, &item).await?;
             lsp_calls
                 .into_iter()
-                .filter(|call| {
-                    let path = uri_to_relative_path_string(&call.to.uri);
-                    workspace_files.contains(&path)
-                })
-                .map(|call| CallInfo {
-                    item: call_hierarchy_item_to_info(&call.to),
+                .map(|call| {
+                    let mut item = call_hierarchy_item_to_info(&call.to);
+                    if !workspace_files.contains(&item.location.path) {
+                        item.external = Some(true);
+                    }
+                    CallInfo {
+                        item,
                     call_ranges: call
                         .from_ranges
                         .into_iter()
@@ -297,6 +295,7 @@ pub(crate) async fn call_hierarchy_impl(
                             },
                         })
                         .collect(),
+                    }
                 })
                 .collect()
         }

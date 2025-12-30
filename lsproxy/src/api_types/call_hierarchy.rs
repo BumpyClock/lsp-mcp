@@ -18,6 +18,9 @@ pub struct CallHierarchyItemInfo {
     /// Detail information (e.g., signature)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// True when the symbol is outside the workspace
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external: Option<bool>,
 }
 
 /// Response to prepareCallHierarchy request
@@ -178,6 +181,7 @@ mod tests {
                     },
                 },
                 detail: Some("fn test_function()".to_string()),
+                external: None,
             },
             call_ranges: vec![Range {
                 start: Position {
@@ -222,6 +226,7 @@ mod tests {
                         end: Position { line: 10, character: 1 },
                     },
                     detail: None,
+                    external: None,
                 },
                 call_ranges: vec![Range {
                     start: Position { line: 7, character: 5 },
@@ -312,6 +317,7 @@ mod tests {
                     end: Position { line: 110, character: 1 },
                 },
                 detail: None,
+                external: None,
             },
             call_ranges: vec![
                 Range {

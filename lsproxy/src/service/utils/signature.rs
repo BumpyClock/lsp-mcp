@@ -37,10 +37,13 @@ pub fn truncate_signature(sig: &str, max_length: Option<usize>) -> String {
     format!("{}...", &normalized[..end])
 }
 
-/// Extracts signature and documentation from LSP hover contents
+/// Extracts signature and documentation from LSP hover contents.
+/// Uses pulldown-cmark for robust markdown parsing.
 pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) -> (Option<String>, Option<String>) {
+    use super::hover_parser;
     use lsp_types::{HoverContents, MarkedString, MarkupContent};
 
+    // Convert to unified markdown text
     let text = match contents {
         HoverContents::Scalar(MarkedString::String(s)) => s.clone(),
         HoverContents::Scalar(MarkedString::LanguageString(ls)) => {
@@ -60,279 +63,20 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
         }
     };
 
-    let lines: Vec<&str> = text.lines().collect();
-    let mut candidate_signatures: Vec<String> = Vec::new();
-    let mut example_signatures: Vec<String> = Vec::new();
-    let mut docs = Vec::new();
-    let mut in_code_block = false;
-    let mut code_lines = Vec::new();
-    let mut pending_example_block = false;
-    let mut current_block_is_example = false;
+    // Parse using pulldown-cmark
+    let parsed = hover_parser::parse_hover_markdown(&text);
 
-    for line in lines {
-        if line.starts_with("```") {
-            if in_code_block {
-                if !code_lines.is_empty() {
-                    let block_content = code_lines.join("\n");
-                    // rust-analyzer returns module name first, then signature
-                    // Collect all blocks that look like signatures
-                    if is_likely_signature(&block_content) {
-                        if current_block_is_example {
-                            example_signatures.push(block_content);
-                        } else {
-                            candidate_signatures.push(block_content);
-                        }
-                    }
-                    code_lines.clear();
-                }
-                in_code_block = false;
-                current_block_is_example = false;
-            } else {
-                in_code_block = true;
-                current_block_is_example = pending_example_block;
-                pending_example_block = false;
-            }
-        } else if in_code_block {
-            code_lines.push(line);
-        } else if !line.is_empty() && line != "---" {
-            if is_example_tag_line(line) {
-                pending_example_block = true;
-            }
-            docs.push(line);
-        }
-    }
+    // Select signature deterministically
+    let signature = hover_parser::select_signature(&parsed);
 
-    // Select the best signature from candidates:
-    // 1. Prefer longer signatures (more complete type info)
-    // 2. Among equal lengths, prefer those with more type information (contains ':' or '->')
-    let select_signature = |candidates: Vec<String>| {
-        candidates.into_iter().max_by(|a, b| {
-            let score_a = a.len() + if a.contains(':') || a.contains("->") { 50 } else { 0 };
-            let score_b = b.len() + if b.contains(':') || b.contains("->") { 50 } else { 0 };
-            score_a.cmp(&score_b)
-        })
-    };
-
-    let signature = if !candidate_signatures.is_empty() {
-        select_signature(candidate_signatures)
-    } else if !example_signatures.is_empty() {
-        select_signature(example_signatures)
-    } else {
-        None
-    };
-
-    // Fallback: if no code blocks found, try to extract signature from first lines
-    let signature = if signature.is_none() && !docs.is_empty() {
-        let extracted = extract_signature_from_plain_text(&docs);
-        if extracted.is_some() {
-            docs = docs.into_iter()
-                .filter(|line| !looks_like_signature(line))
-                .collect();
-        }
-        extracted
-    } else {
-        signature
-    };
-
-    let jsdoc = if docs.is_empty() {
+    // Extract docs from text content
+    let docs = if parsed.text_content.is_empty() {
         None
     } else {
-        Some(docs.join(" ").trim().to_string())
+        Some(parsed.text_content)
     };
 
-    (signature, jsdoc)
-}
-
-/// Checks if a code block is a variable assignment with a value (usage example).
-/// These typically come from @example JSDoc blocks and should not be signatures.
-///
-/// Matches: `const x = value`, `let y: Type = value`, `var z = value`
-/// Does NOT match: `const x: Type` (no value, just type annotation)
-fn is_variable_assignment(block: &str) -> bool {
-    let trimmed = block.trim();
-
-    let is_var_decl = trimmed.starts_with("const ")
-        || trimmed.starts_with("let ")
-        || trimmed.starts_with("var ");
-
-    if !is_var_decl {
-        return false;
-    }
-
-    trimmed.contains('=')
-}
-
-/// Checks if a code block looks like an actual signature vs just a module name
-fn is_likely_signature(block: &str) -> bool {
-    let trimmed = block.trim();
-
-    // Empty blocks are not signatures
-    if trimmed.is_empty() {
-        return false;
-    }
-
-    // Variable assignments are usage examples, not signatures
-    if is_variable_assignment(trimmed) {
-        return false;
-    }
-
-    // Reference/pointer types starting with &, *, or [ are valid signatures
-    if trimmed.starts_with('&') || trimmed.starts_with('*') || trimmed.starts_with('[') {
-        return true;
-    }
-
-    // Single word without spaces/parens/colons is likely just a module name
-    // But allow if it contains type indicators like '<', ':', '->'
-    if !trimmed.contains(' ') && !trimmed.contains('(') && !trimmed.contains('<')
-        && !trimmed.contains(':') && !trimmed.contains("->") {
-        return false;
-    }
-
-    // Look for signature patterns by keyword prefixes
-    let has_keyword_prefix =
-        // Rust signatures
-        trimmed.starts_with("fn ") ||
-        trimmed.starts_with("pub ") ||
-        trimmed.starts_with("pub(") ||
-        trimmed.starts_with("async ") ||
-        trimmed.starts_with("const ") ||
-        trimmed.starts_with("static ") ||
-        trimmed.starts_with("type ") ||
-        trimmed.starts_with("struct ") ||
-        trimmed.starts_with("enum ") ||
-        trimmed.starts_with("trait ") ||
-        trimmed.starts_with("impl ") ||
-        trimmed.starts_with("impl<") ||
-        trimmed.starts_with("mod ") ||
-        trimmed.starts_with("use ") ||
-        trimmed.starts_with("macro") ||
-        trimmed.starts_with("unsafe ") ||
-        trimmed.starts_with("extern ") ||
-        trimmed.starts_with("dyn ") ||
-        // TypeScript/JavaScript
-        trimmed.starts_with("function ") ||
-        trimmed.starts_with("class ") ||
-        trimmed.starts_with("interface ") ||
-        trimmed.starts_with("export ") ||
-        trimmed.starts_with("let ") ||
-        trimmed.starts_with("var ") ||
-        trimmed.starts_with("readonly ") ||
-        trimmed.starts_with("abstract ") ||
-        trimmed.starts_with("private ") ||
-        trimmed.starts_with("protected ") ||
-        trimmed.starts_with("public ") ||
-        // Python
-        trimmed.starts_with("def ") ||
-        trimmed.starts_with("async def ") ||
-        trimmed.starts_with("@") ||  // decorators often precede signatures
-        // Go
-        trimmed.starts_with("func ") ||
-        // C/C++
-        trimmed.starts_with("void ") ||
-        trimmed.starts_with("int ") ||
-        trimmed.starts_with("char ") ||
-        trimmed.starts_with("auto ") ||
-        trimmed.starts_with("template") ||
-        trimmed.starts_with("virtual ") ||
-        trimmed.starts_with("inline ");
-
-    // Look for signature patterns by content (type annotations, etc.)
-    let has_signature_content =
-        // Type annotations (variable: Type, param: Type)
-        trimmed.contains(": ") ||
-        // Return type indicator
-        trimmed.contains("->") ||
-        // Generic bounds
-        trimmed.contains("where ") ||
-        // Function call parens (likely a function signature)
-        trimmed.contains('(') ||
-        // Generic type parameters
-        (trimmed.contains('<') && trimmed.contains('>')) ||
-        // Array/slice types
-        trimmed.contains('[');
-
-    has_keyword_prefix || has_signature_content
-}
-
-fn is_example_tag_line(line: &str) -> bool {
-    let trimmed = line.trim();
-    let trimmed = trimmed
-        .strip_prefix("- ")
-        .or_else(|| trimmed.strip_prefix("* "))
-        .unwrap_or(trimmed);
-    let trimmed = trimmed.trim_matches(|c: char| c == '*' || c == '_' || c == '`');
-    let trimmed = trimmed.trim_end_matches(':');
-    let lower = trimmed.to_ascii_lowercase();
-    lower.starts_with("@example") || lower.starts_with("example")
-}
-
-/// Checks if a line looks like a code signature
-fn looks_like_signature(line: &str) -> bool {
-    let trimmed = line.trim();
-    // Rust signatures
-    trimmed.starts_with("fn ") ||
-    trimmed.starts_with("pub fn ") ||
-    trimmed.starts_with("pub(") ||
-    trimmed.starts_with("async fn ") ||
-    trimmed.starts_with("pub async fn ") ||
-    trimmed.starts_with("const ") ||
-    trimmed.starts_with("pub const ") ||
-    trimmed.starts_with("static ") ||
-    trimmed.starts_with("pub static ") ||
-    trimmed.starts_with("type ") ||
-    trimmed.starts_with("pub type ") ||
-    trimmed.starts_with("struct ") ||
-    trimmed.starts_with("pub struct ") ||
-    trimmed.starts_with("enum ") ||
-    trimmed.starts_with("pub enum ") ||
-    trimmed.starts_with("trait ") ||
-    trimmed.starts_with("pub trait ") ||
-    trimmed.starts_with("impl ") ||
-    trimmed.starts_with("impl<") ||
-    trimmed.starts_with("mod ") ||
-    trimmed.starts_with("pub mod ") ||
-    // TypeScript/JavaScript signatures
-    trimmed.starts_with("function ") ||
-    trimmed.starts_with("class ") ||
-    trimmed.starts_with("interface ") ||
-    trimmed.starts_with("export ") ||
-    // Python signatures
-    trimmed.starts_with("def ") ||
-    trimmed.starts_with("async def ") ||
-    trimmed.starts_with("class ") ||
-    // Go signatures
-    trimmed.starts_with("func ") ||
-    trimmed.starts_with("func (")
-}
-
-/// Extracts signature from plain text (no code fences)
-fn extract_signature_from_plain_text(lines: &[&str]) -> Option<String> {
-    let mut sig_lines = Vec::new();
-
-    for line in lines {
-        if looks_like_signature(line) {
-            sig_lines.push(*line);
-            // For multi-line signatures, continue collecting until we hit a closing brace/paren
-            // or empty line
-        } else if !sig_lines.is_empty() {
-            // Check if this continues a signature (e.g., generic bounds, return type on next line)
-            let trimmed = line.trim();
-            if trimmed.starts_with("->") ||
-               trimmed.starts_with("where") ||
-               trimmed.starts_with("<") ||
-               (trimmed.len() > 0 && !trimmed.ends_with(".") && !trimmed.starts_with("//")) {
-                sig_lines.push(*line);
-            } else {
-                break;
-            }
-        }
-    }
-
-    if sig_lines.is_empty() {
-        None
-    } else {
-        Some(sig_lines.join("\n"))
-    }
+    (signature, docs)
 }
 
 /// Extracts signature from source code (fallback when LSP unavailable)
@@ -706,117 +450,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_variable_assignment() {
-        assert!(
-            is_variable_assignment("const x = 5"),
-            "const with value is assignment"
-        );
-        assert!(
-            is_variable_assignment("const options: SearchOptions = { query: \"test\" }"),
-            "const with type and value is assignment"
-        );
-        assert!(
-            is_variable_assignment("let result = calculate()"),
-            "let with value is assignment"
-        );
-        assert!(
-            is_variable_assignment("var config: Config = {}"),
-            "var with type and value is assignment"
-        );
-
-        assert!(
-            !is_variable_assignment("const FOO: number"),
-            "const with type only is not assignment"
-        );
-        assert!(
-            !is_variable_assignment("type Foo = string"),
-            "type alias is not variable assignment"
-        );
-        assert!(
-            !is_variable_assignment("interface SearchOptions"),
-            "interface is not variable assignment"
-        );
-        assert!(
-            !is_variable_assignment("function calculate(): number"),
-            "function is not variable assignment"
-        );
-    }
-
-    #[test]
-    fn test_is_likely_signature() {
-        assert!(is_likely_signature("pub fn example() -> String"));
-        assert!(is_likely_signature("fn example()"));
-        assert!(is_likely_signature("async fn example()"));
-        assert!(is_likely_signature("pub struct Foo<T>"));
-        assert!(is_likely_signature("impl<T> Foo<T>"));
-
-        assert!(!is_likely_signature("lsproxy"));
-        assert!(!is_likely_signature("some_module"));
-        assert!(!is_likely_signature("MyType"));
-    }
-
-    #[test]
-    fn test_is_likely_signature_rejects_variable_assignments() {
-        assert!(
-            !is_likely_signature("const x = 5"),
-            "const assignment should be rejected"
-        );
-        assert!(
-            !is_likely_signature("let result = calculate()"),
-            "let assignment should be rejected"
-        );
-        assert!(
-            !is_likely_signature("var config: Config = {}"),
-            "var assignment should be rejected"
-        );
-
-        assert!(
-            is_likely_signature("const FOO: number"),
-            "const with type annotation only should be valid"
-        );
-    }
-
-    #[test]
-    fn test_is_likely_signature_type_annotations() {
-        // Type annotations should be recognized as signatures
-        assert!(is_likely_signature("manager: &Arc<Manager>"), "type annotation with reference");
-        assert!(is_likely_signature("x: i32"), "simple type annotation");
-        assert!(is_likely_signature("result: Result<T, E>"), "generic type annotation");
-    }
-
-    #[test]
-    fn test_is_likely_signature_reference_types() {
-        // Reference and pointer types
-        assert!(is_likely_signature("&str"), "string slice reference");
-        assert!(is_likely_signature("&mut Vec<T>"), "mutable reference");
-        assert!(is_likely_signature("*const u8"), "const pointer");
-        assert!(is_likely_signature("*mut T"), "mutable pointer");
-    }
-
-    #[test]
-    fn test_is_likely_signature_rust_special_cases() {
-        // Rust-specific patterns
-        assert!(is_likely_signature("unsafe fn dangerous()"), "unsafe function");
-        assert!(is_likely_signature("extern \"C\" fn callback()"), "extern function");
-        assert!(is_likely_signature("dyn Trait"), "trait object");
-        assert!(is_likely_signature("pub(crate) fn internal()"), "visibility modifier");
-    }
-
-    #[test]
-    fn test_is_likely_signature_return_types() {
-        // Return type indicators
-        assert!(is_likely_signature("-> Result<(), Error>"), "return type only");
-        assert!(is_likely_signature("fn foo() -> impl Iterator<Item = i32>"), "impl trait return");
-    }
-
-    #[test]
-    fn test_is_likely_signature_generic_bounds() {
-        // Generic bounds
-        assert!(is_likely_signature("where T: Clone + Send"), "where clause");
-        assert!(is_likely_signature("T: Iterator<Item = u32>"), "inline bound");
-    }
-
-    #[test]
     fn test_extract_signature_prefers_longer_signature() {
         use lsp_types::{HoverContents, MarkupContent, MarkupKind};
 
@@ -834,10 +467,10 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_signature_prefers_type_info() {
+    fn test_extract_signature_uses_first_definition() {
         use lsp_types::{HoverContents, MarkupContent, MarkupKind};
 
-        // When signatures are similar length, prefer one with type annotations
+        // Deterministic selection: first definition-like block wins
         let hover = HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
             value: "```rust\nfn example_func\n```\n\n```rust\nfn example() -> i32\n```".to_string(),
@@ -847,7 +480,8 @@ mod tests {
 
         assert!(sig.is_some(), "Should extract signature");
         let sig = sig.unwrap();
-        assert!(sig.contains("->"), "Should prefer signature with return type. Got: {}", sig);
+        // First definition-like block is selected
+        assert!(sig.contains("fn example_func"), "Should select first definition. Got: {}", sig);
     }
 
     #[test]

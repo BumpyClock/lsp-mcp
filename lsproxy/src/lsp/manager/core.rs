@@ -11,7 +11,7 @@ use crate::config::LspMcpConfig;
 use crate::lsp::client::LspClient;
 use crate::utils::file_utils::uri_to_relative_path_string;
 use crate::utils::file_utils::{absolute_path_to_relative_path_string, detect_language};
-use crate::utils::workspace_documents::WorkspaceDocuments;
+use crate::utils::workspace_documents::{DidOpenConfiguration, WorkspaceDocuments};
 use log::{debug, error, info, warn};
 use lsp_types::{DocumentSymbolResponse, GotoDefinitionResponse, Location, Position, Range, Url};
 use notify::RecursiveMode;
@@ -559,10 +559,11 @@ impl Manager {
         match lsp_type {
             SupportedLanguages::Python
             | SupportedLanguages::TypeScriptJavaScript
-            | SupportedLanguages::CSharp => (),
+            | SupportedLanguages::CSharp
+            | SupportedLanguages::Rust => (),
             _ => {
                 return Err(LspManagerError::NotImplemented(
-                    "Find referenced symbols is only implemented for Python, TypeScript/JavaScript, and C#"
+                    "Find referenced symbols is only implemented for Python, TypeScript/JavaScript, C#, and Rust"
                         .to_string(),
                 ))
             }
@@ -706,10 +707,29 @@ impl Manager {
                     .await
                     .ok_or_else(|| LspManagerError::LspClientNotFound(lsp_type))?;
 
-                let locked_client = client.lock().await;
+                let mut locked_client = client.lock().await;
                 let uri = Url::from_file_path(&full_path).map_err(|_| {
                     LspManagerError::InternalError("Invalid file path for URI".to_string())
                 })?;
+
+                let needs_open = {
+                    let workspace_documents = locked_client.get_workspace_documents();
+                    workspace_documents.get_did_open_configuration() == DidOpenConfiguration::Lazy
+                        && !workspace_documents.is_did_open_document(full_path_str)
+                };
+
+                if needs_open {
+                    locked_client
+                        .ensure_document_open(full_path_str)
+                        .await
+                        .map_err(|e| {
+                            LspManagerError::InternalError(format!(
+                                "Failed to open document for diagnostics: {}",
+                                e
+                            ))
+                        })?;
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
 
                 if let Some(diagnostics) = locked_client.get_diagnostics_store().get(&uri).await {
                     all_diagnostics.insert(path.to_string(), diagnostics);

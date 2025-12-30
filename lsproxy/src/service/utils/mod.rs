@@ -2,6 +2,7 @@
 // ABOUTME: Re-exports pagination, external, identifier, transformation, and signature utilities.
 
 pub mod external;
+pub(crate) mod hover_parser;
 pub mod identifiers;
 pub mod pagination;
 pub mod signature;

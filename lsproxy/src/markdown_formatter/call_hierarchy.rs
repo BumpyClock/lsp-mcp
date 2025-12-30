@@ -52,10 +52,15 @@ fn format_call_info(call: &CallInfo) -> String {
         item.location.position.line,
         item.location.position.character,
     );
+    let external_tag = if item.external.unwrap_or(false) {
+        " [external]"
+    } else {
+        ""
+    };
 
     let header = match &item.detail {
-        Some(detail) => format!("### {} ({})\n*{}*", item.name, position, detail),
-        None => format!("### {} ({})", item.name, position),
+        Some(detail) => format!("### {} ({}{})\n*{}*", item.name, position, external_tag, detail),
+        None => format!("### {} ({}{})", item.name, position, external_tag),
     };
 
     if call.call_ranges.is_empty() {
@@ -137,6 +142,7 @@ mod tests {
                 },
             },
             detail: None,
+            external: None,
         }
     }
 
@@ -258,6 +264,7 @@ mod tests {
                         },
                     },
                     detail: None,
+                    external: None,
                 },
                 call_ranges: vec![],
             }],
@@ -302,6 +309,7 @@ mod tests {
                         },
                     },
                     detail: Some("fn processData(&self, data: &[u8]) -> Result<()>".to_string()),
+                    external: None,
                 },
                 call_ranges: vec![],
             }],
@@ -312,6 +320,42 @@ mod tests {
         assert!(
             markdown.contains("fn processData(&self, data: &[u8]) -> Result<()>"),
             "call info with detail must include signature: got {}",
+            markdown
+        );
+    }
+
+    #[test]
+    fn call_info_external_tag_is_included() {
+        let response = CallHierarchyResponse {
+            direction: CallHierarchyDirection::Incoming,
+            raw_response: None,
+            calls: vec![CallInfo {
+                item: CallHierarchyItemInfo {
+                    name: "external_call".to_string(),
+                    kind: "function".to_string(),
+                    location: FilePosition {
+                        path: "/usr/lib/external.rs".to_string(),
+                        position: Position {
+                            line: 1,
+                            character: 1,
+                        },
+                    },
+                    range: Range {
+                        start: Position { line: 1, character: 1 },
+                        end: Position { line: 2, character: 1 },
+                    },
+                    detail: None,
+                    external: Some(true),
+                },
+                call_ranges: vec![],
+            }],
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("[external]"),
+            "external calls must be tagged: got {}",
             markdown
         );
     }
@@ -539,6 +583,7 @@ mod tests {
                         end: Position { line: 10, character: 1 },
                     },
                     detail: None,
+                    external: None,
                 },
                 call_ranges: vec![],
             }],

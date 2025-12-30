@@ -1,0 +1,24 @@
+# ABOUTME: Rust reference rule for function and method calls.
+# ABOUTME: Matches identifiers used in call expressions.
+id: function-call
+language: rust
+rule:
+  any:
+    - kind: identifier
+      pattern: $NAME
+      inside:
+        kind: call_expression
+    - kind: identifier
+      pattern: $NAME
+      inside:
+        kind: scoped_identifier
+        field: name
+        inside:
+          kind: call_expression
+    - kind: field_identifier
+      pattern: $NAME
+      inside:
+        kind: field_expression
+        field: field
+        inside:
+          kind: call_expression

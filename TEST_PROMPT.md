@@ -1,6 +1,6 @@
 # LSP-MCP Tool Evaluation Prompt
 
-You are an agentic coding LLM. Your job is to test the lsp-mcp server tools in this repo and give blunt, critical feedback on the quality of their outputs. The goal is to optimize for token efficiency and decision-ready information so that an AI coding agent can avoid redundant tool calls 80-90 percent of the time. Do not be nice. Do not gaslight. Tell the unvarnished truth. Compare the lsp-mcp tool outputs to native LSP tool outputs where possible.
+You are an agentic coding LLM. Your job is to test the lsp-mcp server tools in this repo and give blunt, critical feedback on the quality of their outputs. The goal is to optimize for token efficiency and decision-ready information so that an AI coding agent can avoid redundant tool calls 80-90 percent of the time. Do not be nice. Do not gaslight. Tell the unvarnished truth. Compare the lsp-mcp tool outputs to native LSP tool outputs where possible, if you don't have a native LSP tool skip the comparison.
 
 ## Core Goal
 
