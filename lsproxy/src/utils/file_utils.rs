@@ -1,18 +1,11 @@
 use crate::{
     api_types::{get_mount_dir, SupportedLanguages},
-    lsp::manager::LspManagerError,
+    lsp::{manager::LspManagerError, registry::LanguageMetadata},
 };
 use ignore::WalkBuilder;
 use log::{debug, error, warn};
 use std::path::{Path, PathBuf};
 use url::Url;
-
-use super::workspace_documents::{
-    CPP_EXTENSIONS, CSHARP_EXTENSIONS, C_AND_CPP_EXTENSIONS, C_EXTENSIONS, GOLANG_EXTENSIONS,
-    JAVASCRIPTREACT_EXTENSIONS, JAVASCRIPT_EXTENSIONS, JAVA_EXTENSIONS, PHP_EXTENSIONS,
-    PYTHON_EXTENSIONS, RUBY_EXTENSIONS, RUST_EXTENSIONS, TYPESCRIPTREACT_EXTENSIONS,
-    TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS, TYPESCRIPT_EXTENSIONS,
-};
 
 pub fn search_files(
     path: &std::path::Path,
@@ -121,20 +114,9 @@ pub fn detect_language(file_path: &str) -> Result<SupportedLanguages, LspManager
         .and_then(|ext| ext.to_str())
         .ok_or_else(|| LspManagerError::UnsupportedFileType(file_path.to_string()))?;
 
-    match extension {
-        ext if PYTHON_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Python),
-        ext if TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS.contains(&ext) => {
-            Ok(SupportedLanguages::TypeScriptJavaScript)
-        }
-        ext if RUST_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Rust),
-        ext if C_AND_CPP_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::CPP),
-        ext if CSHARP_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::CSharp),
-        ext if JAVA_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Java),
-        ext if GOLANG_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Golang),
-        ext if PHP_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::PHP),
-        ext if RUBY_EXTENSIONS.contains(&ext) => Ok(SupportedLanguages::Ruby),
-        _ => Err(LspManagerError::UnsupportedFileType(file_path.to_string())),
-    }
+    LanguageMetadata::from_extension(extension)
+        .map(|m| m.id)
+        .ok_or_else(|| LspManagerError::UnsupportedFileType(file_path.to_string()))
 }
 
 pub fn detect_language_string(file_path: &str) -> Result<String, LspManagerError> {
@@ -144,20 +126,17 @@ pub fn detect_language_string(file_path: &str) -> Result<String, LspManagerError
         .and_then(|ext| ext.to_str())
         .ok_or_else(|| LspManagerError::UnsupportedFileType(file_path.to_string()))?;
 
+    // Handle TypeScript/JavaScript variants specially for LSP language IDs
     match extension {
-        ext if PYTHON_EXTENSIONS.contains(&ext) => Ok("python".to_string()),
-        ext if TYPESCRIPT_EXTENSIONS.contains(&ext) => Ok("typescript".to_string()),
-        ext if TYPESCRIPTREACT_EXTENSIONS.contains(&ext) => Ok("typescriptreact".to_string()),
-        ext if JAVASCRIPT_EXTENSIONS.contains(&ext) => Ok("javascript".to_string()),
-        ext if JAVASCRIPTREACT_EXTENSIONS.contains(&ext) => Ok("javascriptreact".to_string()),
-        ext if RUST_EXTENSIONS.contains(&ext) => Ok("rust".to_string()),
-        ext if C_EXTENSIONS.contains(&ext) => Ok("c".to_string()),
-        ext if CPP_EXTENSIONS.contains(&ext) => Ok("cpp".to_string()),
-        ext if CSHARP_EXTENSIONS.contains(&ext) => Ok("csharp".to_string()),
-        ext if JAVA_EXTENSIONS.contains(&ext) => Ok("java".to_string()),
-        ext if GOLANG_EXTENSIONS.contains(&ext) => Ok("golang".to_string()),
-        ext if PHP_EXTENSIONS.contains(&ext) => Ok("php".to_string()),
-        ext if RUBY_EXTENSIONS.contains(&ext) => Ok("ruby".to_string()),
-        _ => Err(LspManagerError::UnsupportedFileType(file_path.to_string())),
+        "ts" => Ok("typescript".to_string()),
+        "tsx" => Ok("typescriptreact".to_string()),
+        "js" => Ok("javascript".to_string()),
+        "jsx" => Ok("javascriptreact".to_string()),
+        "c" => Ok("c".to_string()),
+        "cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh" => Ok("cpp".to_string()),
+        "h" => Ok("c".to_string()), // Headers are typically C
+        _ => LanguageMetadata::from_extension(extension)
+            .map(|m| m.name.to_lowercase().replace("/", ""))
+            .ok_or_else(|| LspManagerError::UnsupportedFileType(file_path.to_string())),
     }
 }
