@@ -7,20 +7,124 @@ use crate::api_types::{
 };
 use crate::lsp::manager::Manager;
 use crate::utils::file_utils::uri_to_relative_path_string;
-use lsp_types::{Location, Position as LspPosition, Range as LspRange};
+use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Location, Position as LspPosition, Range as LspRange, SymbolKind};
 use std::sync::Arc;
 
 use crate::service::types::errors::ServiceError;
 use crate::service::types::response::{McpDefinitionResponse, McpSymbolsResponse};
 use crate::service::utils::identifiers::find_identifier_at_position;
 use crate::service::utils::pagination::paginate_items;
-use crate::service::utils::signature::{enrich_symbol, is_internal_builder_symbol};
+use crate::service::utils::signature::enrich_symbol;
 use crate::service::utils::transformations::{
     definition_item_from_location, definition_locations, definition_locations_lsp,
 };
 
 use super::hover::{count_references_impl, fetch_hover_info_impl};
 use super::references::fetch_code_context;
+
+fn symbol_kind_to_string(kind: SymbolKind) -> String {
+    match kind {
+        SymbolKind::FILE => "File",
+        SymbolKind::MODULE => "Module",
+        SymbolKind::NAMESPACE => "Namespace",
+        SymbolKind::PACKAGE => "Package",
+        SymbolKind::CLASS => "Class",
+        SymbolKind::METHOD => "Method",
+        SymbolKind::PROPERTY => "Property",
+        SymbolKind::FIELD => "Field",
+        SymbolKind::CONSTRUCTOR => "Constructor",
+        SymbolKind::ENUM => "Enum",
+        SymbolKind::INTERFACE => "Interface",
+        SymbolKind::FUNCTION => "Function",
+        SymbolKind::VARIABLE => "Variable",
+        SymbolKind::CONSTANT => "Constant",
+        SymbolKind::STRING => "String",
+        SymbolKind::NUMBER => "Number",
+        SymbolKind::BOOLEAN => "Boolean",
+        SymbolKind::ARRAY => "Array",
+        SymbolKind::OBJECT => "Object",
+        SymbolKind::KEY => "Key",
+        SymbolKind::NULL => "Null",
+        SymbolKind::ENUM_MEMBER => "EnumMember",
+        SymbolKind::STRUCT => "Struct",
+        SymbolKind::EVENT => "Event",
+        SymbolKind::OPERATOR => "Operator",
+        SymbolKind::TYPE_PARAMETER => "TypeParameter",
+        _ => "Unknown",
+    }.to_string()
+}
+
+fn convert_document_symbol(doc_sym: &DocumentSymbol, file_path: &str, is_top_level: bool) -> Symbol {
+    let children = doc_sym.children.as_ref().map(|kids| {
+        kids.iter()
+            .map(|child| convert_document_symbol(child, file_path, false))
+            .collect()
+    });
+
+    Symbol {
+        name: doc_sym.name.clone(),
+        kind: symbol_kind_to_string(doc_sym.kind),
+        identifier_position: FilePosition {
+            path: if is_top_level { String::new() } else { file_path.to_string() },
+            position: Position {
+                line: doc_sym.selection_range.start.line + 1,
+                character: doc_sym.selection_range.start.character + 1,
+            },
+        },
+        file_range: FileRange {
+            path: if is_top_level { String::new() } else { file_path.to_string() },
+            range: Range {
+                start: Position {
+                    line: doc_sym.range.start.line + 1,
+                    character: doc_sym.range.start.character + 1,
+                },
+                end: Position {
+                    line: doc_sym.range.end.line + 1,
+                    character: doc_sym.range.end.character + 1,
+                },
+            },
+        },
+        signature: None,
+        exported: None,
+        jsdoc_summary: None,
+        dependencies: None,
+        line_count: Some(doc_sym.range.end.line.saturating_sub(doc_sym.range.start.line) + 1),
+        children,
+    }
+}
+
+fn convert_symbol_information(sym_info: &lsp_types::SymbolInformation, _file_path: &str) -> Symbol {
+    Symbol {
+        name: sym_info.name.clone(),
+        kind: symbol_kind_to_string(sym_info.kind),
+        identifier_position: FilePosition {
+            path: String::new(),
+            position: Position {
+                line: sym_info.location.range.start.line + 1,
+                character: sym_info.location.range.start.character + 1,
+            },
+        },
+        file_range: FileRange {
+            path: String::new(),
+            range: Range {
+                start: Position {
+                    line: sym_info.location.range.start.line + 1,
+                    character: sym_info.location.range.start.character + 1,
+                },
+                end: Position {
+                    line: sym_info.location.range.end.line + 1,
+                    character: sym_info.location.range.end.character + 1,
+                },
+            },
+        },
+        signature: None,
+        exported: None,
+        jsdoc_summary: None,
+        dependencies: None,
+        line_count: Some(sym_info.location.range.end.line.saturating_sub(sym_info.location.range.start.line) + 1),
+        children: None,
+    }
+}
 
 /// Retrieves all symbol definitions in a file with enriched metadata.
 pub(crate) async fn definitions_in_file_impl(
@@ -31,7 +135,6 @@ pub(crate) async fn definitions_in_file_impl(
 ) -> Result<McpSymbolsResponse, ServiceError> {
     use crate::api_types::get_mount_dir;
 
-    // Get file mtime
     let full_path = get_mount_dir().join(file_path);
     let metadata = tokio::fs::metadata(&full_path)
         .await
@@ -44,27 +147,29 @@ pub(crate) async fn definitions_in_file_impl(
         )))?;
     let mtime_rfc3339 = chrono::DateTime::<chrono::Utc>::from(mtime).to_rfc3339();
 
-    // Get symbols from ast-grep
-    let ast_symbols = manager.definitions_in_file_ast_grep(file_path).await?;
-    let mut symbols: Vec<Symbol> = ast_symbols
-        .into_iter()
-        .filter(|s| s.rule_id != "local-variable")
-        .map(Symbol::from)
-        .filter(|s| !is_internal_builder_symbol(&s.name))
-        .collect();
+    let lsp_response = manager.document_symbol(file_path).await?;
 
-    // Enrich each symbol
+    let mut symbols: Vec<Symbol> = match lsp_response {
+        Some(DocumentSymbolResponse::Nested(doc_symbols)) => {
+            doc_symbols
+                .iter()
+                .map(|ds| convert_document_symbol(ds, file_path, true))
+                .collect()
+        }
+        Some(DocumentSymbolResponse::Flat(sym_infos)) => {
+            sym_infos
+                .iter()
+                .map(|si| convert_symbol_information(si, file_path))
+                .collect()
+        }
+        None => Vec::new(),
+    };
+
     for symbol in &mut symbols {
         enrich_symbol(manager, file_path, symbol).await;
     }
 
-    let (mut symbols, pagination) = paginate_items(symbols, limit, offset);
-
-    // Clear paths from nested structures since McpSymbolsResponse.path provides it
-    for symbol in &mut symbols {
-        symbol.file_range.path.clear();
-        symbol.identifier_position.path.clear();
-    }
+    let (symbols, pagination) = paginate_items(symbols, limit, offset);
 
     Ok(McpSymbolsResponse {
         path: file_path.to_string(),
@@ -110,6 +215,9 @@ pub(crate) async fn find_definition_impl(
     let definition_locations = definition_locations_lsp(&definitions);
     let (definition_locations, pagination) =
         paginate_items(definition_locations, limit, offset);
+
+    let workspace_files = manager.list_files().await.unwrap_or_default();
+
     let source_code_context = if include_source_code {
         Some(fetch_definition_source_code(manager, &definition_locations).await?)
     } else {
@@ -130,14 +238,12 @@ pub(crate) async fn find_definition_impl(
     let mut first_definition_path: Option<String> = None;
     for (index, location) in definition_locations.into_iter().enumerate() {
         let path = uri_to_relative_path_string(&location.uri);
-        let is_external = path.contains("node_modules");
+        let is_external = !workspace_files.contains(&path);
 
         if index == 0 {
             first_definition_path = Some(path.clone());
         }
 
-        // Skip workspace-dependent operations for external files
-        // (ast-grep and find_references require workspace files)
         let (symbol, snippet, reference_count) = if is_external {
             (None, None, None)
         } else {
@@ -152,7 +258,6 @@ pub(crate) async fn find_definition_impl(
             (symbol, snippet, ref_count)
         };
 
-        // Hover may still work for external files (LSP handles it)
         let (signature, doc) = fetch_hover_info_impl(manager, &path, &location.range.start).await;
 
         definition_items.push(definition_item_from_location(
