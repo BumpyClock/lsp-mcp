@@ -292,25 +292,39 @@ pub fn filter_sibling_exports(siblings: Vec<Symbol>, limit: u32) -> Vec<Symbol> 
 }
 
 /// Default maximum length for signatures in responses
-pub const DEFAULT_MAX_SIGNATURE_LENGTH: usize = 200;
+pub const DEFAULT_MAX_SIGNATURE_LENGTH: usize = 100;
 
-/// Truncates a signature to a maximum length with unicode-safe boundary handling.
-/// Appends "..." when truncation occurs.
+/// Truncates a signature with semantic awareness:
+/// 1. Normalizes whitespace (collapses newlines/spaces)
+/// 2. Truncates at generic opener `<` for complex types
+/// 3. Falls back to byte truncation with char-boundary safety
 pub fn truncate_signature(sig: &str, max_length: Option<usize>) -> String {
     let limit = max_length.unwrap_or(DEFAULT_MAX_SIGNATURE_LENGTH);
-    if sig.len() <= limit {
-        sig.to_string()
-    } else {
-        // Find a safe char boundary for truncation
-        let truncate_at = limit.saturating_sub(3);
-        let end = sig
-            .char_indices()
-            .take_while(|(i, _)| *i < truncate_at)
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(truncate_at);
-        format!("{}...", &sig[..end])
+
+    // Step 1: Normalize - collapse newlines and excess whitespace
+    let normalized: String = sig.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    if normalized.len() <= limit {
+        return normalized;
     }
+
+    // Step 2: Try semantic truncation at generic opener
+    // For complex types like `EnhancedStore<{...}>`, truncate at `<`
+    if let Some(angle_pos) = normalized.find('<') {
+        if angle_pos > 0 && angle_pos < limit {
+            return format!("{}...", &normalized[..angle_pos]);
+        }
+    }
+
+    // Step 3: Fallback to byte truncation with char-boundary safety
+    let truncate_at = limit.saturating_sub(3);
+    let end = normalized
+        .char_indices()
+        .take_while(|(i, _)| *i < truncate_at)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(truncate_at);
+    format!("{}...", &normalized[..end])
 }
 
 pub fn create_service(manager: Arc<Manager>) -> LspService {
@@ -849,26 +863,31 @@ impl LspService {
         let mut first_definition_path: Option<String> = None;
         for (index, location) in definition_locations.into_iter().enumerate() {
             let path = uri_to_relative_path_string(&location.uri);
+            let is_external = path.contains("node_modules");
+
             if index == 0 {
                 first_definition_path = Some(path.clone());
             }
-            let symbol = match self
-                .manager
-                .get_symbol_from_position(&path, &location.range.start)
-                .await
-            {
-                Ok(symbol) => Some(symbol),
-                Err(_) => None,
+
+            // Skip workspace-dependent operations for external files
+            // (ast-grep and find_references require workspace files)
+            let (symbol, snippet, reference_count) = if is_external {
+                (None, None, None)
+            } else {
+                let symbol = self
+                    .manager
+                    .get_symbol_from_position(&path, &location.range.start)
+                    .await
+                    .ok();
+                let snippet = snippet_contexts
+                    .as_ref()
+                    .and_then(|contexts| contexts.get(index).cloned());
+                let ref_count = self.count_references(&path, &location.range.start).await;
+                (symbol, snippet, ref_count)
             };
-            let snippet = snippet_contexts
-                .as_ref()
-                .and_then(|contexts| contexts.get(index).cloned());
 
-            // Fetch hover info for signature and doc
+            // Hover may still work for external files (LSP handles it)
             let (signature, doc) = self.fetch_hover_info(&path, &location.range.start).await;
-
-            // Get reference count for this definition
-            let reference_count = self.count_references(&path, &location.range.start).await;
 
             definition_items.push(definition_item_from_location(&location, symbol, snippet, signature, doc, reference_count));
         }
@@ -3575,17 +3594,29 @@ fn internal_helper() {
     }
 
     #[test]
-    fn test_truncate_signature_long_string_truncated() {
+    fn test_truncate_signature_truncates_at_generic_opener() {
+        // Complex generic types should truncate at `<`
         let sig = "fn configure_store(options: StoreOptions<State, Middleware, Enhancers>) -> EnhancedStore<State>";
-        let result = truncate_signature(sig, Some(50));
-        assert_eq!(result.len(), 50);
+        let result = truncate_signature(sig, Some(50)); // Limit smaller than string length
+        assert_eq!(result, "fn configure_store(options: StoreOptions...");
         assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_signature_normalizes_whitespace() {
+        // Multiline signatures should be normalized to single line
+        let sig = "const store: EnhancedStore<{\n    member: CombinedState<{\n        foo: Bar\n    }>\n}>";
+        let result = truncate_signature(sig, Some(40)); // Limit smaller than normalized string
+        // Should normalize whitespace and truncate at <
+        assert_eq!(result, "const store: EnhancedStore...");
+        assert!(!result.contains('\n'));
     }
 
     #[test]
     fn test_truncate_signature_default_length() {
         let sig = "a".repeat(250);
         let result = truncate_signature(&sig, None);
+        // DEFAULT_MAX_SIGNATURE_LENGTH is now 100
         assert!(result.len() <= DEFAULT_MAX_SIGNATURE_LENGTH);
         assert!(result.ends_with("..."));
     }
@@ -3593,10 +3624,27 @@ fn internal_helper() {
     #[test]
     fn test_truncate_signature_unicode_safe() {
         // Unicode chars that could be split unsafely
-        let sig = "fn 测试函数(参数: 类型) -> 返回值";
-        let result = truncate_signature(sig, Some(20));
-        // Should not panic and should be valid UTF-8
-        assert!(result.is_ascii() || result.chars().count() > 0);
+        let sig = "fn 测试函数<T>(参数: 类型) -> 返回值";
+        let result = truncate_signature(sig, Some(20)); // Limit smaller than string
+        // Should truncate at < and not panic
+        assert_eq!(result, "fn 测试函数...");
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_signature_simple_generic_preserved() {
+        // Short signatures with simple generics should be kept
+        let sig = "Vec<String>";
+        let result = truncate_signature(sig, Some(100));
+        assert_eq!(result, "Vec<String>");
+    }
+
+    #[test]
+    fn test_truncate_signature_fallback_byte_truncation() {
+        // Long signatures without < should fall back to byte truncation
+        let sig = "fn very_long_function_name_without_generics(arg1: Type1, arg2: Type2, arg3: Type3)";
+        let result = truncate_signature(sig, Some(50));
+        assert!(result.len() <= 50);
         assert!(result.ends_with("..."));
     }
 }
