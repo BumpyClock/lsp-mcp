@@ -1,5 +1,5 @@
 // ABOUTME: Workspace documents handler for caching and managing workspace file contents
-// ABOUTME: Provides lazy file caching, pattern-based filtering, and file change notifications
+// ABOUTME: Provides eager file caching, pattern-based filtering, and file change notifications
 
 use super::range::extract_range;
 use crate::utils::file_utils::search_files;
@@ -53,10 +53,23 @@ impl WorkspaceDocumentsHandler {
         watch_events_rx: Receiver<DebouncedEvent>,
         did_open_configuration: DidOpenConfiguration,
     ) -> Self {
-        let cache = Arc::new(RwLock::new(HashMap::new()));
-        let patterns = Arc::new(RwLock::new((include_patterns, exclude_patterns)));
         let root_path = root_path.to_path_buf();
 
+        // Eagerly populate cache with workspace files before wrapping in Arc<RwLock>
+        let mut initial_cache = HashMap::new();
+        let initial_files =
+            search_files(&root_path, include_patterns.clone(), exclude_patterns.clone(), true)
+                .unwrap_or_else(|err| {
+                    error!("Error searching files during init: {}", err);
+                    Vec::new()
+                });
+        for file_path in initial_files {
+            initial_cache.insert(file_path, None);
+        }
+        debug!("Eagerly populated cache with {} files", initial_cache.len());
+
+        let cache = Arc::new(RwLock::new(initial_cache));
+        let patterns = Arc::new(RwLock::new((include_patterns, exclude_patterns)));
         let cache_clone = Arc::clone(&cache);
         let patterns_clone = Arc::clone(&patterns);
 
