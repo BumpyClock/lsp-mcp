@@ -7,7 +7,6 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, RwLock};
 use strum_macros::{Display, EnumString};
-use utoipa::{IntoParams, ToSchema};
 
 use crate::utils::file_utils::uri_to_relative_path_string;
 
@@ -45,7 +44,7 @@ pub fn set_global_mount_dir(path: impl AsRef<Path>) {
 }
 
 /// Response returned when an API error occurs
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorResponse {
     /// Description of the error that occurred
     pub error: String,
