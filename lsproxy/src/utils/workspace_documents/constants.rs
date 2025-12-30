@@ -28,10 +28,6 @@ pub const TYPESCRIPT_AND_JAVASCRIPT_ROOT_FILES: &[&str] =
 
 pub const TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS: &[&str] =
     &["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"];
-pub const TYPESCRIPT_EXTENSIONS: &[&str] = &["ts"];
-pub const TYPESCRIPTREACT_EXTENSIONS: &[&str] = &["tsx"];
-pub const JAVASCRIPT_EXTENSIONS: &[&str] = &["js"];
-pub const JAVASCRIPTREACT_EXTENSIONS: &[&str] = &["jsx"];
 pub const TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS: &[&str] = &["ts", "tsx", "js", "jsx"];
 
 pub const RUBY_ROOT_FILES: &[&str] = &[
@@ -62,8 +58,6 @@ pub const C_AND_CPP_FILE_PATTERNS: &[&str] = &[
     "**/*.cpp", "**/*.cc", "**/*.c", "**/*.cxx", "**/*.h", "**/*.hpp", "**/*.hxx", "**/*.hh",
 ];
 
-pub const C_EXTENSIONS: &[&str] = &["c", "h"];
-pub const CPP_EXTENSIONS: &[&str] = &["cpp", "cc", "cxx", "h", "hpp", "hxx", "hh"];
 pub const C_AND_CPP_EXTENSIONS: &[&str] = &["cpp", "cc", "c", "cxx", "h", "hpp", "hxx", "hh"];
 
 pub const CSHARP_ROOT_FILES: &[&str] = &["*.sln", "*.csproj", "*.vcxproj"];

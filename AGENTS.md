@@ -1,1 +1,1 @@
-use the lsp to navigate the codebase effectively and use the code intelligence to your advantage for coding tasks.
+Use the lsp-mcp or native LSP tool for code navigation, symbol lookup, and diagnostics; prefer it over manual search when possible.

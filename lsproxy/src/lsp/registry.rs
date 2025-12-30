@@ -1,5 +1,5 @@
 // ABOUTME: Language registry providing a single source of truth for language server metadata
-// ABOUTME: Centralizes file patterns, extensions, binary names, and factory functions for all supported languages
+// ABOUTME: Centralizes file patterns, extensions, and factory functions for all supported languages
 
 use crate::api_types::SupportedLanguages;
 use crate::lsp::client::LspClient;
@@ -8,13 +8,11 @@ use crate::lsp::languages::{
     RustAnalyzerClient, TypeScriptLanguageClient,
 };
 use crate::utils::workspace_documents::{
-    CSHARP_EXTENSIONS, CSHARP_FILE_PATTERNS, CSHARP_ROOT_FILES, CPP_ROOT_FILES,
-    C_AND_CPP_EXTENSIONS, C_AND_CPP_FILE_PATTERNS, GOLANG_EXTENSIONS, GOLANG_FILE_PATTERNS,
-    GOLANG_ROOT_FILES, JAVA_EXTENSIONS, JAVA_FILE_PATTERNS, JAVA_ROOT_FILES, PHP_EXTENSIONS,
-    PHP_FILE_PATTERNS, PHP_ROOT_FILES, PYTHON_EXTENSIONS, PYTHON_FILE_PATTERNS,
-    PYTHON_ROOT_FILES, RUBY_EXTENSIONS, RUBY_FILE_PATTERNS, RUBY_ROOT_FILES, RUST_EXTENSIONS,
-    RUST_FILE_PATTERNS, RUST_ROOT_FILES, TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS,
-    TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS, TYPESCRIPT_AND_JAVASCRIPT_ROOT_FILES,
+    CSHARP_EXTENSIONS, CSHARP_FILE_PATTERNS, C_AND_CPP_EXTENSIONS, C_AND_CPP_FILE_PATTERNS,
+    GOLANG_EXTENSIONS, GOLANG_FILE_PATTERNS, JAVA_EXTENSIONS, JAVA_FILE_PATTERNS, PHP_EXTENSIONS,
+    PHP_FILE_PATTERNS, PYTHON_EXTENSIONS, PYTHON_FILE_PATTERNS, RUBY_EXTENSIONS,
+    RUBY_FILE_PATTERNS, RUST_EXTENSIONS, RUST_FILE_PATTERNS, TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS,
+    TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS,
 };
 use notify_debouncer_mini::DebouncedEvent;
 use std::future::Future;
@@ -160,10 +158,6 @@ pub struct LanguageMetadata {
     pub id: SupportedLanguages,
     /// Display name (e.g., "Python", "TypeScript/JavaScript")
     pub name: &'static str,
-    /// Default binary name for the language server
-    pub default_binary: &'static str,
-    /// Files that indicate the presence of this language's project
-    pub root_files: &'static [&'static str],
     /// Glob patterns for source files
     pub file_patterns: &'static [&'static str],
     /// File extensions (without dots)
@@ -177,8 +171,6 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::Python,
         name: "Python",
-        default_binary: "jedi-language-server",
-        root_files: PYTHON_ROOT_FILES,
         file_patterns: PYTHON_FILE_PATTERNS,
         extensions: PYTHON_EXTENSIONS,
         factory: create_python_client,
@@ -186,8 +178,6 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::TypeScriptJavaScript,
         name: "TypeScript/JavaScript",
-        default_binary: "typescript-language-server",
-        root_files: TYPESCRIPT_AND_JAVASCRIPT_ROOT_FILES,
         file_patterns: TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS,
         extensions: TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS,
         factory: create_typescript_client,
@@ -195,8 +185,6 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::Rust,
         name: "Rust",
-        default_binary: "rust-analyzer",
-        root_files: RUST_ROOT_FILES,
         file_patterns: RUST_FILE_PATTERNS,
         extensions: RUST_EXTENSIONS,
         factory: create_rust_client,
@@ -204,8 +192,6 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::CPP,
         name: "C/C++",
-        default_binary: "clangd",
-        root_files: CPP_ROOT_FILES,
         file_patterns: C_AND_CPP_FILE_PATTERNS,
         extensions: C_AND_CPP_EXTENSIONS,
         factory: create_cpp_client,
@@ -213,8 +199,6 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::CSharp,
         name: "C#",
-        default_binary: "OmniSharp",
-        root_files: CSHARP_ROOT_FILES,
         file_patterns: CSHARP_FILE_PATTERNS,
         extensions: CSHARP_EXTENSIONS,
         factory: create_csharp_client,
@@ -222,8 +206,6 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::Java,
         name: "Java",
-        default_binary: "jdtls",
-        root_files: JAVA_ROOT_FILES,
         file_patterns: JAVA_FILE_PATTERNS,
         extensions: JAVA_EXTENSIONS,
         factory: create_java_client,
@@ -231,8 +213,6 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::Golang,
         name: "Go",
-        default_binary: "gopls",
-        root_files: GOLANG_ROOT_FILES,
         file_patterns: GOLANG_FILE_PATTERNS,
         extensions: GOLANG_EXTENSIONS,
         factory: create_golang_client,
@@ -240,8 +220,6 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::PHP,
         name: "PHP",
-        default_binary: "phpactor",
-        root_files: PHP_ROOT_FILES,
         file_patterns: PHP_FILE_PATTERNS,
         extensions: PHP_EXTENSIONS,
         factory: create_php_client,
@@ -249,8 +227,6 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::Ruby,
         name: "Ruby",
-        default_binary: "solargraph",
-        root_files: RUBY_ROOT_FILES,
         file_patterns: RUBY_FILE_PATTERNS,
         extensions: RUBY_EXTENSIONS,
         factory: create_ruby_client,
@@ -273,11 +249,6 @@ impl LanguageMetadata {
         LANGUAGE_REGISTRY
             .iter()
             .find(|m| m.extensions.contains(&ext))
-    }
-
-    /// Get all registered language IDs
-    pub fn all_ids() -> impl Iterator<Item = SupportedLanguages> {
-        LANGUAGE_REGISTRY.iter().map(|m| m.id)
     }
 }
 
@@ -350,12 +321,6 @@ mod tests {
     }
 
     #[test]
-    fn all_ids_returns_all_nine_languages() {
-        let ids: Vec<_> = LanguageMetadata::all_ids().collect();
-        assert_eq!(ids.len(), 9, "registry must contain exactly 9 languages");
-    }
-
-    #[test]
     fn all_returns_iterator_over_all_metadata() {
         let count = LanguageMetadata::all().count();
         assert_eq!(count, 9, "all() must iterate over 9 language entries");
@@ -366,24 +331,6 @@ mod tests {
         let metadata = LanguageMetadata::get(SupportedLanguages::Golang)
             .expect("Golang must be in registry");
         assert_eq!(metadata.name, "Go", "Golang display name must be 'Go'");
-        assert_eq!(
-            metadata.default_binary, "gopls",
-            "Golang default binary must be 'gopls'"
-        );
-    }
-
-    #[test]
-    fn python_metadata_has_correct_root_files() {
-        let metadata = LanguageMetadata::get(SupportedLanguages::Python)
-            .expect("Python must be in registry");
-        assert!(
-            metadata.root_files.contains(&"pyproject.toml"),
-            "Python root_files must contain pyproject.toml"
-        );
-        assert!(
-            metadata.root_files.contains(&"requirements.txt"),
-            "Python root_files must contain requirements.txt"
-        );
     }
 
     #[test]
