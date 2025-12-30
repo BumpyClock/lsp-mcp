@@ -51,7 +51,7 @@ pub struct ErrorResponse {
 }
 
 /// Status of a language server
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LspStatus {
     /// Language server is available and ready
@@ -63,7 +63,7 @@ pub enum LspStatus {
 }
 
 /// Response returned by the health check endpoint
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthResponse {
     /// Current status of the service ("ok" or error description)
     pub status: String,
@@ -73,9 +73,7 @@ pub struct HealthResponse {
     pub languages: HashMap<SupportedLanguages, LspStatus>,
 }
 
-#[derive(
-    Debug, EnumString, Display, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema,
-)]
+#[derive(Debug, EnumString, Display, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[strum(serialize_all = "lowercase")]
 pub enum SupportedLanguages {
     #[serde(rename = "python")]
@@ -101,31 +99,27 @@ pub enum SupportedLanguages {
 }
 
 /// A position within a text document, using 1-based indexing (matching editor display)
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Position {
     /// 1-indexed line number (first line is 1).
-    #[schema(example = 10)]
     pub line: u32,
     /// 1-indexed character/column within the line (first column is 1).
-    #[schema(example = 5)]
     pub character: u32,
 }
 
 /// A position within a specific file in the workspace
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FilePosition {
     /// Path to the file, relative to the workspace root
-    #[schema(example = "src/main.py")]
     pub path: String,
     /// Position within the file
     pub position: Position,
 }
 
 /// A range within a specific file, defined by start and end positions
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FileRange {
     /// The path to the file.
-    #[schema(example = "src/main.py")]
     pub path: String,
     /// The range within the file
     pub range: Range,
@@ -181,25 +175,23 @@ impl From<lsp_types::Position> for Position {
 /// This would contain:
 /// - The reference location and name ("User" at line 0)
 /// - The symbol definition(s) (e.g. "class User" in models.py)
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ReferenceWithSymbolDefinitions {
     pub reference: Identifier,
     pub definitions: Vec<Symbol>,
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct CodeContext {
     pub range: FileRange,
     pub source_code: String,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Symbol {
     /// The name of the symbol.
-    #[schema(example = "User")]
     pub name: String,
     /// The kind of the symbol (e.g., function, class).
-    #[schema(example = "class")]
     pub kind: String,
 
     /// The start position of the symbol's identifier.
@@ -229,7 +221,7 @@ pub struct Symbol {
     pub line_count: Option<u32>,
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Identifier {
     pub name: String,
     pub file_range: FileRange,
@@ -254,7 +246,7 @@ impl Identifier {
 }
 
 /// Related symbols for a definition (interfaces, parent classes, siblings)
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct RelatedSymbols {
     /// Interfaces or traits this symbol implements
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -270,83 +262,6 @@ pub struct RelatedSymbols {
     pub sibling_exports: Vec<Symbol>,
 }
 
-#[derive(Deserialize, ToSchema, IntoParams)]
-pub struct GetDefinitionRequest {
-    pub position: FilePosition,
-
-    /// Whether to include the source code around the symbol's identifier in the response.
-    /// Defaults to false.
-    /// TODO: Implement this
-    #[serde(default)]
-    #[schema(example = false)]
-    pub include_source_code: bool,
-
-    /// Whether to include the raw response from the langserver in the response.
-    /// Defaults to false.
-    #[serde(default)]
-    #[schema(example = false)]
-    pub include_raw_response: bool,
-}
-
-#[derive(Deserialize, ToSchema, IntoParams)]
-pub struct GetReferencesRequest {
-    pub identifier_position: FilePosition,
-
-    /// Whether to include the source code of the symbol in the response.
-    /// Defaults to none.
-    #[serde(default)]
-    #[schema(example = 5)]
-    pub include_code_context_lines: Option<u32>,
-
-    /// Whether to include the raw response from the langserver in the response.
-    /// Defaults to false.
-    #[serde(default)]
-    #[schema(example = false)]
-    pub include_raw_response: bool,
-}
-
-/// Request to get all symbols that are referenced from a symbol at the given position, either
-/// focusing on function calls, or more permissively finding all references
-///
-/// The input position must point to a symbol (e.g. function name, class name, variable name).
-/// The response will include all symbols that are referenced from that input symbol.
-/// For example, if the position points to a function name, the response will include
-/// all symbols referenced within that function's implementation.
-#[derive(Deserialize, ToSchema, IntoParams)]
-pub struct GetReferencedSymbolsRequest {
-    /// Whether to use the more permissive rules to find referenced symbols. This will be not just
-    /// code that is executed but also things like type hints and chained indirection.
-    /// Defaults to false.
-    #[serde(default)]
-    #[schema(example = false)]
-    pub full_scan: bool,
-
-    /// The identifier position of the symbol to find references within
-    pub identifier_position: FilePosition,
-}
-
-/// Request to get the symbols in a file.
-#[derive(Deserialize, ToSchema, IntoParams)]
-pub struct FileSymbolsRequest {
-    /// The path to the file to get the symbols for, relative to the root of the workspace.
-    #[schema(example = "src/main.py")]
-    pub file_path: String,
-}
-
-/// Request to get the symbols in the workspace.
-#[allow(unused)] // TODO re-implement using textDocument/symbol
-#[derive(Deserialize, ToSchema, IntoParams)]
-pub struct WorkspaceSymbolsRequest {
-    /// The query to search for.
-    #[schema(example = "User")]
-    pub query: String,
-
-    /// Whether to include the raw response from the langserver in the response.
-    /// Defaults to false.
-    #[serde(default)]
-    #[schema(example = false)]
-    pub include_raw_response: bool,
-}
 
 /// Response to a definition request.
 ///
@@ -365,7 +280,7 @@ pub struct WorkspaceSymbolsRequest {
 /// __________^
 /// ```
 /// The definition(s) will be `[{"path": "src/main.py", "line": 0, "character": 6}]`.
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct DefinitionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     /// The raw response from the langserver.
@@ -397,7 +312,7 @@ pub struct DefinitionResponse {
 /// 7: print(user.name)
 /// ```
 /// The references will be `[{"path": "src/main.py", "line": 5, "character": 7}]`.
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ReferencesResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     /// The raw response from the langserver.
@@ -420,7 +335,7 @@ pub struct ReferencesResponse {
 /// - workspace_symbols: References to symbols that were found and have definitions in the workspace
 /// - external_symbols: References to symbols from outside the workspace (built-in functions, external libraries)
 /// - not_found: References where the symbol definition could not be found
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ReferencedSymbolsResponse {
     pub workspace_symbols: Vec<ReferenceWithSymbolDefinitions>,
     pub external_symbols: Vec<Identifier>,
@@ -455,26 +370,14 @@ impl From<LocationLink> for FilePosition {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct FindIdentifierRequest {
-    /// The name of the identifier to search for.
-    #[schema(example = "User")]
-    pub name: String,
-    /// The path to the file to search for identifiers.
-    #[schema(example = "src/main.py")]
-    pub path: String,
-    /// The position hint to search for identifiers. If not provided.
-    pub position: Option<Position>,
-}
 
-#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentifierResponse {
     pub identifiers: Vec<Identifier>,
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Range {
     /// The start position of the range.
     pub start: Position,
@@ -482,17 +385,9 @@ pub struct Range {
     pub end: Position,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ReadSourceCodeRequest {
-    /// Path to the file, relative to the workspace root
-    #[schema(example = "src/main.py")]
-    pub path: String,
-    /// Optional range within the file to read
-    pub range: Option<Range>,
-}
 
 /// Diagnostic severity level
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DiagnosticSeverity {
     Error,
@@ -514,7 +409,7 @@ impl From<lsp_types::DiagnosticSeverity> for DiagnosticSeverity {
 }
 
 /// Aggregated counts of diagnostics by severity level
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SeverityCounts {
     /// Number of error-level diagnostics
     pub error: u32,
@@ -527,7 +422,7 @@ pub struct SeverityCounts {
 }
 
 /// A diagnostic message (error, warning, etc.) for a specific location
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Diagnostic {
     /// The range where the diagnostic applies
     pub range: Range,
@@ -573,7 +468,7 @@ impl From<lsp_types::Diagnostic> for Diagnostic {
 }
 
 /// Diagnostics for a single file
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FileDiagnostics {
     /// Path to the file, relative to workspace root
     pub path: String,
@@ -582,7 +477,7 @@ pub struct FileDiagnostics {
 }
 
 /// Response containing diagnostics for one or more files
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiagnosticsResponse {
     /// Total number of diagnostics across all files
     pub total_count: usize,
@@ -593,7 +488,7 @@ pub struct DiagnosticsResponse {
 }
 
 /// Request for a single hover operation (used in batch mode)
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HoverRequest {
     pub path: String,
     pub line: u32,
@@ -609,7 +504,7 @@ pub enum HoverBatchItem {
 }
 
 /// Minimal definition location for hover response
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DefinitionLocation {
     /// Path to the file containing the definition
     pub path: String,
@@ -621,7 +516,7 @@ pub struct DefinitionLocation {
 }
 
 /// Response to a hover request
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HoverResponse {
     /// The raw response from the langserver
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -638,7 +533,7 @@ pub struct HoverResponse {
 }
 
 /// The contents of a hover response
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum HoverContents {
     /// Plain text or markdown content
@@ -648,7 +543,7 @@ pub enum HoverContents {
 }
 
 /// Response to a workspace symbol request
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceSymbolResponse {
     /// The raw response from the langserver
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -661,7 +556,7 @@ pub struct WorkspaceSymbolResponse {
 }
 
 /// Response to a go-to-implementation request
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImplementationResponse {
     /// The raw response from the langserver
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -673,7 +568,7 @@ pub struct ImplementationResponse {
 }
 
 /// Information about a workspace symbol
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceSymbolInfo {
     /// The name of the symbol
     pub name: String,
@@ -694,7 +589,7 @@ pub struct WorkspaceSymbolInfo {
 }
 
 /// A call hierarchy item representing a function/method
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallHierarchyItemInfo {
     /// The name of the function/method
     pub name: String,
@@ -710,7 +605,7 @@ pub struct CallHierarchyItemInfo {
 }
 
 /// Response to prepareCallHierarchy request
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrepareCallHierarchyResponse {
     /// The raw response from the langserver
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -720,7 +615,7 @@ pub struct PrepareCallHierarchyResponse {
 }
 
 /// An incoming call (caller) in the call hierarchy
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncomingCallInfo {
     /// The calling function/method
     pub from: CallHierarchyItemInfo,
@@ -729,7 +624,7 @@ pub struct IncomingCallInfo {
 }
 
 /// Response to incomingCalls request
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncomingCallsResponse {
     /// The raw response from the langserver
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -739,7 +634,7 @@ pub struct IncomingCallsResponse {
 }
 
 /// An outgoing call (callee) in the call hierarchy
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutgoingCallInfo {
     /// The called function/method
     pub to: CallHierarchyItemInfo,
@@ -748,7 +643,7 @@ pub struct OutgoingCallInfo {
 }
 
 /// Response to outgoingCalls request
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutgoingCallsResponse {
     /// The raw response from the langserver
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -758,7 +653,7 @@ pub struct OutgoingCallsResponse {
 }
 
 /// Direction for call hierarchy traversal
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CallHierarchyDirection {
     /// Find callers of the function (incoming calls)
@@ -768,7 +663,7 @@ pub enum CallHierarchyDirection {
 }
 
 /// A call in the call hierarchy (either incoming or outgoing)
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallInfo {
     /// The function/method involved in the call (caller for incoming, callee for outgoing)
     pub item: CallHierarchyItemInfo,
@@ -777,7 +672,7 @@ pub struct CallInfo {
 }
 
 /// Unified response for call hierarchy requests (both incoming and outgoing)
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallHierarchyResponse {
     /// The direction of the call hierarchy traversal
     pub direction: CallHierarchyDirection,
