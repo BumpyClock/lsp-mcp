@@ -4,17 +4,17 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version_line="$(grep -m 1 '^version = ' "$repo_root/lsproxy/Cargo.toml" || true)"
+version_line="$(grep -m 1 '^version = ' "$repo_root/Cargo.toml" || true)"
 
 if [[ -z "$version_line" ]]; then
-  echo "Failed to detect lsproxy version from lsproxy/Cargo.toml" >&2
+  echo "Failed to detect lsproxy version from Cargo.toml" >&2
   exit 1
 fi
 
 version="$(printf '%s' "$version_line" | sed -E 's/.*\"([^\"]+)\".*/\1/')"
 
 if [[ -z "$version" ]]; then
-  echo "Failed to parse lsproxy version from lsproxy/Cargo.toml" >&2
+  echo "Failed to parse lsproxy version from Cargo.toml" >&2
   exit 1
 fi
 

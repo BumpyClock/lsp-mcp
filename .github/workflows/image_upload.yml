@@ -61,7 +61,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./lsproxy
+          context: .
           file: ./release/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
@@ -92,7 +92,7 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           mkdir -p release-binaries
-          cd lsproxy/src
+          cd src
           find ast_grep -type f -print0 | tar -czvf ../../release-binaries/lsproxy-${VERSION}-ast-grep-rules.tar.gz --null -T -
 
       - name: Validate release files
