@@ -148,7 +148,7 @@ impl LspMcpServer {
             .await
     }
 
-    #[tool(description = "Incoming or outgoing calls at position. Set externals=true to include external deps")]
+    #[tool(description = "Incoming or outgoing calls at position. External deps included by default. Set externals=false to exclude.")]
     async fn call_hierarchy(
         &self,
         path: String,
@@ -169,7 +169,7 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "Symbols referenced by definition. Set externals=true to include external deps")]
+    #[tool(description = "Symbols referenced by definition. External deps included by default. Set externals=false to exclude.")]
     async fn find_referenced_symbols(
         &self,
         path: String,

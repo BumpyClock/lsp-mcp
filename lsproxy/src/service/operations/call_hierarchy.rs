@@ -277,27 +277,32 @@ pub(crate) async fn call_hierarchy_impl(
         )
         .await?;
 
-    let item = match items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) }) {
-        Some(item) => item,
-        None => {
-            debug!("call_hierarchy_impl: prepare_call_hierarchy returned no items");
-            return Ok(CallHierarchyResponse {
-                direction,
-                raw_response: None,
-                calls: vec![],
-            })
-        }
-    };
-
-    debug!("call_hierarchy_impl: got item name={}", item.name);
+    let item = items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) });
+    if let Some(ref item) = item {
+        debug!("call_hierarchy_impl: got item name={}", item.name);
+    } else {
+        debug!("call_hierarchy_impl: prepare_call_hierarchy returned no items");
+    }
 
     let workspace_files = manager.list_files().await?;
     let workspace_len = workspace_files.len();
     let workspace_set: HashSet<String> = workspace_files.into_iter().collect();
     debug!("call_hierarchy_impl: workspace has {} files", workspace_len);
 
+    let direction_is_outgoing = direction == CallHierarchyDirection::Outgoing;
+    let mut used_fallback = false;
     let calls: Vec<CallInfo> = match direction {
         CallHierarchyDirection::Incoming => {
+            let item = match item.as_ref() {
+                Some(item) => item,
+                None => {
+                    return Ok(CallHierarchyResponse {
+                        direction,
+                        raw_response: None,
+                        calls: vec![],
+                    })
+                }
+            };
             let lsp_calls = manager.incoming_calls(file_path, &item).await?;
             lsp_calls
                 .into_iter()
@@ -328,7 +333,10 @@ pub(crate) async fn call_hierarchy_impl(
                 .collect()
         }
         CallHierarchyDirection::Outgoing => {
-            let lsp_calls = manager.outgoing_calls(file_path, &item).await?;
+            let lsp_calls = match item.as_ref() {
+                Some(item) => manager.outgoing_calls(file_path, item).await?,
+                None => Vec::new(),
+            };
             let mut calls: Vec<CallInfo> = lsp_calls
                 .into_iter()
                 .map(|call| {
@@ -357,94 +365,10 @@ pub(crate) async fn call_hierarchy_impl(
                 })
                 .collect();
 
-            // Fallback to ast-grep when LSP returns empty
             if calls.is_empty() {
-                debug!("call_hierarchy_impl: LSP returned empty, trying ast-grep fallback");
-                let lsp_position = LspPosition {
-                    line: position.line.saturating_sub(1),
-                    character: position.character.saturating_sub(1),
-                };
-                if let Ok(referenced_symbols) =
-                    manager.find_referenced_symbols(file_path, lsp_position, false).await
-                {
-                    debug!(
-                        "call_hierarchy_impl: ast-grep found {} referenced symbols",
-                        referenced_symbols.len()
-                    );
-                    for (ast_match, def_response) in referenced_symbols {
-                        let locations = definition_locations_lsp(&def_response);
-                        if locations.is_empty() {
-                            continue;
-                        }
-
-                        for location in locations {
-                            let def_path = uri_to_relative_path_string(&location.uri);
-
-                            let def_lsp_position = location.range.start;
-                            let (kind, def_range) = match manager
-                                .get_symbol_from_position(&def_path, &def_lsp_position)
-                                .await
-                            {
-                                Ok(symbol) => (normalize_kind(&symbol.kind), symbol.file_range.range),
-                                Err(_) => (
-                                    "function".to_string(),
-                                    Range {
-                                        start: Position {
-                                            line: location.range.start.line + 1,
-                                            character: location.range.start.character + 1,
-                                        },
-                                        end: Position {
-                                            line: location.range.end.line + 1,
-                                            character: location.range.end.character + 1,
-                                        },
-                                    },
-                                ),
-                            };
-
-                            let external = if is_external_call(&def_path, &workspace_set) {
-                                Some(true)
-                            } else {
-                                None
-                            };
-
-                            let id_range = ast_match.get_identifier_range();
-                            let call_range = Range {
-                                start: Position {
-                                    line: id_range.start.line + 1,
-                                    character: id_range.start.column + 1,
-                                },
-                                end: Position {
-                                    line: id_range.end.line + 1,
-                                    character: id_range.end.column + 1,
-                                },
-                            };
-
-                            let call_info = CallInfo {
-                                item: CallHierarchyItemInfo {
-                                    name: ast_match.meta_variables.single.name.text.clone(),
-                                    kind,
-                                    location: FilePosition {
-                                        path: def_path.clone(),
-                                        position: Position {
-                                            line: location.range.start.line + 1,
-                                            character: location.range.start.character + 1,
-                                        },
-                                    },
-                                    range: def_range,
-                                    detail: None,
-                                    external,
-                                },
-                                call_ranges: vec![call_range],
-                                call_snippets: None,
-                            };
-                            calls.push(call_info);
-                        }
-                    }
-                    debug!(
-                        "call_hierarchy_impl: ast-grep fallback produced {} calls",
-                        calls.len()
-                    );
-                }
+                calls = outgoing_calls_from_references(manager, file_path, &position, &workspace_set)
+                    .await;
+                used_fallback = true;
             }
             calls
         }
@@ -455,7 +379,7 @@ pub(crate) async fn call_hierarchy_impl(
         calls.len()
     );
 
-    let calls = if internal_only {
+    let mut calls = if internal_only {
         filter_internal_calls(calls)
     } else {
         calls
@@ -465,6 +389,12 @@ pub(crate) async fn call_hierarchy_impl(
         calls.len(),
         internal_only
     );
+    if calls.is_empty() && direction_is_outgoing && !used_fallback {
+        calls = outgoing_calls_from_references(manager, file_path, &position, &workspace_set).await;
+        if internal_only {
+            calls = filter_internal_calls(calls);
+        }
+    }
 
     let calls = dedupe_calls(calls);
     debug!(
@@ -491,6 +421,111 @@ pub(crate) async fn call_hierarchy_impl(
         raw_response: None, // MCP layer handles verbose mode
         calls,
     })
+}
+
+async fn outgoing_calls_from_references(
+    manager: &Arc<Manager>,
+    file_path: &str,
+    position: &Position,
+    workspace_set: &HashSet<String>,
+) -> Vec<CallInfo> {
+    debug!("call_hierarchy_impl: trying ast-grep fallback");
+    let lsp_position = LspPosition {
+        line: position.line.saturating_sub(1),
+        character: position.character.saturating_sub(1),
+    };
+    let referenced_symbols = match manager
+        .find_referenced_symbols(file_path, lsp_position, false)
+        .await
+    {
+        Ok(symbols) => symbols,
+        Err(error) => {
+            debug!(
+                "call_hierarchy_impl: ast-grep fallback failed with {:?}",
+                error
+            );
+            return Vec::new();
+        }
+    };
+
+    debug!(
+        "call_hierarchy_impl: ast-grep found {} referenced symbols",
+        referenced_symbols.len()
+    );
+    let mut calls = Vec::new();
+    for (ast_match, def_response) in referenced_symbols {
+        let locations = definition_locations_lsp(&def_response);
+        if locations.is_empty() {
+            continue;
+        }
+
+        for location in locations {
+            let def_path = uri_to_relative_path_string(&location.uri);
+            let def_lsp_position = location.range.start;
+            let (kind, def_range) = match manager
+                .get_symbol_from_position(&def_path, &def_lsp_position)
+                .await
+            {
+                Ok(symbol) => (normalize_kind(&symbol.kind), symbol.file_range.range),
+                Err(_) => (
+                    "function".to_string(),
+                    Range {
+                        start: Position {
+                            line: location.range.start.line + 1,
+                            character: location.range.start.character + 1,
+                        },
+                        end: Position {
+                            line: location.range.end.line + 1,
+                            character: location.range.end.character + 1,
+                        },
+                    },
+                ),
+            };
+
+            let external = if is_external_call(&def_path, workspace_set) {
+                Some(true)
+            } else {
+                None
+            };
+
+            let id_range = ast_match.get_identifier_range();
+            let call_range = Range {
+                start: Position {
+                    line: id_range.start.line + 1,
+                    character: id_range.start.column + 1,
+                },
+                end: Position {
+                    line: id_range.end.line + 1,
+                    character: id_range.end.column + 1,
+                },
+            };
+
+            let call_info = CallInfo {
+                item: CallHierarchyItemInfo {
+                    name: ast_match.meta_variables.single.name.text.clone(),
+                    kind,
+                    location: FilePosition {
+                        path: def_path.clone(),
+                        position: Position {
+                            line: location.range.start.line + 1,
+                            character: location.range.start.character + 1,
+                        },
+                    },
+                    range: def_range,
+                    detail: None,
+                    external,
+                },
+                call_ranges: vec![call_range],
+                call_snippets: None,
+            };
+            calls.push(call_info);
+        }
+    }
+    debug!(
+        "call_hierarchy_impl: ast-grep fallback produced {} calls",
+        calls.len()
+    );
+    calls
 }
 
 /// Deduplicates call hierarchy entries by (file_path, line_number).

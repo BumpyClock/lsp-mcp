@@ -52,7 +52,7 @@ pub async fn find_referenced_symbols(
             &path,
             pos,
             full_scan.unwrap_or(false),
-            externals.unwrap_or(false),
+            externals.unwrap_or(true),
         )
         .await
     {
