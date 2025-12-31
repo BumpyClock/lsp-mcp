@@ -6,6 +6,14 @@ use crate::service::utils::external::PackageInfo;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReferenceType {
+    Definition,
+    Import,
+    Call,
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct McpDefinitionLocation {
     pub path: String,
@@ -57,6 +65,7 @@ pub struct McpReferenceLocation {
     pub symbol_range: Range,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<CodeContext>,
+    pub reference_type: ReferenceType,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -68,6 +77,7 @@ pub struct FileGroup {
 
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct TypeCounts {
+    pub definition: u32,
     pub import: u32,
     pub call: u32,
 }

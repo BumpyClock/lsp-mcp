@@ -11,10 +11,15 @@ pub async fn definitions_in_file(
     service: &LspService,
     output_mode: OutputMode,
     path: String,
+    include_locals: Option<bool>,
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> ToolOutput {
-    match service.definitions_in_file(&path, limit, offset).await {
+    let include_locals = include_locals.unwrap_or(false);
+    match service
+        .definitions_in_file(&path, include_locals, limit, offset)
+        .await
+    {
         Ok(response) => {
             let markdown = format_response(&response, output_mode);
             ToolOutput::text(markdown)

@@ -1,9 +1,14 @@
 // ABOUTME: Symbol lookup operations (find_identifier, list_files, workspace_symbol).
 // ABOUTME: Handles workspace-wide symbol search and file listing.
 
-use crate::api_types::{FilePosition, Identifier, Position, WorkspaceSymbolResponse};
+use crate::api_types::{
+    FilePosition, Identifier, Position, WorkspaceSymbolInfo, WorkspaceSymbolResponse,
+};
+use crate::ast_grep::types::AstGrepMatch;
 use crate::lsp::manager::Manager;
-use crate::utils::file_utils::uri_to_relative_path_string;
+use crate::utils::file_utils::{absolute_path_to_relative_path_string, uri_to_relative_path_string};
+use log::debug;
+use lsp_types::{Position as LspPosition, Range as LspRange};
 use std::sync::Arc;
 
 use crate::service::types::errors::{PositionError, ServiceError};
@@ -77,23 +82,56 @@ pub(crate) async fn workspace_symbol_impl(
     offset: Option<u32>,
 ) -> Result<WorkspaceSymbolResponse, ServiceError> {
     let symbols = manager.workspace_symbol(query).await?;
+    debug!(
+        "workspace_symbol_impl: LSP returned {} symbols for query '{}'",
+        symbols.len(),
+        query
+    );
 
     let workspace_files = manager.list_files().await?;
+    debug!(
+        "workspace_symbol_impl: workspace has {} files",
+        workspace_files.len()
+    );
 
     let mut filtered_symbols = Vec::new();
+    let mut filtered_count = 0;
     for sym in symbols {
         let path = uri_to_relative_path_string(&sym.location.uri);
-        if !workspace_files.contains(&path) {
+        if !workspace_files.is_empty() && !workspace_files.contains(&path) {
+            if filtered_count < 5 {
+                debug!(
+                    "workspace_symbol_impl: filtered out '{}' at path '{}' (not in workspace files)",
+                    sym.name, path
+                );
+            }
+            filtered_count += 1;
             continue;
         }
-        let mut info = workspace_symbol_info_from_lsp(sym, path);
-        let (match_kind, match_score) = match_kind_and_score(query, &info.name);
-        if exact && match_kind != "exact" {
-            continue;
+        let info = workspace_symbol_info_from_lsp(sym, path);
+        if let Some(info) = apply_query_match(query, exact, info) {
+            filtered_symbols.push(info);
         }
-        info.match_kind = Some(match_kind);
-        info.match_score = Some(match_score);
-        filtered_symbols.push(info);
+    }
+
+    if filtered_count > 0 {
+        debug!(
+            "workspace_symbol_impl: filtered out {} symbols (not in workspace files)",
+            filtered_count
+        );
+    }
+    debug!(
+        "workspace_symbol_impl: returning {} symbols after filtering",
+        filtered_symbols.len()
+    );
+
+    if filtered_symbols.is_empty() {
+        debug!("workspace_symbol_impl: falling back to ast-grep symbol scan");
+        filtered_symbols = workspace_symbol_fallback(manager, &workspace_files, query, exact).await;
+        debug!(
+            "workspace_symbol_impl: fallback returned {} symbols",
+            filtered_symbols.len()
+        );
     }
 
     // Fetch signatures for all filtered symbols in batch
@@ -104,6 +142,16 @@ pub(crate) async fn workspace_symbol_impl(
     let signatures = batch_hover_for_signatures(manager, positions).await;
     for (symbol, sig) in filtered_symbols.iter_mut().zip(signatures.into_iter()) {
         symbol.signature = sig;
+    }
+
+    for symbol in &mut filtered_symbols {
+        if let Some(line) =
+            read_symbol_line(manager, &symbol.location.path, symbol.location.position.line).await
+        {
+            if is_reexport_line(&line) && !symbol.kind.contains("re-export") {
+                symbol.kind = format!("{} (re-export)", symbol.kind);
+            }
+        }
     }
 
     let raw_response = if include_raw_response {
@@ -120,6 +168,93 @@ pub(crate) async fn workspace_symbol_impl(
         offset: pagination.offset,
         truncated: pagination.truncated,
     })
+}
+
+fn workspace_symbol_info_from_ast_match(ast_match: &AstGrepMatch) -> WorkspaceSymbolInfo {
+    let identifier_range = ast_match.get_identifier_range();
+    let path = absolute_path_to_relative_path_string(&std::path::PathBuf::from(
+        ast_match.file.clone(),
+    ));
+    WorkspaceSymbolInfo {
+        name: ast_match.meta_variables.single.name.text.clone(),
+        kind: ast_match.rule_id.clone(),
+        location: FilePosition {
+            path,
+            position: Position {
+                line: identifier_range.start.line + 1,
+                character: identifier_range.start.column + 1,
+            },
+        },
+        container_name: None,
+        match_kind: None,
+        match_score: None,
+        signature: None,
+    }
+}
+
+fn apply_query_match(
+    query: &str,
+    exact: bool,
+    mut info: WorkspaceSymbolInfo,
+) -> Option<WorkspaceSymbolInfo> {
+    if query.is_empty() {
+        info.match_kind = Some("none".to_string());
+        info.match_score = Some(0.0);
+        return Some(info);
+    }
+    let (match_kind, match_score) = match_kind_and_score(query, &info.name);
+    if match_kind == "none" {
+        return None;
+    }
+    if exact && match_kind != "exact" {
+        return None;
+    }
+    info.match_kind = Some(match_kind);
+    info.match_score = Some(match_score);
+    Some(info)
+}
+
+async fn read_symbol_line(manager: &Manager, path: &str, line: u32) -> Option<String> {
+    let start = LspPosition {
+        line: line.saturating_sub(1),
+        character: 0,
+    };
+    let end = LspPosition {
+        line,
+        character: 0,
+    };
+    manager
+        .read_source_code(path, Some(LspRange::new(start, end)))
+        .await
+        .ok()
+}
+
+fn is_reexport_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    (trimmed.starts_with("export {") && trimmed.contains(" from "))
+        || trimmed.starts_with("export * from ")
+}
+
+async fn workspace_symbol_fallback(
+    manager: &Arc<Manager>,
+    workspace_files: &[String],
+    query: &str,
+    exact: bool,
+) -> Vec<WorkspaceSymbolInfo> {
+    let mut symbols = Vec::new();
+    for file in workspace_files {
+        let matches = match manager.definitions_in_file_ast_grep(file).await {
+            Ok(matches) => matches,
+            Err(_) => continue,
+        };
+        for ast_match in matches {
+            let info = workspace_symbol_info_from_ast_match(&ast_match);
+            if let Some(info) = apply_query_match(query, exact, info) {
+                symbols.push(info);
+            }
+        }
+    }
+    symbols
 }
 
 /// Determines the match kind and score for a symbol name against a query.
@@ -153,4 +288,235 @@ pub(crate) fn is_fuzzy_match(query: &str, name: &str) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api_types::{
+        set_thread_local_mount_dir, unset_thread_local_mount_dir, FilePosition, Position,
+        WorkspaceSymbolInfo,
+    };
+    use crate::ast_grep::types::{
+        AstGrepMatch, AstGrepPosition, AstGrepRange, ByteOffset, CharCount, MetaVariable,
+        MetaVariables, MultiVariables, SingleVariable,
+    };
+    use rand::{distr::Alphanumeric, Rng};
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn random_irregular_string() -> String {
+        let mut rng = rand::rng();
+        let len: usize = rng.random_range(6..20);
+        let mut value: String = rng
+            .sample_iter(&Alphanumeric)
+            .take(len)
+            .map(char::from)
+            .collect();
+        value.push('_');
+        value.push('\t');
+        value
+    }
+
+    fn make_ast_match(file_path: &str, name: &str, start_line: u32, start_col: u32) -> AstGrepMatch {
+        let range = AstGrepRange {
+            byte_offset: ByteOffset { start: 0, end: 0 },
+            start: AstGrepPosition {
+                line: start_line,
+                column: start_col,
+            },
+            end: AstGrepPosition {
+                line: start_line,
+                column: start_col + 4,
+            },
+        };
+        AstGrepMatch {
+            text: name.to_string(),
+            range: range.clone(),
+            file: file_path.to_string(),
+            lines: random_irregular_string(),
+            char_count: CharCount { leading: 0, trailing: 0 },
+            language: "typescript".to_string(),
+            meta_variables: MetaVariables {
+                single: SingleVariable {
+                    name: MetaVariable {
+                        text: name.to_string(),
+                        range: range.clone(),
+                    },
+                    context: None,
+                },
+                multi: MultiVariables { secondary: None },
+            },
+            rule_id: "function".to_string(),
+            labels: None,
+        }
+    }
+
+    #[test]
+    fn match_kind_and_score_returns_exact_for_identical_names() {
+        let (kind, score) = match_kind_and_score("scoreMember", "scoreMember");
+        assert_eq!(kind, "exact", "identical names must be exact match");
+        assert_eq!(score, 1.0, "exact match must have score 1.0");
+    }
+
+    #[test]
+    fn match_kind_and_score_returns_prefix_for_starts_with() {
+        let (kind, score) = match_kind_and_score("score", "scoreMember");
+        assert_eq!(kind, "prefix", "prefix match expected");
+        assert!(score > 0.7, "prefix match score must be above 0.7");
+    }
+
+    #[test]
+    fn match_kind_and_score_returns_substring_for_contains() {
+        let (kind, score) = match_kind_and_score("Member", "scoreMember");
+        assert_eq!(kind, "substring", "substring match expected");
+        assert!(score > 0.5, "substring match score must be above 0.5");
+    }
+
+    #[test]
+    fn match_kind_and_score_returns_none_for_no_match() {
+        let (kind, score) = match_kind_and_score("xyz", "scoreMember");
+        assert_eq!(kind, "none", "no match expected");
+        assert_eq!(score, 0.0, "no match must have score 0.0");
+    }
+
+    #[test]
+    fn match_kind_and_score_is_case_insensitive() {
+        let (kind, _) = match_kind_and_score("SCOREMEMBER", "scoreMember");
+        assert_eq!(kind, "exact", "case-insensitive exact match expected");
+    }
+
+    #[test]
+    fn workspace_symbol_info_from_ast_match_uses_identifier_range_and_relative_path() {
+        let temp_dir = TempDir::new().expect("negative: temp dir unavailable");
+        set_thread_local_mount_dir(temp_dir.path());
+        let file_path = temp_dir.path().join("src").join("main.ts");
+        fs::create_dir_all(file_path.parent().unwrap()).expect("negative: mkdir failed");
+        fs::write(&file_path, "export function scoreMember() {}").expect("negative: write failed");
+        let unicode = char::from_u32(241).expect("negative: unicode should be valid");
+        let name = format!("score{}{}", unicode, random_irregular_string());
+
+        let ast_match = make_ast_match(file_path.to_str().unwrap(), &name, 3, 5);
+
+        let info = workspace_symbol_info_from_ast_match(&ast_match);
+
+        assert_eq!(info.name, name, "negative: name mismatch");
+        assert_eq!(info.kind, "function", "negative: kind mismatch");
+        assert_eq!(
+            info.location.path,
+            "src/main.ts",
+            "negative: path mismatch"
+        );
+        assert_eq!(
+            info.location.position.line, 4,
+            "negative: line mismatch"
+        );
+        assert_eq!(
+            info.location.position.character, 6,
+            "negative: character mismatch"
+        );
+        assert!(info.signature.is_none(), "negative: signature must be None");
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn is_reexport_line_detects_reexport_from() {
+        assert!(
+            is_reexport_line("export { scoreMember } from '@/utilities/memberScoring';"),
+            "re-export lines with from must be detected"
+        );
+    }
+
+    #[test]
+    fn is_reexport_line_rejects_regular_exports() {
+        assert!(
+            !is_reexport_line("export function scoreMember() {}"),
+            "regular exports must not be treated as re-exports"
+        );
+    }
+
+    #[test]
+    fn apply_query_match_assigns_match_kind_and_score() {
+        let unicode = char::from_u32(241).expect("negative: unicode should be valid");
+        let name = format!("score{}{}", unicode, random_irregular_string());
+        let info = WorkspaceSymbolInfo {
+            name,
+            kind: "function".to_string(),
+            location: FilePosition {
+                path: "src/lib.rs".to_string(),
+                position: Position { line: 1, character: 1 },
+            },
+            container_name: None,
+            match_kind: None,
+            match_score: None,
+            signature: None,
+        };
+
+        let matched = apply_query_match(&format!("score{}", unicode), false, info)
+            .expect("negative: expected symbol to match");
+
+        assert_eq!(
+            matched.match_kind.as_deref(),
+            Some("prefix"),
+            "negative: match kind mismatch"
+        );
+        assert!(
+            matched.match_score.unwrap_or(0.0) > 0.7,
+            "negative: match score too low"
+        );
+    }
+
+    #[test]
+    fn apply_query_match_respects_exact_flag() {
+        let unicode = char::from_u32(241).expect("negative: unicode should be valid");
+        let name = format!("score{}{}", unicode, random_irregular_string());
+        let info = WorkspaceSymbolInfo {
+            name,
+            kind: "function".to_string(),
+            location: FilePosition {
+                path: "src/lib.rs".to_string(),
+                position: Position { line: 1, character: 1 },
+            },
+            container_name: None,
+            match_kind: None,
+            match_score: None,
+            signature: None,
+        };
+
+        let matched = apply_query_match(&format!("score{}", unicode), true, info);
+
+        assert!(matched.is_none(), "negative: exact match should fail");
+    }
+
+    #[test]
+    fn apply_query_match_accepts_empty_query() {
+        let unicode = char::from_u32(241).expect("negative: unicode should be valid");
+        let name = format!("score{}{}", unicode, random_irregular_string());
+        let info = WorkspaceSymbolInfo {
+            name,
+            kind: "function".to_string(),
+            location: FilePosition {
+                path: "src/lib.rs".to_string(),
+                position: Position { line: 1, character: 1 },
+            },
+            container_name: None,
+            match_kind: None,
+            match_score: None,
+            signature: None,
+        };
+
+        let matched = apply_query_match("", false, info).expect("negative: expected match");
+
+        assert_eq!(
+            matched.match_kind.as_deref(),
+            Some("none"),
+            "negative: empty query must keep match kind"
+        );
+        assert_eq!(
+            matched.match_score.unwrap_or(1.0),
+            0.0,
+            "negative: empty query must set score to zero"
+        );
+    }
 }

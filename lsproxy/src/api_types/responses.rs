@@ -124,9 +124,9 @@ pub struct HoverResponse {
     /// The range of the symbol being hovered
     #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<Range>,
-    /// Definition location (optional, when include_definition is true)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub definition: Option<DefinitionLocation>,
+    /// Definition locations (optional, when include_definition is true)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub definitions: Vec<DefinitionLocation>,
 }
 
 /// The contents of a hover response
@@ -210,19 +210,19 @@ mod tests {
             raw_response: None,
             contents: Some(HoverContents::Markup("```typescript\nfunction configureStore<S>(): EnhancedStore\n```".to_string())),
             range: None,
-            definition: Some(DefinitionLocation {
+            definitions: vec![DefinitionLocation {
                 path: "node_modules/@reduxjs/toolkit/dist/index.d.mts".to_string(),
                 line: 1847,
                 external: Some(true),
-            }),
+            }],
         };
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
 
-        assert!(json.get("definition").is_some(), "definition must be present");
-        assert_eq!(json["definition"]["path"], "node_modules/@reduxjs/toolkit/dist/index.d.mts");
-        assert_eq!(json["definition"]["line"], 1847);
-        assert_eq!(json["definition"]["external"], true);
+        assert!(json.get("definitions").is_some(), "definitions must be present");
+        assert_eq!(json["definitions"][0]["path"], "node_modules/@reduxjs/toolkit/dist/index.d.mts");
+        assert_eq!(json["definitions"][0]["line"], 1847);
+        assert_eq!(json["definitions"][0]["external"], true);
     }
 
     #[test]
@@ -231,11 +231,11 @@ mod tests {
             raw_response: None,
             contents: Some(HoverContents::Markup("some docs".to_string())),
             range: None,
-            definition: None,
+            definitions: Vec::new(),
         };
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
 
-        assert!(json.get("definition").is_none(), "None definition must be skipped in serialization");
+        assert!(json.get("definitions").is_none(), "empty definitions must be skipped in serialization");
     }
 }

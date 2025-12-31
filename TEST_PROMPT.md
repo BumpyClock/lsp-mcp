@@ -19,6 +19,7 @@ Evaluate whether each tool response is actionable enough for real agentic coding
 - Run each lsp-mcp tool on those locations and compare with the native LSP tool (if available) using the same queries.
 - Keep outputs compact; include only the minimal excerpts needed to support your evaluation.
 - If a tool output is missing crucial info, say exactly what is missing and how that blocks decision-making.
+- You must evaluate the tool responses to ensure that they provide enough actionable information to make coding decisions faster than it would take navigating the codebase with your native tools. 
 
 ## Formatting Requirements (Markdown)
 
@@ -67,30 +68,14 @@ Do at least ONE end-to-end **dry-run** of a “real coding agent” task (not ju
 - Use `hover` on the new option types to verify inferred types and defaults.
 - Use `get_diagnostics` (without edits) to see whether existing diagnostics would complicate the hypothetical change.
 
-### Scenario B (Rust, correctness refactor): Tighten a boundary/semantics rule (no edits)
-
-**Context:** There is a boundary/semantics rule that can be ambiguous (inclusive vs exclusive, 0-based vs 1-based, normalization rules, etc.). You’ve been asked to make it explicit and consistent.
-
-**Pick targets (so this works in any repo):**
-- Pick a function that implements a **non-trivial boolean predicate** (e.g. `contains`, `matches`, `is_valid`, `normalize_*`) and has tests or multiple call sites.
-- Ensure at least one downstream call site exists (even if only in tests).
-
-**Hypothetical task (do NOT implement):**
-- Update the predicate semantics to match a clearly stated convention (write down the convention in your evaluation).
-- Identify which tests would change (or which ones are missing).
-- Identify downstream callers impacted (if any) and explain the risk.
-
-**Decision-readiness criteria:**
-- What is the current behavior (inclusive/exclusive/etc.) based on code + tests, and what would you change it to?
-- What test cases would need to change (which ones, and how)?
-- What downstream callers might rely on the current semantics, and how risky is the change based on references/call hierarchy?
-- What diagnostics (if any) exist in the affected Rust files?
 
 ### Scenario execution rules
 
 - Treat this like a real PR **up to (but not including) the edit**: start from a symptom/request, locate code, scope the changes, and identify risks—without modifying anything.
 - While doing the scenario, keep a running tally per tool: did it let you decide immediately, or did you need follow-up calls to locate missing context?
 - After finishing the scenario, do a quick “spot-check” run of the remaining tools on 1-2 additional symbols so every tool is exercised at least once.
+- Read the file to see if the content returned by the tool was correct.
+- Think about if the tool call returned enough actionalble information for you to make a coding decision. Compare that the steps/tool calls you would have to take to navigate the codebase to find the same infomation.
 
 ## Per-Tool Evaluation Criteria
 

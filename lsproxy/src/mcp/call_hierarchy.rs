@@ -14,6 +14,7 @@ pub async fn call_hierarchy(
     line: u32,
     character: u32,
     direction: String,
+    externals: Option<bool>,
 ) -> ToolOutput {
     let dir = match direction.to_lowercase().as_str() {
         "incoming" => CallHierarchyDirection::Incoming,
@@ -26,13 +27,18 @@ pub async fn call_hierarchy(
         }
     };
     let pos = Position { line, character };
-    match service.call_hierarchy(&path, pos, dir).await {
+    let internal_only = resolve_internal_only(externals);
+    match service.call_hierarchy(&path, pos, dir, internal_only).await {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
         }
         Err(e) => tool_output_from_error(e),
     }
+}
+
+fn resolve_internal_only(externals: Option<bool>) -> bool {
+    !externals.unwrap_or(false)
 }
 
 pub async fn go_to_implementation(
@@ -52,5 +58,31 @@ pub async fn go_to_implementation(
             ToolOutput::text(resp)
         }
         Err(e) => tool_output_from_error(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_internal_only_defaults_to_true() {
+        assert!(resolve_internal_only(None), "default must be internal-only");
+    }
+
+    #[test]
+    fn resolve_internal_only_is_false_when_externals_true() {
+        assert!(
+            !resolve_internal_only(Some(true)),
+            "externals=true must disable internal-only filtering"
+        );
+    }
+
+    #[test]
+    fn resolve_internal_only_is_true_when_externals_false() {
+        assert!(
+            resolve_internal_only(Some(false)),
+            "externals=false must keep internal-only filtering"
+        );
     }
 }

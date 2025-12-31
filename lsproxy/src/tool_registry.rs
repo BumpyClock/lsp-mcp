@@ -30,6 +30,7 @@ pub const CORE_TOOLS: &[&str] = &[
     "workspace_symbol",
     "definitions_in_file",
     "call_hierarchy",
+    "find_referenced_symbols",
 ];
 
 /// Minimal tools (Tier 1): Essential navigation only
@@ -78,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_core_tools_count() {
-        assert_eq!(CORE_TOOLS.len(), 7, "Expected 7 core tools");
+        assert_eq!(CORE_TOOLS.len(), 8, "Expected 8 core tools");
     }
 
     #[test]
@@ -99,7 +100,7 @@ mod tests {
     #[test]
     fn test_get_preset_tools_standard() {
         let tools = get_preset_tools(ToolPreset::Standard);
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 8);
         // Should include all minimal tools
         assert!(tools.contains("find_definition"));
         assert!(tools.contains("find_references"));
@@ -109,6 +110,7 @@ mod tests {
         assert!(tools.contains("workspace_symbol"));
         assert!(tools.contains("definitions_in_file"));
         assert!(tools.contains("call_hierarchy"));
+        assert!(tools.contains("find_referenced_symbols"));
     }
 
     #[test]

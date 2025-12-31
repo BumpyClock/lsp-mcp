@@ -78,6 +78,33 @@ impl Manager {
         self.pending_clients.lock().await.contains(&lang)
     }
 
+    /// Waits for all pending language servers to initialize with a timeout.
+    ///
+    /// Returns true if all pending clients finished initializing within the timeout,
+    /// or false if the timeout was reached with some clients still pending.
+    pub async fn wait_for_pending_clients(&self, timeout: Duration) -> bool {
+        let start = std::time::Instant::now();
+        let poll_interval = Duration::from_millis(100);
+
+        loop {
+            let pending = self.pending_clients.lock().await;
+            if pending.is_empty() {
+                return true;
+            }
+            drop(pending); // Release lock before sleeping
+
+            if start.elapsed() >= timeout {
+                log::debug!(
+                    "wait_for_pending_clients: timeout reached with {} clients still pending",
+                    self.pending_clients.lock().await.len()
+                );
+                return false;
+            }
+
+            tokio::time::sleep(poll_interval).await;
+        }
+    }
+
     pub async fn start_langservers(
         &mut self,
         workspace_path: &str,
@@ -453,6 +480,14 @@ impl Manager {
         &self,
         query: &str,
     ) -> Result<Vec<lsp_types::SymbolInformation>, LspManagerError> {
+        // Wait for any pending language servers to initialize (with short timeout)
+        // This prevents race conditions where workspace_symbol is called before
+        // all LSP clients have finished async initialization
+        if !self.pending_clients.lock().await.is_empty() {
+            log::debug!("workspace_symbol: waiting for pending LSP clients to initialize");
+            self.wait_for_pending_clients(Duration::from_secs(5)).await;
+        }
+
         let mut all_symbols = Vec::new();
         let clients = self.lsp_clients.read().await;
 

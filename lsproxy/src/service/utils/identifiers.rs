@@ -8,6 +8,7 @@ pub(crate) async fn find_identifier_at_position(
     identifiers: Vec<Identifier>,
     position: &FilePosition,
 ) -> Result<Identifier, PositionError> {
+    // Try exact containment first
     if let Some(exact_match) = identifiers
         .iter()
         .find(|i| i.file_range.contains(position.clone()))
@@ -15,6 +16,41 @@ pub(crate) async fn find_identifier_at_position(
         return Ok(exact_match.clone().with_kind_defaulted());
     }
 
+    // Fallback: Try same-line matching
+    // This helps when ast-grep context ranges don't precisely match the identifier position
+    let same_line_matches: Vec<_> = identifiers
+        .iter()
+        .filter(|i| {
+            // Identifier starts on the same line as the position
+            i.file_range.range.start.line == position.position.line
+        })
+        .collect();
+
+    // If there's exactly one identifier on the same line, use it
+    if same_line_matches.len() == 1 {
+        return Ok(same_line_matches[0].clone().with_kind_defaulted());
+    }
+
+    // If multiple identifiers on same line, pick the closest one by character position
+    if !same_line_matches.is_empty() {
+        let closest_on_line = same_line_matches
+            .into_iter()
+            .min_by_key(|id| {
+                let start_diff = (id.file_range.range.start.character as i32
+                    - position.position.character as i32)
+                    .abs();
+                let end_diff = (id.file_range.range.end.character as i32
+                    - position.position.character as i32)
+                    .abs();
+                start_diff.min(end_diff)
+            });
+
+        if let Some(best_match) = closest_on_line {
+            return Ok(best_match.clone().with_kind_defaulted());
+        }
+    }
+
+    // Final fallback: compute distances and return error with closest matches
     let mut with_distances: Vec<_> = identifiers
         .iter()
         .map(|id| {

@@ -238,7 +238,7 @@ mod tests {
         let config = LspMcpConfig::default();
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 8);
         assert!(tools.contains("find_definition"));
         assert!(tools.contains("find_references"));
         assert!(tools.contains("hover"));
@@ -246,6 +246,7 @@ mod tests {
         assert!(tools.contains("workspace_symbol"));
         assert!(tools.contains("definitions_in_file"));
         assert!(tools.contains("call_hierarchy"));
+        assert!(tools.contains("find_referenced_symbols"));
     }
 
     #[test]
@@ -276,7 +277,7 @@ mod tests {
         };
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 7);
         assert!(!tools.contains("call_hierarchy"));
     }
 

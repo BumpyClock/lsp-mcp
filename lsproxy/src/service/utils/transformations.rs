@@ -48,8 +48,8 @@ pub(crate) fn definition_locations(definitions: &GotoDefinitionResponse) -> Vec<
             .map(|link| FilePosition {
                 path: uri_to_relative_path_string(&link.target_uri),
                 position: Position {
-                    line: link.target_range.start.line + 1,
-                    character: link.target_range.start.character + 1,
+                    line: link.target_selection_range.start.line + 1,
+                    character: link.target_selection_range.start.character + 1,
                 },
             })
             .collect(),
@@ -62,7 +62,7 @@ pub(crate) fn definition_locations_lsp(definitions: &GotoDefinitionResponse) -> 
         GotoDefinitionResponse::Array(locations) => locations.clone(),
         GotoDefinitionResponse::Link(links) => links
             .iter()
-            .map(|link| Location::new(link.target_uri.clone(), link.target_range))
+            .map(|link| Location::new(link.target_uri.clone(), link.target_selection_range))
             .collect(),
     }
 }
@@ -108,6 +108,7 @@ pub(crate) fn definition_item_from_location(
 pub(crate) fn reference_item_from_location(
     location: &Location,
     snippet: Option<CodeContext>,
+    reference_type: crate::service::types::response::ReferenceType,
 ) -> McpReferenceLocation {
     let path = uri_to_relative_path_string(&location.uri);
     let position = Position {
@@ -119,6 +120,7 @@ pub(crate) fn reference_item_from_location(
         position,
         symbol_range: range_from_lsp(&location.range),
         snippet,
+        reference_type,
     }
 }
 
@@ -194,8 +196,8 @@ pub(crate) fn extract_marked_string(marked: &lsp_types::MarkedString) -> String 
 mod tests {
     use super::*;
     use lsp_types::{
-        CallHierarchyItem, Location, Position as LspPosition, Range as LspRange, SymbolInformation,
-        SymbolKind, Url,
+        CallHierarchyItem, Location, LocationLink, Position as LspPosition, Range as LspRange,
+        SymbolInformation, SymbolKind, Url,
     };
 
     #[allow(deprecated)]
@@ -254,5 +256,55 @@ mod tests {
         let info = call_hierarchy_item_to_info(&item);
 
         assert_eq!(info.kind, "type-parameter");
+    }
+
+    #[test]
+    fn test_definition_locations_uses_selection_range_for_links() {
+        let uri = Url::from_file_path("/tmp/test.rs").expect("Expected file path url");
+        let target_range = LspRange {
+            start: LspPosition { line: 10, character: 1 },
+            end: LspPosition { line: 12, character: 1 },
+        };
+        let selection_range = LspRange {
+            start: LspPosition { line: 20, character: 2 },
+            end: LspPosition { line: 20, character: 8 },
+        };
+        let link = LocationLink {
+            origin_selection_range: None,
+            target_uri: uri.clone(),
+            target_range,
+            target_selection_range: selection_range,
+        };
+
+        let locations = definition_locations(&GotoDefinitionResponse::Link(vec![link]));
+
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0].position.line, 21);
+        assert_eq!(locations[0].position.character, 3);
+    }
+
+    #[test]
+    fn test_definition_locations_lsp_uses_selection_range_for_links() {
+        let uri = Url::from_file_path("/tmp/test.rs").expect("Expected file path url");
+        let target_range = LspRange {
+            start: LspPosition { line: 3, character: 1 },
+            end: LspPosition { line: 4, character: 1 },
+        };
+        let selection_range = LspRange {
+            start: LspPosition { line: 8, character: 4 },
+            end: LspPosition { line: 8, character: 9 },
+        };
+        let link = LocationLink {
+            origin_selection_range: None,
+            target_uri: uri.clone(),
+            target_range,
+            target_selection_range: selection_range,
+        };
+
+        let locations = definition_locations_lsp(&GotoDefinitionResponse::Link(vec![link]));
+
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0].range.start.line, 8);
+        assert_eq!(locations[0].range.start.character, 4);
     }
 }

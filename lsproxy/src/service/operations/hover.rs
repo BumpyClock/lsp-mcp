@@ -53,32 +53,35 @@ pub(crate) async fn hover_impl(
     };
 
     // Optionally fetch definition location
-    let definition = if include_definition {
-        fetch_definition_location_impl(manager, file_path, position).await
+    let definitions = if include_definition {
+        fetch_definition_locations_impl(manager, file_path, position).await
     } else {
-        None
+        Vec::new()
     };
 
     Ok(HoverResponse {
         raw_response,
         contents,
         range,
-        definition,
+        definitions,
     })
 }
 
-/// Fetches minimal definition location for hover response.
-pub(crate) async fn fetch_definition_location_impl(
+/// Fetches minimal definition locations for hover response.
+pub(crate) async fn fetch_definition_locations_impl(
     manager: &Arc<Manager>,
     file_path: &str,
     position: Position,
-) -> Option<DefinitionLocation> {
+) -> Vec<DefinitionLocation> {
     let lsp_position = LspPosition {
         line: position.line.saturating_sub(1),
         character: position.character.saturating_sub(1),
     };
 
-    let definitions = manager.find_definition(file_path, lsp_position).await.ok()?;
+    let definitions = match manager.find_definition(file_path, lsp_position).await {
+        Ok(definitions) => definitions,
+        Err(_) => return Vec::new(),
+    };
     let locations = match definitions {
         GotoDefinitionResponse::Scalar(loc) => vec![loc],
         GotoDefinitionResponse::Array(locs) => locs,
@@ -90,15 +93,18 @@ pub(crate) async fn fetch_definition_location_impl(
         }
     };
 
-    let first = locations.first()?;
-    let path = uri_to_relative_path_string(&first.uri);
-    let external = if path.contains("node_modules") { Some(true) } else { None };
-
-    Some(DefinitionLocation {
-        path,
-        line: first.range.start.line + 1,
-        external,
-    })
+    locations
+        .into_iter()
+        .map(|location| {
+            let path = uri_to_relative_path_string(&location.uri);
+            let external = if path.contains("node_modules") { Some(true) } else { None };
+            DefinitionLocation {
+                path,
+                line: location.range.start.line + 1,
+                external,
+            }
+        })
+        .collect()
 }
 
 /// Fetches signature and documentation from hover info for a definition position.

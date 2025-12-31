@@ -39,13 +39,17 @@ impl ToMarkdown for HoverResponse {
             output.push_str(&content);
         }
 
-        if let Some(ref def) = self.definition {
-            output.push_str("\n\nDefinition: ");
-            output.push_str(&def.path);
-            output.push(':');
-            output.push_str(&def.line.to_string());
-            if def.external == Some(true) {
-                output.push_str(" [external]");
+        if !self.definitions.is_empty() {
+            output.push_str("\n\nDefinitions: ");
+            output.push_str(&self.definitions.len().to_string());
+            for def in &self.definitions {
+                output.push_str("\n- ");
+                output.push_str(&def.path);
+                output.push(':');
+                output.push_str(&def.line.to_string());
+                if def.external == Some(true) {
+                    output.push_str(" [external]");
+                }
             }
         }
 
@@ -85,7 +89,7 @@ mod tests {
             raw_response: None,
             contents: Some(HoverContents::Markup(content.to_string())),
             range: None,
-            definition: None,
+            definitions: Vec::new(),
         }
     }
 
@@ -94,7 +98,7 @@ mod tests {
             raw_response: None,
             contents: Some(HoverContents::Array(items.into_iter().map(String::from).collect())),
             range: None,
-            definition: None,
+            definitions: Vec::new(),
         }
     }
 
@@ -108,11 +112,11 @@ mod tests {
             raw_response: None,
             contents: Some(HoverContents::Markup(content.to_string())),
             range: None,
-            definition: Some(DefinitionLocation {
+            definitions: vec![DefinitionLocation {
                 path: path.to_string(),
                 line,
                 external,
-            }),
+            }],
         }
     }
 
@@ -122,7 +126,7 @@ mod tests {
             raw_response: None,
             contents: None,
             range: None,
-            definition: None,
+            definitions: Vec::new(),
         };
 
         let markdown = response.to_markdown();
@@ -227,6 +231,42 @@ mod tests {
     }
 
     #[test]
+    fn it_lists_multiple_definitions() {
+        let response = HoverResponse {
+            raw_response: None,
+            contents: Some(HoverContents::Markup("Docs".to_string())),
+            range: None,
+            definitions: vec![
+                DefinitionLocation {
+                    path: "src/one.ts".to_string(),
+                    line: 1,
+                    external: None,
+                },
+                DefinitionLocation {
+                    path: "src/two.ts".to_string(),
+                    line: 2,
+                    external: None,
+                },
+            ],
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("Definitions: 2"),
+            "negative: must include definitions count"
+        );
+        assert!(
+            markdown.contains("src/one.ts:1"),
+            "negative: must list first definition"
+        );
+        assert!(
+            markdown.contains("src/two.ts:2"),
+            "negative: must list second definition"
+        );
+    }
+
+    #[test]
     fn it_handles_unicode_content_in_markup() {
         let content = "Docs with unicode: \u{1F600} emoji and \u{4E2D}\u{6587} characters";
         let response = create_hover_response_with_markup(content);
@@ -261,7 +301,7 @@ mod tests {
             raw_response: None,
             contents: Some(HoverContents::Array(vec![])),
             range: None,
-            definition: None,
+            definitions: Vec::new(),
         };
 
         let markdown = response.to_markdown();
@@ -284,8 +324,8 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains("Definition:"),
-            "negative: must include Definition section label"
+            markdown.contains("Definitions:"),
+            "negative: must include Definitions section label"
         );
     }
 
@@ -336,7 +376,7 @@ mod tests {
                 raw_response: None,
                 contents: Some(HoverContents::Markup(content.to_string())),
                 range: None,
-                definition: None,
+                definitions: Vec::new(),
             })
         }
 

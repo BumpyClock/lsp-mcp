@@ -87,10 +87,18 @@ pub(crate) fn extract_signature_from_source(source: &str, symbol_name: &str) -> 
             continue;
         }
         if trimmed.contains(symbol_name) {
+            let is_arrow = trimmed.contains("=>")
+                && (trimmed.contains("const ")
+                    || trimmed.contains("let ")
+                    || trimmed.contains("var ")
+                    || trimmed.contains("export const ")
+                    || trimmed.contains("export let ")
+                    || trimmed.contains("export var "));
             if trimmed.contains("fn ") || trimmed.contains("function ") ||
                trimmed.contains("class ") || trimmed.contains("def ") ||
                trimmed.contains("struct ") || trimmed.contains("enum ") ||
-               trimmed.contains("interface ") || trimmed.contains("type ") {
+               trimmed.contains("interface ") || trimmed.contains("type ") ||
+               is_arrow {
                 let sig = if let Some(brace_pos) = trimmed.find('{') {
                     trimmed[..brace_pos].trim()
                 } else if let Some(semi_pos) = trimmed.find(';') {
@@ -230,6 +238,9 @@ pub(crate) async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &m
     }
 
     if symbol.signature.is_none() || symbol.jsdoc_summary.is_none() {
+        // Read source code for the symbol's range
+        // Note: LSP ranges have exclusive end, so we use end.line directly (not -1)
+        // to ensure we read the full content including the last line
         if let Ok(source_code) = manager.read_source_code(
             file_path,
             Some(lsp_types::Range::new(
@@ -238,7 +249,7 @@ pub(crate) async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &m
                     character: 0,
                 },
                 lsp_types::Position {
-                    line: symbol.file_range.range.end.line.saturating_sub(1),
+                    line: symbol.file_range.range.end.line, // No saturating_sub - LSP end is exclusive
                     character: 0,
                 },
             )),
@@ -412,6 +423,17 @@ mod tests {
         let result = truncate_signature(sig, Some(50));
         assert!(result.len() <= 53);
         assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_extract_signature_from_source_handles_export_const_arrow() {
+        let source = "export const filterNavigationByPermissions = <T>(items: T[], hasPermission: boolean): T[] => {";
+        let sig = extract_signature_from_source(source, "filterNavigationByPermissions");
+        assert!(sig.is_some(), "arrow function signature must be detected");
+        assert!(
+            sig.unwrap().starts_with("export const filterNavigationByPermissions"),
+            "signature must include export const declaration"
+        );
     }
 
     #[test]

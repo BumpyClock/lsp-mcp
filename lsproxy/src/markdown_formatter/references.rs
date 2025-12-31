@@ -3,7 +3,7 @@
 
 use super::{escape_inline_code, ToMarkdown};
 use crate::api_types::ReferencedSymbolsResponse;
-use crate::service::types::response::McpReferencesResponse;
+use crate::service::types::response::{McpReferencesResponse, ReferenceType};
 
 impl ToMarkdown for McpReferencesResponse {
     fn to_markdown(&self) -> String {
@@ -23,6 +23,7 @@ impl ToMarkdown for McpReferencesResponse {
 
             for reference in &file_group.refs {
                 let line = reference.position.line;
+                let tag = reference_type_tag(reference.reference_type);
                 match &reference.snippet {
                     Some(ctx) => {
                         let context_start_line = ctx.range.range.start.line;
@@ -36,10 +37,21 @@ impl ToMarkdown for McpReferencesResponse {
                             .unwrap_or("");
 
                         let escaped = escape_inline_code(target_line.trim());
-                        output.push_str(&format!("  Line {}:{}: `{}`\n", line, reference.position.character, escaped));
+                        output.push_str(&format!(
+                            "  [{}] Line {}:{}: `{}`\n",
+                            tag,
+                            line,
+                            reference.position.character,
+                            escaped
+                        ));
                     }
                     None => {
-                        output.push_str(&format!("  Line {}:{}\n", line, reference.position.character));
+                        output.push_str(&format!(
+                            "  [{}] Line {}:{}\n",
+                            tag,
+                            line,
+                            reference.position.character
+                        ));
                     }
                 }
             }
@@ -54,6 +66,14 @@ impl ToMarkdown for McpReferencesResponse {
         }
 
         output
+    }
+}
+
+fn reference_type_tag(reference_type: ReferenceType) -> &'static str {
+    match reference_type {
+        ReferenceType::Definition => "def",
+        ReferenceType::Import => "import",
+        ReferenceType::Call => "call",
     }
 }
 
@@ -130,7 +150,7 @@ impl ToMarkdown for ReferencedSymbolsResponse {
 mod tests {
     use super::*;
     use crate::api_types::{CodeContext, FileRange, Identifier, Position, Range};
-    use crate::service::types::response::{FileGroup, McpReferenceLocation};
+    use crate::service::types::response::{FileGroup, McpReferenceLocation, ReferenceType};
     use rand::Rng;
 
     fn random_line() -> u32 {
@@ -179,6 +199,7 @@ mod tests {
                 },
                 source_code: source_code.to_string(),
             }),
+            reference_type: ReferenceType::Call,
         }
     }
 
@@ -191,6 +212,7 @@ mod tests {
                 end: Position { line, character: 15 },
             },
             snippet: None,
+            reference_type: ReferenceType::Call,
         }
     }
 
@@ -219,6 +241,42 @@ mod tests {
         assert!(
             markdown.contains(&format!("({} total)", total)),
             "negative: header must contain total count"
+        );
+    }
+
+    #[test]
+    fn it_includes_reference_type_tags() {
+        let reference = McpReferenceLocation {
+            path: None,
+            position: Position { line: 10, character: 3 },
+            symbol_range: Range {
+                start: Position { line: 10, character: 3 },
+                end: Position { line: 10, character: 12 },
+            },
+            snippet: None,
+            reference_type: ReferenceType::Import,
+        };
+
+        let response = McpReferencesResponse {
+            raw_response: None,
+            selected_identifier: create_test_identifier("scoreMember"),
+            limit: 50,
+            offset: 0,
+            truncated: false,
+            total_count: 1,
+            by_file: vec![FileGroup {
+                path: "src/example.ts".to_string(),
+                count: 1,
+                refs: vec![reference],
+            }],
+            by_type: Default::default(),
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("[import]"),
+            "negative: reference type tags must be rendered"
         );
     }
 
@@ -273,7 +331,7 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("  Line {}:5:", line)),
+            markdown.contains(&format!("  [call] Line {}:5:", line)),
             "negative: must show line:column with indent"
         );
         assert!(
@@ -304,7 +362,7 @@ mod tests {
         let markdown = response.to_markdown();
 
         assert!(
-            markdown.contains(&format!("  Line {}:5", line)),
+            markdown.contains(&format!("  [call] Line {}:5", line)),
             "negative: must show line:column with indent even without snippet"
         );
     }
@@ -576,6 +634,7 @@ mod tests {
                 },
                 source_code: context_source.to_string(),
             }),
+            reference_type: ReferenceType::Call,
         };
 
         let response = McpReferencesResponse {

@@ -168,12 +168,34 @@ pub fn uri_to_relative_path_string(uri: &Url) -> String {
 
 pub fn absolute_path_to_relative_path_string(path: &PathBuf) -> String {
     let mount_dir = get_mount_dir();
-    path.strip_prefix(mount_dir)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|e| {
-            debug!("Failed to strip prefix from {:?}: {:?}", path, e);
-            path.to_string_lossy().into_owned()
-        })
+
+    if let Ok(relative) = path.strip_prefix(&mount_dir) {
+        return relative.to_string_lossy().into_owned();
+    }
+
+    if let (Ok(canonical_path), Ok(canonical_mount)) =
+        (path.canonicalize(), mount_dir.canonicalize())
+    {
+        if let Ok(relative) = canonical_path.strip_prefix(&canonical_mount) {
+            return relative.to_string_lossy().into_owned();
+        }
+    }
+
+    let path_str = path.to_string_lossy();
+    let mount_str = mount_dir.to_string_lossy();
+    if path_str.starts_with(mount_str.as_ref()) {
+        let relative = &path_str[mount_str.len()..];
+        let relative = relative.trim_start_matches('/');
+        if !relative.is_empty() {
+            return relative.to_string();
+        }
+    }
+
+    debug!(
+        "Failed to convert path to relative: path={:?}, mount_dir={:?}",
+        path, mount_dir
+    );
+    path.to_string_lossy().into_owned()
 }
 
 pub fn detect_language(file_path: &str) -> Result<SupportedLanguages, LspManagerError> {
@@ -293,6 +315,43 @@ mod tests {
 
         let result = normalize_path(".");
         assert_eq!(result.unwrap(), "");
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn test_absolute_path_to_relative_strips_mount_prefix() {
+        let temp = TempDir::new().unwrap();
+        set_thread_local_mount_dir(temp.path());
+
+        let abs_path = temp.path().join("src/main.rs");
+        let result = absolute_path_to_relative_path_string(&abs_path);
+        assert_eq!(result, "src/main.rs", "must strip mount dir prefix");
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn test_absolute_path_to_relative_handles_trailing_slash() {
+        let temp = TempDir::new().unwrap();
+        let mount_with_slash = temp.path().to_path_buf();
+        set_thread_local_mount_dir(&mount_with_slash);
+
+        let abs_path = temp.path().join("src/lib.rs");
+        let result = absolute_path_to_relative_path_string(&abs_path);
+        assert_eq!(result, "src/lib.rs", "must handle mount dir without trailing slash");
+
+        unset_thread_local_mount_dir();
+    }
+
+    #[test]
+    fn test_absolute_path_to_relative_returns_path_when_outside_workspace() {
+        let temp = TempDir::new().unwrap();
+        set_thread_local_mount_dir(temp.path());
+
+        let outside_path = PathBuf::from("/etc/passwd");
+        let result = absolute_path_to_relative_path_string(&outside_path);
+        assert_eq!(result, "/etc/passwd", "paths outside workspace must be returned as-is");
 
         unset_thread_local_mount_dir();
     }

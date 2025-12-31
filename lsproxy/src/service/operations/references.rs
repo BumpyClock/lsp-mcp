@@ -7,11 +7,14 @@ use crate::api_types::{
 };
 use crate::lsp::manager::Manager;
 use crate::utils::file_utils::uri_to_relative_path_string;
-use lsp_types::{Location, Position as LspPosition, Range as LspRange};
+use lsp_types::{GotoDefinitionResponse, Location, Position as LspPosition, Range as LspRange};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::service::types::errors::{PositionError, ServiceError};
-use crate::service::types::response::{FileGroup, McpReferenceLocation, McpReferencesResponse, TypeCounts};
+use crate::service::types::response::{
+    FileGroup, McpReferenceLocation, McpReferencesResponse, ReferenceType, TypeCounts,
+};
 use crate::service::utils::identifiers::find_identifier_at_position;
 use crate::service::utils::pagination::paginate_items;
 use crate::service::utils::signature::extract_identifier_name_from_hover;
@@ -100,7 +103,9 @@ pub(crate) async fn find_references_impl(
     let total_count = all_references.len() as u32;
 
     // Build by_type counts before pagination
-    let by_type = classify_references_by_type(manager, &all_references).await;
+    let definition_keys = fetch_definition_keys(manager, file_path, position.clone()).await;
+    let (reference_types, by_type) =
+        classify_references_by_type(manager, &all_references, &definition_keys).await;
 
     let raw_response = if include_raw_response {
         serde_json::to_value(&all_references).ok()
@@ -108,14 +113,20 @@ pub(crate) async fn find_references_impl(
         None
     };
     // Only paginate when limit is explicitly specified; otherwise return all references
-    let (references, limit_val, offset_val, truncated) = match limit {
+    let (references, limit_val, offset_val, truncated, reference_types) = match limit {
         Some(_) => {
             let (refs, pagination) = paginate_items(all_references, limit, offset);
-            (refs, pagination.limit, pagination.offset, pagination.truncated)
+            (
+                refs,
+                pagination.limit,
+                pagination.offset,
+                pagination.truncated,
+                paginate_reference_types(reference_types, pagination.offset, pagination.limit),
+            )
         }
         None => {
             // No limit specified - return all references, no truncation
-            (all_references, total_count, 0, false)
+            (all_references, total_count, 0, false, reference_types)
         }
     };
     let code_contexts = get_code_contexts(manager, &references, context_lines).await?;
@@ -125,7 +136,11 @@ pub(crate) async fn find_references_impl(
         let snippet = code_contexts
             .as_ref()
             .and_then(|contexts| contexts.get(index).cloned());
-        reference_items.push(reference_item_from_location(reference, snippet));
+        let reference_type = reference_types
+            .get(index)
+            .copied()
+            .unwrap_or(ReferenceType::Call);
+        reference_items.push(reference_item_from_location(reference, snippet, reference_type));
     }
 
     // Build by_file groups from paginated references
@@ -387,34 +402,107 @@ pub(crate) fn group_references_by_file(references: &[McpReferenceLocation]) -> V
     file_groups
 }
 
-/// Classifies references by type (import vs call).
-pub(crate) async fn classify_references_by_type(manager: &Manager, references: &[Location]) -> TypeCounts {
+/// Classifies references by type (definition, import, call).
+pub(crate) async fn classify_references_by_type(
+    manager: &Manager,
+    references: &[Location],
+    definition_keys: &HashSet<(String, u32, u32)>,
+) -> (Vec<ReferenceType>, TypeCounts) {
     let mut counts = TypeCounts::default();
+    let mut types = Vec::with_capacity(references.len());
 
     for reference in references {
-        let path = uri_to_relative_path_string(&reference.uri);
-        let line_num = reference.range.start.line;
-
-        // Try to read the line containing this reference
-        if let Ok(source) = manager.read_source_code(
-            &path,
-            Some(LspRange::new(
-                LspPosition { line: line_num, character: 0 },
-                LspPosition { line: line_num + 1, character: 0 },
-            )),
-        ).await {
-            if is_import_line(&source) {
-                counts.import += 1;
-            } else {
-                counts.call += 1;
-            }
+        let key = reference_key(reference);
+        let mut reference_type = if definition_keys.contains(&key) {
+            ReferenceType::Definition
         } else {
-            // If we can't read the line, assume it's a call
-            counts.call += 1;
+            ReferenceType::Call
+        };
+
+        if reference_type == ReferenceType::Call {
+            let path = uri_to_relative_path_string(&reference.uri);
+            let line_num = reference.range.start.line;
+            if let Ok(source) = manager.read_source_code(
+                &path,
+                Some(LspRange::new(
+                    LspPosition { line: line_num, character: 0 },
+                    LspPosition { line: line_num + 1, character: 0 },
+                )),
+            ).await {
+                if is_import_line(&source) {
+                    reference_type = ReferenceType::Import;
+                }
+            }
         }
+
+        match reference_type {
+            ReferenceType::Definition => counts.definition += 1,
+            ReferenceType::Import => counts.import += 1,
+            ReferenceType::Call => counts.call += 1,
+        }
+        types.push(reference_type);
     }
 
-    counts
+    (types, counts)
+}
+
+fn reference_key(location: &Location) -> (String, u32, u32) {
+    (
+        uri_to_relative_path_string(&location.uri),
+        location.range.start.line,
+        location.range.start.character,
+    )
+}
+
+fn definition_keys_from_response(definitions: &GotoDefinitionResponse) -> HashSet<(String, u32, u32)> {
+    let mut keys = HashSet::new();
+    match definitions {
+        GotoDefinitionResponse::Scalar(loc) => {
+            keys.insert(reference_key(loc));
+        }
+        GotoDefinitionResponse::Array(locs) => {
+            for loc in locs {
+                keys.insert(reference_key(loc));
+            }
+        }
+        GotoDefinitionResponse::Link(links) => {
+            for link in links {
+                let location = Location {
+                    uri: link.target_uri.clone(),
+                    range: link.target_selection_range,
+                };
+                keys.insert(reference_key(&location));
+            }
+        }
+    }
+    keys
+}
+
+async fn fetch_definition_keys(
+    manager: &Manager,
+    file_path: &str,
+    position: Position,
+) -> HashSet<(String, u32, u32)> {
+    let lsp_position = LspPosition {
+        line: position.line.saturating_sub(1),
+        character: position.character.saturating_sub(1),
+    };
+    match manager.find_definition(file_path, lsp_position).await {
+        Ok(definitions) => definition_keys_from_response(&definitions),
+        Err(_) => HashSet::new(),
+    }
+}
+
+fn paginate_reference_types(
+    types: Vec<ReferenceType>,
+    offset: u32,
+    limit: u32,
+) -> Vec<ReferenceType> {
+    types
+        .into_iter()
+        .skip(offset as usize)
+        .take(limit as usize)
+        .collect()
 }
 
 /// Detects if a line is an import statement.

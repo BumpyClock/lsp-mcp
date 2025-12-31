@@ -57,11 +57,19 @@ impl LspService {
     pub async fn definitions_in_file(
         &self,
         file_path: &str,
+        include_locals: bool,
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<McpSymbolsResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        definitions::definitions_in_file_impl(&self.manager, &file_path, limit, offset).await
+        definitions::definitions_in_file_impl(
+            &self.manager,
+            &file_path,
+            include_locals,
+            limit,
+            offset,
+        )
+        .await
     }
 
     /// Finds the definition of a symbol at the given position.
@@ -263,14 +271,17 @@ impl LspService {
     }
 
     /// Unified method for call hierarchy traversal in either direction.
+    ///
+    /// When `internal_only` is true (default), external dependencies are filtered out.
     pub async fn call_hierarchy(
         &self,
         file_path: &str,
         position: Position,
         direction: CallHierarchyDirection,
+        internal_only: bool,
     ) -> Result<CallHierarchyResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        call_hierarchy::call_hierarchy_impl(&self.manager, &file_path, position, direction).await
+        call_hierarchy::call_hierarchy_impl(&self.manager, &file_path, position, direction, internal_only).await
     }
 }
 
@@ -282,7 +293,10 @@ mod tests {
     use crate::service::operations::symbols::match_kind_and_score;
     use crate::service::types::errors::CallHierarchyError;
     use crate::service::types::errors::PositionError;
-    use crate::service::types::response::{CompactDefinitionResponse, McpDefinitionLocation, McpReferenceLocation, TypeCounts};
+    use crate::service::types::response::{
+        CompactDefinitionResponse, McpDefinitionLocation, McpReferenceLocation, ReferenceType,
+        TypeCounts,
+    };
     use crate::service::utils::external::{parse_pnpm_package_info, ExternalInfo, PackageInfo};
     use crate::service::utils::signature::{
         batch_hover_for_signatures, filter_sibling_exports, is_internal_builder_symbol, truncate_signature,
@@ -765,7 +779,13 @@ mod tests {
             let location = location.clone();
             let snippet = snippet.clone();
             let handle =
-                thread::spawn(move || Some(reference_item_from_location(&location, Some(snippet))));
+                thread::spawn(move || {
+                    Some(reference_item_from_location(
+                        &location,
+                        Some(snippet),
+                        ReferenceType::Call,
+                    ))
+                });
             handle.join().ok().flatten()
         });
         assert_eq!(response.path, Some(expected_path), "negative: path mismatch");
@@ -812,7 +832,9 @@ mod tests {
         let manager = Manager::new(workspace_root.to_str().unwrap()).await?;
         let service = create_service(Arc::new(manager));
 
-        let response = service.definitions_in_file("test.rs", None, None).await?;
+        let response = service
+            .definitions_in_file("test.rs", false, None, None)
+            .await?;
 
         assert_eq!(response.path, "test.rs");
         assert!(!response.mtime.is_empty());
@@ -844,7 +866,9 @@ fn internal_helper() {
         let manager = Manager::new(workspace_root.to_str().unwrap()).await?;
         let service = create_service(Arc::new(manager));
 
-        let response = service.definitions_in_file("test.rs", None, None).await?;
+        let response = service
+            .definitions_in_file("test.rs", true, None, None)
+            .await?;
 
         let pub_fn = response.symbols.iter()
             .find(|s| s.name == "example")
@@ -904,6 +928,7 @@ fn internal_helper() {
                     end: Position { line: 1, character: 9 },
                 },
                 snippet: None,
+                reference_type: ReferenceType::Call,
             },
             McpReferenceLocation {
                 path: Some("src/lib.rs".to_string()),
@@ -913,6 +938,7 @@ fn internal_helper() {
                     end: Position { line: 2, character: 14 },
                 },
                 snippet: None,
+                reference_type: ReferenceType::Call,
             },
             McpReferenceLocation {
                 path: Some("src/main.rs".to_string()),
@@ -922,6 +948,7 @@ fn internal_helper() {
                     end: Position { line: 5, character: 7 },
                 },
                 snippet: None,
+                reference_type: ReferenceType::Call,
             },
         ];
 
@@ -1005,6 +1032,7 @@ fn internal_helper() {
                                 end: Position { line: 10, character: 9 },
                             },
                             snippet: Some(snippet.clone()),
+                            reference_type: ReferenceType::Call,
                         },
                     ],
                 },
@@ -1015,6 +1043,7 @@ fn internal_helper() {
                 },
             ],
             by_type: TypeCounts {
+                definition: 0,
                 import: 3,
                 call: 12,
             },

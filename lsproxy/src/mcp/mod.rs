@@ -41,14 +41,23 @@ impl LspMcpServer {
     instructions = "All line and character positions use 1-based indexing (first line is 1, first character is 1). This matches what editors display to users."
 )]
 impl LspMcpServer {
-    #[tool(description = "Symbols defined in a file")]
+    #[tool(description = "Symbols defined in a file (top-level only by default)")]
     async fn definitions_in_file(
         &self,
         path: String,
+        include_locals: Option<bool>,
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> ToolOutput {
-        definitions::definitions_in_file(&self.service, self.output_mode, path, limit, offset).await
+        definitions::definitions_in_file(
+            &self.service,
+            self.output_mode,
+            path,
+            include_locals,
+            limit,
+            offset,
+        )
+        .await
     }
 
     #[tool(description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5).")]
@@ -139,13 +148,14 @@ impl LspMcpServer {
             .await
     }
 
-    #[tool(description = "Incoming or outgoing calls at position")]
+    #[tool(description = "Incoming or outgoing calls at position. Set externals=true to include external deps")]
     async fn call_hierarchy(
         &self,
         path: String,
         line: u32,
         character: u32,
         direction: String,
+        externals: Option<bool>,
     ) -> ToolOutput {
         call_hierarchy::call_hierarchy(
             &self.service,
@@ -154,6 +164,7 @@ impl LspMcpServer {
             line,
             character,
             direction,
+            externals,
         )
         .await
     }
