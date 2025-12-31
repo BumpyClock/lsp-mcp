@@ -2,7 +2,8 @@
   "mcpServers": {
     "lsp-mcp": {
       "type": "stdio",
-      "command": "/home/bumpyclock/Projects/lsp-mcp/lsproxy/target/release/lsp-mcp"
+      "command": "/bin/bash",
+      "args": ["-c", "RUST_LOG=debug /home/bumpyclock/Projects/lsp-mcp/lsproxy/target/release/lsp-mcp 2>lsp-mcp-debug.log"]
     }
   }
 }

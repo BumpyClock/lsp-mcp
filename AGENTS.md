@@ -10,3 +10,5 @@ add debug logging to the LSP-MCP code and user can run the mcp server with "RUST
 As you use the lsp-mcp to navigate the codebase to make coding decisions evaluate where the information provided by mcp were not enough and you had to read the file anyways and surface up these shortcomings and insights to the user.
 Answer the question if the tool calls and the information provided by the tools helped you navigate the codebase faster and gather required information quicker. 
 - if you use a tool on a file and then immediately read that file. Explain why you did that
+
+the debug logs for this session will be in `lsp-mcp-debug.log` so watch that file for live logs

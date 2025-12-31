@@ -38,7 +38,7 @@ pub async fn call_hierarchy(
 }
 
 fn resolve_internal_only(externals: Option<bool>) -> bool {
-    !externals.unwrap_or(true)
+    !externals.unwrap_or(false)
 }
 
 pub async fn go_to_implementation(
@@ -66,8 +66,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_internal_only_defaults_to_false() {
-        assert!(!resolve_internal_only(None), "default must include externals");
+    fn resolve_internal_only_defaults_to_true() {
+        assert!(resolve_internal_only(None), "default must exclude externals");
     }
 
     #[test]

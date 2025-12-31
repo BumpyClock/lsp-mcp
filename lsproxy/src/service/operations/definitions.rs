@@ -16,7 +16,7 @@ use crate::service::types::errors::{PositionError, ServiceError};
 use crate::service::types::response::{McpDefinitionResponse, McpSymbolsResponse};
 use crate::service::utils::identifiers::find_identifier_at_position;
 use crate::service::utils::pagination::paginate_items;
-use crate::service::utils::signature::{enrich_symbol, extract_identifier_name_from_hover};
+use crate::service::utils::signature::{enrich_symbol, extract_identifier_name_from_hover, truncate_signature};
 use crate::service::utils::transformations::{
     definition_item_from_location, definition_locations, definition_locations_lsp,
 };
@@ -49,7 +49,7 @@ fn is_overload_scan_skip_line(line: &str) -> bool {
 fn normalize_symbol_detail(detail: &Option<String>) -> Option<String> {
     detail
         .as_ref()
-        .and_then(|value| if value.trim().is_empty() { None } else { Some(value.clone()) })
+        .and_then(|value| if value.trim().is_empty() { None } else { Some(truncate_signature(value, None)) })
 }
 
 /// Reads a single source line from a file.
@@ -1018,6 +1018,43 @@ mod tests {
         assert!(
             symbol.signature.is_none(),
             "empty detail must not become a signature"
+        );
+    }
+
+    #[test]
+    fn convert_document_symbol_truncates_giant_detail() {
+        let giant_type = format!("{{ {} }}", "field: string; ".repeat(50));
+        let doc_symbol = DocumentSymbol {
+            name: "hugeConfig".to_string(),
+            detail: Some(giant_type.clone()),
+            kind: SymbolKind::CONSTANT,
+            tags: None,
+            deprecated: None,
+            range: LspRange {
+                start: LspPosition { line: 7, character: 0 },
+                end: LspPosition { line: 9, character: 0 },
+            },
+            selection_range: LspRange {
+                start: LspPosition { line: 7, character: 6 },
+                end: LspPosition { line: 7, character: 16 },
+            },
+            children: None,
+        };
+
+        let symbol = convert_document_symbol(&doc_symbol, "src/config.ts", false);
+
+        assert!(
+            symbol.signature.is_some(),
+            "negative: giant detail must produce a signature"
+        );
+        let sig = symbol.signature.unwrap();
+        assert!(
+            sig.len() <= 103,
+            "negative: giant detail must be truncated to max length"
+        );
+        assert!(
+            sig.ends_with("..."),
+            "negative: truncated signature must end with ellipsis"
         );
     }
 

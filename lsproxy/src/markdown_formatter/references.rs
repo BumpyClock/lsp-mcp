@@ -590,6 +590,103 @@ mod tests {
     }
 
     #[test]
+    fn it_groups_references_by_type_within_file() {
+        let file_path = "src/services/auth.ts";
+
+        let def_ref = McpReferenceLocation {
+            path: None,
+            position: Position { line: 5, character: 10 },
+            symbol_range: Range {
+                start: Position { line: 5, character: 10 },
+                end: Position { line: 5, character: 20 },
+            },
+            snippet: Some(CodeContext {
+                range: FileRange {
+                    path: file_path.to_string(),
+                    range: Range {
+                        start: Position { line: 5, character: 0 },
+                        end: Position { line: 5, character: 50 },
+                    },
+                },
+                source_code: "export const authenticate = () => {}".to_string(),
+            }),
+            reference_type: ReferenceType::Definition,
+        };
+
+        let import_ref = McpReferenceLocation {
+            path: None,
+            position: Position { line: 10, character: 3 },
+            symbol_range: Range {
+                start: Position { line: 10, character: 3 },
+                end: Position { line: 10, character: 13 },
+            },
+            snippet: Some(CodeContext {
+                range: FileRange {
+                    path: file_path.to_string(),
+                    range: Range {
+                        start: Position { line: 10, character: 0 },
+                        end: Position { line: 10, character: 50 },
+                    },
+                },
+                source_code: "import { authenticate } from './auth'".to_string(),
+            }),
+            reference_type: ReferenceType::Import,
+        };
+
+        let call_ref = McpReferenceLocation {
+            path: None,
+            position: Position { line: 25, character: 7 },
+            symbol_range: Range {
+                start: Position { line: 25, character: 7 },
+                end: Position { line: 25, character: 17 },
+            },
+            snippet: Some(CodeContext {
+                range: FileRange {
+                    path: file_path.to_string(),
+                    range: Range {
+                        start: Position { line: 25, character: 0 },
+                        end: Position { line: 25, character: 50 },
+                    },
+                },
+                source_code: "const user = authenticate(credentials)".to_string(),
+            }),
+            reference_type: ReferenceType::Call,
+        };
+
+        let response = McpReferencesResponse {
+            raw_response: None,
+            selected_identifier: create_test_identifier("authenticate"),
+            limit: 50,
+            offset: 0,
+            truncated: false,
+            total_count: 3,
+            by_file: vec![FileGroup {
+                path: file_path.to_string(),
+                count: 3,
+                refs: vec![call_ref, def_ref, import_ref],
+            }],
+            by_type: Default::default(),
+        };
+
+        let markdown = response.to_markdown();
+
+        let def_pos = markdown.find("[def]").expect("negative: must include [def] tag");
+        let import_pos = markdown.find("[import]").expect("negative: must include [import] tag");
+        let call_pos = markdown.find("[call]").expect("negative: must include [call] tag");
+
+        assert!(
+            def_pos < import_pos,
+            "negative: definitions must appear before imports but def at {} and import at {}",
+            def_pos, import_pos
+        );
+        assert!(
+            import_pos < call_pos,
+            "negative: imports must appear before calls but import at {} and call at {}",
+            import_pos, call_pos
+        );
+    }
+
+    #[test]
     fn it_displays_correct_line_from_context_window() {
         // Bug scenario: reference is at line 27, but context starts at line 25 (context_lines=2)
         // The formatter should display line 27's content, not line 25's

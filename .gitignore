@@ -48,3 +48,4 @@ node_modules
 #coding againts
 .claude/
 .ai_agents/
+lsp-mcp-debug.log
