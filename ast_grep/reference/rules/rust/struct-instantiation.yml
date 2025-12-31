@@ -1,0 +1,20 @@
+# ABOUTME: Rust reference rule for struct literal instantiation.
+# ABOUTME: Matches type identifiers used in struct expressions.
+id: struct-instantiation
+language: rust
+rule:
+  any:
+    - kind: type_identifier
+      pattern: $NAME
+      inside:
+        kind: struct_expression
+      not:
+        inside:
+          kind: scoped_type_identifier
+    - kind: type_identifier
+      pattern: $NAME
+      inside:
+        kind: scoped_type_identifier
+        field: name
+        inside:
+          kind: struct_expression

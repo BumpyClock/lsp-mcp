@@ -1,0 +1,57 @@
+# ABOUTME: Rust reference rule for full-scan identifier matching.
+# ABOUTME: Excludes identifiers that declare new symbols.
+id: all-references
+language: rust
+rule:
+  any:
+    - kind: identifier
+    - kind: field_identifier
+    - kind: type_identifier
+    - kind: self
+    - kind: super
+  pattern: $NAME
+  not:
+    any:
+      - inside:
+          kind: function_item
+          field: name
+      - inside:
+          kind: struct_item
+          field: name
+      - inside:
+          kind: enum_item
+          field: name
+      - inside:
+          kind: trait_item
+          field: name
+      - inside:
+          kind: type_item
+          field: name
+      - inside:
+          kind: mod_item
+          field: name
+      - inside:
+          kind: const_item
+          field: name
+      - inside:
+          kind: static_item
+          field: name
+      - inside:
+          kind: field_declaration
+          field: name
+      - inside:
+          kind: enum_variant
+          field: name
+      - inside:
+          kind: let_declaration
+          field: pattern
+      - inside:
+          kind: for_expression
+          field: pattern
+      - inside:
+          kind: parameter
+          field: pattern
+      - inside:
+          kind: closure_parameters
+      - inside:
+          kind: use_declaration
