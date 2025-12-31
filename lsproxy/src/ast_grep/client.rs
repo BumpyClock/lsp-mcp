@@ -1,5 +1,12 @@
+// ABOUTME: Client for interacting with ast-grep CLI tool to extract symbols and references
+// ABOUTME: Includes mtime-based caching to avoid redundant subprocess calls
+
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
+use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::process::Command;
+use tokio::sync::RwLock;
 
 const SYMBOL_CONFIG_PATH: &str = "/usr/src/ast_grep/symbol/config.yml";
 const IDENTIFIER_CONFIG_PATH: &str = "/usr/src/ast_grep/identifier/config.yml";
@@ -7,9 +14,27 @@ const REFERENCE_CONFIG_PATH: &str = "/usr/src/ast_grep/reference/config.yml";
 
 use super::types::{AstGrepMatch, AstGrepRange};
 
-pub struct AstGrepClient;
+#[derive(Clone)]
+struct CacheEntry {
+    mtime: SystemTime,
+    symbols: Vec<AstGrepMatch>,
+}
+
+/// Client for ast-grep CLI tool with mtime-based caching
+///
+/// Caches scan results keyed by (config_path, file_path) and invalidates
+/// when file modification time changes.
+pub struct AstGrepClient {
+    cache: Arc<RwLock<HashMap<(String, String), CacheEntry>>>,
+}
 
 impl AstGrepClient {
+    pub fn new() -> Self {
+        Self {
+            cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
     pub async fn get_symbol_match_from_position(
         &self,
         file_name: &str,
@@ -88,6 +113,22 @@ impl AstGrepClient {
         config_path: &str,
         file_name: &str,
     ) -> Result<Vec<AstGrepMatch>, Box<dyn std::error::Error>> {
+        let mtime = tokio::fs::metadata(file_name)
+            .await
+            .and_then(|m| m.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+
+        let key = (config_path.to_string(), file_name.to_string());
+
+        {
+            let cache = self.cache.read().await;
+            if let Some(entry) = cache.get(&key) {
+                if entry.mtime == mtime {
+                    return Ok(entry.symbols.clone());
+                }
+            }
+        }
+
         let command_result = Command::new("ast-grep")
             .arg("scan")
             .arg("--config")
@@ -106,9 +147,34 @@ impl AstGrepClient {
 
         let mut symbols: Vec<AstGrepMatch> =
             serde_json::from_str(&output).map_err(|e| format!("Failed to parse JSON: {}", e))?;
-        symbols = symbols.into_iter().collect();
         symbols.sort_by_key(|s| s.get_identifier_range().start.line);
+
+        {
+            let mut cache = self.cache.write().await;
+            cache.insert(
+                key,
+                CacheEntry {
+                    mtime,
+                    symbols: symbols.clone(),
+                },
+            );
+        }
+
         Ok(symbols)
+    }
+
+    /// Removes cache entries for a specific file (call when file changes)
+    #[allow(dead_code)]
+    pub async fn invalidate_file(&self, file_name: &str) {
+        let mut cache = self.cache.write().await;
+        cache.retain(|(_, f), _| f != file_name);
+    }
+
+    /// Clears entire cache
+    #[allow(dead_code)]
+    pub async fn clear_cache(&self) {
+        let mut cache = self.cache.write().await;
+        cache.clear();
     }
 }
 
@@ -295,7 +361,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_references() -> Result<(), Box<dyn std::error::Error>> {
-        let client = AstGrepClient {};
+        let client = AstGrepClient::new();
 
         let path = "/mnt/lsproxy_root/sample_project/python/graph.py";
         let position = lsp_types::Position {
@@ -379,7 +445,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_contained_references() -> Result<(), Box<dyn std::error::Error>> {
-        let client = AstGrepClient {};
+        let client = AstGrepClient::new();
 
         let path = "/mnt/lsproxy_root/sample_project/python/main.py";
         let position = lsp_types::Position {

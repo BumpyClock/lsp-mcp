@@ -59,7 +59,7 @@ impl Manager {
             .watch(Path::new(root_path), RecursiveMode::Recursive)
             .expect("Failed to watch path");
 
-        let ast_grep = AstGrepClient {};
+        let ast_grep = AstGrepClient::new();
         Ok(Self {
             lsp_clients: Arc::new(RwLock::new(HashMap::new())),
             pending_clients: Arc::new(Mutex::new(HashSet::new())),

@@ -98,7 +98,7 @@ impl JdtlsClient {
         let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
         let workspace_dir = Path::new("/usr/src/app/jdtls_workspace");
         tokio::fs::create_dir_all(&workspace_dir).await?;
-        tokio::fs::set_permissions(&workspace_dir, PermissionsExt::from_mode(0o777)).await?;
+        tokio::fs::set_permissions(&workspace_dir, PermissionsExt::from_mode(0o700)).await?;
 
         // Find the launcher jar dynamically
         let launcher_pattern = "/opt/jdtls/plugins/org.eclipse.equinox.launcher_*.jar";

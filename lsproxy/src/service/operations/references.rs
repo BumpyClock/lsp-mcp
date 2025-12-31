@@ -189,6 +189,7 @@ pub(crate) async fn find_referenced_symbols_impl(
         .collect();
 
     let files = manager.list_files().await?;
+    let files_set: HashSet<String> = files.into_iter().collect();
 
     let mut workspace_symbols = Vec::new();
     let mut external_symbols = Vec::new();
@@ -203,10 +204,10 @@ pub(crate) async fn find_referenced_symbols_impl(
             }
         } else {
             let has_internal_definition =
-                definitions.iter().any(|def| files.contains(&def.path));
+                definitions.iter().any(|def| files_set.contains(&def.path));
             if has_internal_definition {
                 let mut symbols_with_definitions = Vec::new();
-                for def in definitions.iter().filter(|def| files.contains(&def.path)) {
+                for def in definitions.iter().filter(|def| files_set.contains(&def.path)) {
                     if let Ok(symbol) = manager
                         .get_symbol_from_position(
                             &def.path,
@@ -313,11 +314,12 @@ pub(crate) async fn find_and_filter_references(
         .await?;
 
     let files = manager.list_files().await?;
+    let files_set: HashSet<String> = files.into_iter().collect();
     let mut filtered_refs: Vec<_> = references
         .into_iter()
         .filter(|reference| {
             let path = uri_to_relative_path_string(&reference.uri);
-            files.contains(&path)
+            files_set.contains(&path)
         })
         .collect();
 

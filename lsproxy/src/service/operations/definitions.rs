@@ -9,7 +9,7 @@ use crate::lsp::manager::Manager;
 use crate::utils::external_file::{is_external_path, read_file_range};
 use crate::utils::file_utils::uri_to_relative_path_string;
 use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Location, Position as LspPosition, Range as LspRange, SymbolKind};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::service::types::errors::{PositionError, ServiceError};
@@ -807,95 +807,121 @@ pub(crate) async fn fetch_definition_source_code(
 ) -> Result<Vec<CodeContext>, ServiceError> {
     let mut code_contexts = Vec::new();
 
+    // Separate external paths (handle immediately) from workspace paths (batch by file)
+    let mut external_definitions: Vec<&Location> = Vec::new();
+    let mut workspace_by_file: HashMap<String, Vec<&Location>> = HashMap::new();
+
     for definition in definitions.iter() {
         let relative_path = uri_to_relative_path_string(&definition.uri);
-
         if is_external_path(&relative_path) {
-            let start_line = definition.range.start.line.saturating_sub(3);
-            let end_line = definition.range.end.line.saturating_add(10);
-
-            match read_file_range(&relative_path, start_line, end_line).await {
-                Ok(source_code) => {
-                    code_contexts.push(CodeContext {
-                        range: FileRange {
-                            path: relative_path,
-                            range: Range {
-                                start: Position {
-                                    line: start_line + 1,
-                                    character: 1,
-                                },
-                                end: Position {
-                                    line: end_line + 1,
-                                    character: 1,
-                                },
-                            },
-                        },
-                        source_code: truncate_source_code(&source_code, MAX_SOURCE_CODE_LINES),
-                    });
-                }
-                Err(e) => {
-                    warn!("Failed to read external file {}: {}", relative_path, e);
-                }
-            }
-            continue;
+            external_definitions.push(definition);
+        } else {
+            workspace_by_file
+                .entry(relative_path)
+                .or_default()
+                .push(definition);
         }
+    }
 
-        let file_symbols = manager.definitions_in_file_ast_grep(&relative_path).await?;
-        let symbol = file_symbols.iter().find(|s| {
-            s.get_identifier_range().start.line == definition.range.start.line
-                && s.get_identifier_range().start.column == definition.range.start.character
-        });
+    // Process external definitions (no ast-grep, just read file ranges)
+    for definition in external_definitions {
+        let relative_path = uri_to_relative_path_string(&definition.uri);
+        let start_line = definition.range.start.line.saturating_sub(3);
+        let end_line = definition.range.end.line.saturating_add(10);
 
-        let source_code_context = match symbol {
-            Some(ast_grep_match) => CodeContext {
-                range: FileRange {
-                    path: relative_path,
-                    range: Range {
-                        start: Position {
-                            line: ast_grep_match.get_context_range().start.line + 1,
-                            character: ast_grep_match.get_context_range().start.column + 1,
-                        },
-                        end: Position {
-                            line: ast_grep_match.get_context_range().end.line + 1,
-                            character: ast_grep_match.get_context_range().end.column + 1,
-                        },
-                    },
-                },
-                source_code: truncate_source_code(&ast_grep_match.get_source_code(), MAX_SOURCE_CODE_LINES),
-            },
-            None => {
-                let range = LspRange {
-                    start: LspPosition {
-                        line: definition.range.start.line.saturating_sub(3),
-                        character: 0,
-                    },
-                    end: LspPosition {
-                        line: definition.range.end.line + 3,
-                        character: 0,
-                    },
-                };
-                let source_code = manager.read_source_code(&relative_path, Some(range)).await?;
-                CodeContext {
+        match read_file_range(&relative_path, start_line, end_line).await {
+            Ok(source_code) => {
+                code_contexts.push(CodeContext {
                     range: FileRange {
                         path: relative_path,
                         range: Range {
                             start: Position {
-                                line: definition.range.start.line.saturating_sub(3) + 1,
+                                line: start_line + 1,
                                 character: 1,
                             },
                             end: Position {
-                                line: definition.range.end.line + 3 + 1,
+                                line: end_line + 1,
                                 character: 1,
                             },
                         },
                     },
                     source_code: truncate_source_code(&source_code, MAX_SOURCE_CODE_LINES),
-                }
+                });
             }
-        };
-
-        code_contexts.push(source_code_context);
+            Err(e) => {
+                warn!("Failed to read external file {}: {}", relative_path, e);
+            }
+        }
     }
+
+    // Process workspace definitions batched by file (one ast-grep call per unique file)
+    for (relative_path, file_definitions) in workspace_by_file {
+        // Call ast-grep once for this file
+        let file_symbols = manager.definitions_in_file_ast_grep(&relative_path).await?;
+
+        for definition in file_definitions {
+            let symbol = file_symbols.iter().find(|s| {
+                s.get_identifier_range().start.line == definition.range.start.line
+                    && s.get_identifier_range().start.column == definition.range.start.character
+            });
+
+            let source_code_context = match symbol {
+                Some(ast_grep_match) => CodeContext {
+                    range: FileRange {
+                        path: relative_path.clone(),
+                        range: Range {
+                            start: Position {
+                                line: ast_grep_match.get_context_range().start.line + 1,
+                                character: ast_grep_match.get_context_range().start.column + 1,
+                            },
+                            end: Position {
+                                line: ast_grep_match.get_context_range().end.line + 1,
+                                character: ast_grep_match.get_context_range().end.column + 1,
+                            },
+                        },
+                    },
+                    source_code: truncate_source_code(
+                        &ast_grep_match.get_source_code(),
+                        MAX_SOURCE_CODE_LINES,
+                    ),
+                },
+                None => {
+                    let range = LspRange {
+                        start: LspPosition {
+                            line: definition.range.start.line.saturating_sub(3),
+                            character: 0,
+                        },
+                        end: LspPosition {
+                            line: definition.range.end.line + 3,
+                            character: 0,
+                        },
+                    };
+                    let source_code = manager
+                        .read_source_code(&relative_path, Some(range))
+                        .await?;
+                    CodeContext {
+                        range: FileRange {
+                            path: relative_path.clone(),
+                            range: Range {
+                                start: Position {
+                                    line: definition.range.start.line.saturating_sub(3) + 1,
+                                    character: 1,
+                                },
+                                end: Position {
+                                    line: definition.range.end.line + 3 + 1,
+                                    character: 1,
+                                },
+                            },
+                        },
+                        source_code: truncate_source_code(&source_code, MAX_SOURCE_CODE_LINES),
+                    }
+                }
+            };
+
+            code_contexts.push(source_code_context);
+        }
+    }
+
     Ok(code_contexts)
 }
 

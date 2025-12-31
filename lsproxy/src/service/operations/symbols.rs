@@ -9,6 +9,7 @@ use crate::lsp::manager::Manager;
 use crate::utils::file_utils::{absolute_path_to_relative_path_string, uri_to_relative_path_string};
 use log::debug;
 use lsp_types::{Position as LspPosition, Range as LspRange};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::service::types::errors::{PositionError, ServiceError};
@@ -90,16 +91,18 @@ pub(crate) async fn workspace_symbol_impl(
     );
 
     let workspace_files = manager.list_files().await?;
+    let workspace_len = workspace_files.len();
+    let workspace_set: HashSet<String> = workspace_files.into_iter().collect();
     debug!(
         "workspace_symbol_impl: workspace has {} files",
-        workspace_files.len()
+        workspace_len
     );
 
     let mut filtered_symbols = Vec::new();
     let mut filtered_count = 0;
     for sym in symbols {
         let path = uri_to_relative_path_string(&sym.location.uri);
-        if !workspace_files.is_empty() && !workspace_files.contains(&path) {
+        if !workspace_set.is_empty() && !workspace_set.contains(&path) {
             if filtered_count < 5 {
                 debug!(
                     "workspace_symbol_impl: filtered out '{}' at path '{}' (not in workspace files)",
@@ -128,7 +131,8 @@ pub(crate) async fn workspace_symbol_impl(
 
     if filtered_symbols.is_empty() {
         debug!("workspace_symbol_impl: falling back to ast-grep symbol scan");
-        filtered_symbols = workspace_symbol_fallback(manager, &workspace_files, query, exact).await;
+        let workspace_files_vec: Vec<String> = workspace_set.into_iter().collect();
+        filtered_symbols = workspace_symbol_fallback(manager, &workspace_files_vec, query, exact).await;
         debug!(
             "workspace_symbol_impl: fallback returned {} symbols",
             filtered_symbols.len()
