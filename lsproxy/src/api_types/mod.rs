@@ -24,8 +24,8 @@ pub use mount_dir::{
 pub use positions::{FilePosition, FileRange, Position, Range};
 pub use responses::{
     DefinitionLocation, DefinitionResponse, HoverBatchItem, HoverContents, HoverRequest,
-    HoverResponse, ImplementationResponse, ReferencedSymbolsResponse, ReferencesResponse,
-    WorkspaceSymbolInfo, WorkspaceSymbolResponse,
+    HoverResponse, ImplementationResponse, NearbySymbol, ReferencedSymbolsResponse,
+    ReferencesResponse, WorkspaceSymbolInfo, WorkspaceSymbolResponse,
 };
 pub use symbols::{
     CodeContext, Identifier, IdentifierResponse, ReferenceWithSymbolDefinitions, RelatedSymbols,

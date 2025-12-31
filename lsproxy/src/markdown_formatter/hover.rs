@@ -47,6 +47,16 @@ impl ToMarkdown for HoverResponse {
         let content = self.extract_content();
         if content.is_empty() {
             output.push_str("No hover information available");
+            // Show nearby symbols when hover content is empty
+            if !self.nearby_symbols.is_empty() {
+                output.push_str("\n\nNearby symbols:");
+                for sym in &self.nearby_symbols {
+                    output.push_str(&format!(
+                        "\n  {} ({}) - line {}",
+                        sym.name, sym.kind, sym.line
+                    ));
+                }
+            }
         } else {
             output.push_str(&content);
         }
@@ -104,6 +114,7 @@ mod tests {
             definitions: Vec::new(),
             active_signature: None,
             active_parameter: None,
+            nearby_symbols: Vec::new(),
         }
     }
 
@@ -115,6 +126,7 @@ mod tests {
             definitions: Vec::new(),
             active_signature: None,
             active_parameter: None,
+            nearby_symbols: Vec::new(),
         }
     }
 
@@ -135,6 +147,7 @@ mod tests {
             }],
             active_signature: None,
             active_parameter: None,
+            nearby_symbols: Vec::new(),
         }
     }
 
@@ -147,6 +160,7 @@ mod tests {
             definitions: Vec::new(),
             active_signature: None,
             active_parameter: None,
+            nearby_symbols: Vec::new(),
         };
 
         let markdown = response.to_markdown();
@@ -270,6 +284,7 @@ mod tests {
             ],
             active_signature: None,
             active_parameter: None,
+            nearby_symbols: Vec::new(),
         };
 
         let markdown = response.to_markdown();
@@ -326,6 +341,7 @@ mod tests {
             definitions: Vec::new(),
             active_signature: None,
             active_parameter: None,
+            nearby_symbols: Vec::new(),
         };
 
         let markdown = response.to_markdown();
@@ -403,6 +419,7 @@ mod tests {
                 definitions: Vec::new(),
                 active_signature: None,
                 active_parameter: None,
+                nearby_symbols: Vec::new(),
             })
         }
 
@@ -546,6 +563,7 @@ mod tests {
                 definitions: Vec::new(),
                 active_signature: Some("fn \u{4E2D}\u{6587}(arg1: i32, arg2: String)".to_string()),
                 active_parameter: None,
+                nearby_symbols: Vec::new(),
             };
 
             let markdown = response.to_markdown();
@@ -569,6 +587,7 @@ mod tests {
                 definitions: Vec::new(),
                 active_signature: Some("fn test(\ttab: i32)".to_string()),
                 active_parameter: None,
+                nearby_symbols: Vec::new(),
             };
 
             let markdown = response.to_markdown();
@@ -588,6 +607,7 @@ mod tests {
                 definitions: Vec::new(),
                 active_signature: Some("fn example(a: i32, b: String)".to_string()),
                 active_parameter: Some(1),
+                nearby_symbols: Vec::new(),
             };
 
             let markdown = response.to_markdown();
@@ -607,6 +627,7 @@ mod tests {
                 definitions: Vec::new(),
                 active_signature: Some("fn example()".to_string()),
                 active_parameter: None,
+                nearby_symbols: Vec::new(),
             };
 
             let markdown = response.to_markdown();
@@ -626,6 +647,7 @@ mod tests {
                 definitions: Vec::new(),
                 active_signature: Some("fn sig()".to_string()),
                 active_parameter: None,
+                nearby_symbols: Vec::new(),
             };
 
             let markdown = response.to_markdown();
@@ -645,6 +667,7 @@ mod tests {
                 definitions: Vec::new(),
                 active_signature: None,
                 active_parameter: None,
+                nearby_symbols: Vec::new(),
             };
 
             let markdown = response.to_markdown();

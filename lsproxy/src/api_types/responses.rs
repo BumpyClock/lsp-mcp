@@ -112,6 +112,17 @@ pub struct DefinitionLocation {
     pub external: Option<bool>,
 }
 
+/// A nearby symbol shown when hover returns no content
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NearbySymbol {
+    /// The name of the symbol
+    pub name: String,
+    /// The kind of symbol (function, struct, etc.)
+    pub kind: String,
+    /// Line number (1-indexed)
+    pub line: u32,
+}
+
 /// Response to a hover request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HoverResponse {
@@ -133,6 +144,9 @@ pub struct HoverResponse {
     /// Active parameter index within the active signature
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_parameter: Option<u32>,
+    /// Nearby symbols when hover returns empty (helps identify what's around the cursor)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub nearby_symbols: Vec<NearbySymbol>,
 }
 
 /// The contents of a hover response
@@ -223,6 +237,7 @@ mod tests {
             }],
             active_signature: None,
             active_parameter: None,
+            nearby_symbols: Vec::new(),
         };
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
@@ -242,6 +257,7 @@ mod tests {
             definitions: Vec::new(),
             active_signature: None,
             active_parameter: None,
+            nearby_symbols: Vec::new(),
         };
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
@@ -258,6 +274,7 @@ mod tests {
             definitions: Vec::new(),
             active_signature: Some("fn \u{4E2D}\u{6587}(arg1: i32, arg2: String)".to_string()),
             active_parameter: Some(1),
+            nearby_symbols: Vec::new(),
         };
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
@@ -282,6 +299,7 @@ mod tests {
             definitions: Vec::new(),
             active_signature: None,
             active_parameter: None,
+            nearby_symbols: Vec::new(),
         };
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
