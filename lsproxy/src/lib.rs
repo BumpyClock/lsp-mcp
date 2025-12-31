@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub mod api_types;
 pub mod config;
 pub mod lsp;
+pub mod logging;
 pub mod markdown_formatter;
 pub mod mcp;
 pub mod mcp_response;

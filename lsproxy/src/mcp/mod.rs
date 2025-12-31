@@ -14,23 +14,51 @@ mod symbols;
 pub use filter::FilteredToolHandler;
 pub use server::run_server;
 
-use crate::config::{LspMcpConfig, OutputMode};
+use crate::config::{DebugConfig, LspMcpConfig, OutputMode};
 use crate::lsp::manager::Manager;
 use crate::service::{create_service, LspService};
+use crate::session::{new_request_id, request_id_header};
 use mcpkit::prelude::*;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use uuid::Uuid;
 
 /// LSP MCP Server that exposes code navigation tools for a workspace.
 pub struct LspMcpServer {
     service: LspService,
     output_mode: OutputMode,
+    debug_enabled: bool,
+    debug_config: Option<DebugConfig>,
+    workspace_root: PathBuf,
 }
 
 impl LspMcpServer {
-    pub fn new(manager: Arc<Manager>, config: &LspMcpConfig) -> Self {
+    pub fn new(manager: Arc<Manager>, config: &LspMcpConfig, workspace_root: &Path) -> Self {
         LspMcpServer {
             service: create_service(manager),
             output_mode: config.output_mode(),
+            debug_enabled: config.debug_config().is_some(),
+            debug_config: config.debug.clone(),
+            workspace_root: workspace_root.to_path_buf(),
+        }
+    }
+
+    /// Wrap tool output with request ID header when debug is enabled.
+    fn wrap_output(&self, request_id: Uuid, output: ToolOutput) -> ToolOutput {
+        if !self.debug_enabled {
+            return output;
+        }
+
+        match output {
+            ToolOutput::Success(mut result) => {
+                for content in &mut result.content {
+                    if let mcpkit::types::Content::Text(text) = content {
+                        text.text = format!("{}{}", request_id_header(request_id), text.text);
+                    }
+                }
+                ToolOutput::Success(result)
+            }
+            other => other,
         }
     }
 }
@@ -50,7 +78,15 @@ impl LspMcpServer {
         offset: Option<u32>,
         context_lines: Option<u32>,
     ) -> ToolOutput {
-        definitions::definitions_in_file(
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "documentSymbol",
+            path = %path,
+            "Processing tool request"
+        );
+
+        let output = definitions::definitions_in_file(
             &self.service,
             self.output_mode,
             path,
@@ -59,7 +95,15 @@ impl LspMcpServer {
             offset,
             context_lines,
         )
-        .await
+        .await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 
     #[tool(name = "goToDefinition", description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5).")]
@@ -71,7 +115,17 @@ impl LspMcpServer {
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> ToolOutput {
-        definitions::find_definition(
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "goToDefinition",
+            path = %path,
+            line = line,
+            character = character,
+            "Processing tool request"
+        );
+
+        let output = definitions::find_definition(
             &self.service,
             self.output_mode,
             path,
@@ -80,7 +134,15 @@ impl LspMcpServer {
             limit,
             offset,
         )
-        .await
+        .await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 
     #[tool(name = "findReferences", description = "References to symbol at position")]
@@ -93,7 +155,17 @@ impl LspMcpServer {
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> ToolOutput {
-        references::find_references(
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "findReferences",
+            path = %path,
+            line = line,
+            character = character,
+            "Processing tool request"
+        );
+
+        let output = references::find_references(
             &self.service,
             self.output_mode,
             path,
@@ -103,7 +175,15 @@ impl LspMcpServer {
             limit,
             offset,
         )
-        .await
+        .await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 
     #[tool(name = "hover", description = "Hover info at position. Use include_definition to also get definition location. Use 'requests' for batch mode with array of {path, line, character}")]
@@ -115,7 +195,14 @@ impl LspMcpServer {
         include_definition: Option<bool>,
         requests: Option<String>,
     ) -> ToolOutput {
-        hover::hover(
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "hover",
+            "Processing tool request"
+        );
+
+        let output = hover::hover(
             &self.service,
             self.output_mode,
             path,
@@ -124,7 +211,15 @@ impl LspMcpServer {
             include_definition,
             requests,
         )
-        .await
+        .await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 
     #[tool(name = "workspaceSymbol", description = "Search symbols by name")]
@@ -136,7 +231,15 @@ impl LspMcpServer {
         offset: Option<u32>,
         context_lines: Option<u32>,
     ) -> ToolOutput {
-        symbols::workspace_symbol(
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "workspaceSymbol",
+            query = %query,
+            "Processing tool request"
+        );
+
+        let output = symbols::workspace_symbol(
             &self.service,
             self.output_mode,
             query,
@@ -145,7 +248,15 @@ impl LspMcpServer {
             offset,
             context_lines,
         )
-        .await
+        .await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 
     #[tool(name = "goToImplementation", description = "Implementations of interface/trait")]
@@ -155,8 +266,26 @@ impl LspMcpServer {
         line: u32,
         character: u32,
     ) -> ToolOutput {
-        call_hierarchy::go_to_implementation(&self.service, self.output_mode, path, line, character)
-            .await
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "goToImplementation",
+            path = %path,
+            line = line,
+            character = character,
+            "Processing tool request"
+        );
+
+        let output = call_hierarchy::go_to_implementation(&self.service, self.output_mode, path, line, character)
+            .await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 
     #[tool(name = "callHierarchy", description = "Incoming or outgoing calls at position. External deps included by default. Set externals=false to exclude.")]
@@ -169,7 +298,18 @@ impl LspMcpServer {
         externals: Option<bool>,
         context_lines: Option<u32>,
     ) -> ToolOutput {
-        call_hierarchy::call_hierarchy(
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "callHierarchy",
+            path = %path,
+            line = line,
+            character = character,
+            direction = %direction,
+            "Processing tool request"
+        );
+
+        let output = call_hierarchy::call_hierarchy(
             &self.service,
             self.output_mode,
             path,
@@ -179,7 +319,15 @@ impl LspMcpServer {
             externals,
             context_lines,
         )
-        .await
+        .await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 
     #[tool(name = "findReferencedSymbols", description = "Symbols referenced by definition. External deps included by default. Set externals=false to exclude.")]
@@ -254,12 +402,48 @@ impl LspMcpServer {
 
     #[tool(name = "health", description = "Service status")]
     async fn health(&self) -> ToolOutput {
-        diagnostics::health(&self.service, self.output_mode).await
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "health",
+            "Processing tool request"
+        );
+
+        let output = diagnostics::health(
+            &self.service,
+            self.output_mode,
+            self.debug_config.as_ref(),
+            &self.workspace_root,
+        )
+        .await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 
     #[tool(name = "getDiagnostics", description = "Diagnostics for file or workspace")]
     async fn get_diagnostics(&self, file_path: Option<String>) -> ToolOutput {
-        diagnostics::get_diagnostics(&self.service, self.output_mode, file_path).await
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "getDiagnostics",
+            "Processing tool request"
+        );
+
+        let output = diagnostics::get_diagnostics(&self.service, self.output_mode, file_path).await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 }
 
@@ -289,7 +473,7 @@ mod tests {
             output: Some(OutputConfig { mode: output_mode }),
             ..Default::default()
         };
-        let server = LspMcpServer::new(Arc::new(manager), &config);
+        let server = LspMcpServer::new(Arc::new(manager), &config, workspace_root);
         (server, temp_dir)
     }
 
@@ -435,5 +619,34 @@ mod tests {
         assert!(is_error_output(&output));
         let error_message = extract_text_content(&output);
         assert!(!error_message.starts_with('{'));
+    }
+
+    #[tokio::test]
+    async fn test_debug_enabled_adds_request_id_header() {
+        use crate::config::DebugConfig;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let workspace_root = temp_dir.path();
+
+        let test_file = workspace_root.join("test.rs");
+        std::fs::write(&test_file, "fn main() {}").expect("Failed to write test file");
+
+        let manager = Manager::new(workspace_root.to_str().unwrap())
+            .await
+            .expect("Failed to create manager");
+
+        let config = LspMcpConfig {
+            debug: Some(DebugConfig {
+                enabled: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let server = LspMcpServer::new(Arc::new(manager), &config, workspace_root);
+
+        let output = server.health().await;
+        let text = extract_text_content(&output);
+
+        assert!(text.contains("<!-- request:"), "Debug mode should add request ID header");
     }
 }

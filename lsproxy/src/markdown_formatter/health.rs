@@ -38,6 +38,13 @@ impl ToMarkdown for HealthResponse {
         output.push_str(&format!("Status: {}\n", self.status));
         output.push_str(&format!("Version: {}\n", self.version));
 
+        if let Some(session_id) = &self.session_id {
+            output.push_str(&format!("Session ID: {}\n", session_id));
+        }
+        if let Some(log_file) = &self.log_file {
+            output.push_str(&format!("Log file: {}\n", log_file));
+        }
+
         if !self.languages.is_empty() {
             output.push_str("\nLanguages\n");
 
@@ -70,6 +77,8 @@ mod tests {
             status: status.to_string(),
             version: version.to_string(),
             languages: languages.into_iter().collect(),
+            session_id: None,
+            log_file: None,
         }
     }
 
@@ -431,6 +440,58 @@ mod tests {
         assert!(
             result.contains("Status: error: connection failed"),
             "negative: health response must preserve error status message"
+        );
+    }
+
+    #[test]
+    fn health_response_includes_session_id_when_present() {
+        let response = HealthResponse {
+            status: "ok".to_string(),
+            version: "1.0.0".to_string(),
+            languages: Default::default(),
+            session_id: Some("abc123-def456".to_string()),
+            log_file: None,
+        };
+
+        let result = response.to_markdown();
+
+        assert!(
+            result.contains("Session ID: abc123-def456"),
+            "negative: health response must contain session ID"
+        );
+    }
+
+    #[test]
+    fn health_response_includes_log_file_when_present() {
+        let response = HealthResponse {
+            status: "ok".to_string(),
+            version: "1.0.0".to_string(),
+            languages: Default::default(),
+            session_id: None,
+            log_file: Some(".lsp-mcp/logs/sessions/abc.log".to_string()),
+        };
+
+        let result = response.to_markdown();
+
+        assert!(
+            result.contains("Log file: .lsp-mcp/logs/sessions/abc.log"),
+            "negative: health response must contain log file path"
+        );
+    }
+
+    #[test]
+    fn health_response_omits_session_info_when_not_present() {
+        let response = create_health_response("ok", "1.0.0", vec![]);
+
+        let result = response.to_markdown();
+
+        assert!(
+            !result.contains("Session ID:"),
+            "negative: health response must not contain Session ID when not set"
+        );
+        assert!(
+            !result.contains("Log file:"),
+            "negative: health response must not contain Log file when not set"
         );
     }
 }

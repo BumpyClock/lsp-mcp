@@ -8,11 +8,16 @@ use crate::mcp::LspMcpServer;
 use log::info;
 use mcpkit::prelude::*;
 use mcpkit::transport::stdio::StdioTransport;
+use std::path::Path;
 use std::sync::Arc;
 
 /// Create and run the LSP MCP server over stdio
-pub async fn run_server(manager: Arc<Manager>, config: &LspMcpConfig) -> Result<(), McpError> {
-    let server_instance = Arc::new(LspMcpServer::new(manager, config));
+pub async fn run_server(
+    manager: Arc<Manager>,
+    config: &LspMcpConfig,
+    workspace_root: &Path,
+) -> Result<(), McpError> {
+    let server_instance = Arc::new(LspMcpServer::new(manager, config, workspace_root));
     let enabled_tools = config.enabled_tools();
 
     info!(

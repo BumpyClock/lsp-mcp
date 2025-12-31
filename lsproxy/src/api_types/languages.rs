@@ -33,6 +33,12 @@ pub struct HealthResponse {
     pub version: String,
     /// Map of supported languages and their availability status
     pub languages: HashMap<SupportedLanguages, LspStatus>,
+    /// Session ID when debug mode is enabled
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Log file path when debug mode is enabled
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log_file: Option<String>,
 }
 
 #[derive(Debug, EnumString, Display, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
