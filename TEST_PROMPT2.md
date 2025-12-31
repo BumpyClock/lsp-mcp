@@ -3,6 +3,8 @@
   You are an agentic coding LLM. Test the lsp-mcp server tools in this repo and give blunt, critical feedback on output quality. The goal is to optimize for token efficiency and decision-ready info so
   an agent avoids redundant tool calls 80-90% of the time.
 
+  Start a background process to watch @lsp-mcp-debug.log When you use the mcp tools debug logs will be written here. Verify that the lsp-mcp tools are giving you the expected output. If there's a discrepancy then investigate the logs to spot where it might be. Then give me a report
+
   The MCP uses **1-based** positions.
 
   ## Hard Constraints
