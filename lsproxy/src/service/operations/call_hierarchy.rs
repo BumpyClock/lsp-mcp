@@ -396,7 +396,10 @@ pub(crate) async fn call_hierarchy_impl(
         }
     }
 
-    let calls = dedupe_calls(calls);
+    let mut calls = dedupe_calls(calls);
+    if direction_is_outgoing {
+        calls = dedupe_outgoing_calls_by_call_site(calls);
+    }
     debug!(
         "call_hierarchy_impl: {} calls after deduplication",
         calls.len()
@@ -565,6 +568,102 @@ pub(crate) fn dedupe_calls(calls: Vec<CallInfo>) -> Vec<CallInfo> {
     seen.into_values().collect()
 }
 
+fn dedupe_outgoing_calls_by_call_site(calls: Vec<CallInfo>) -> Vec<CallInfo> {
+    let mut seen: HashMap<(String, String, String), CallInfo> = HashMap::new();
+    for call in calls {
+        let key = outgoing_call_site_key(&call);
+        match seen.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let existing = entry.get_mut();
+                debug!(
+                    "dedupe_outgoing_calls_by_call_site merging duplicate outgoing call name={} existing_path={} incoming_path={}",
+                    call.item.name,
+                    existing.item.location.path,
+                    call.item.location.path
+                );
+                if should_replace_call_item(&existing.item, &call.item) {
+                    existing.item = call.item.clone();
+                }
+                let mut merged_ranges = existing.call_ranges.clone();
+                for r in &call.call_ranges {
+                    let dup = merged_ranges.iter().any(|er| {
+                        er.start.line == r.start.line && er.start.character == r.start.character
+                    });
+                    if !dup {
+                        merged_ranges.push(r.clone());
+                    }
+                }
+                existing.call_ranges = merged_ranges;
+
+                if let (Some(existing_snippets), Some(new_snippets)) =
+                    (&mut existing.call_snippets, &call.call_snippets)
+                {
+                    for snippet in new_snippets {
+                        if !existing_snippets.contains(snippet) {
+                            existing_snippets.push(snippet.clone());
+                        }
+                    }
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(call);
+            }
+        }
+    }
+    seen.into_values().collect()
+}
+
+fn outgoing_call_site_key(call: &CallInfo) -> (String, String, String) {
+    let ranges_key = if call.call_ranges.is_empty() {
+        format!(
+            "def:{}:{}:{}",
+            call.item.location.path,
+            call.item.location.position.line,
+            call.item.location.position.character
+        )
+    } else {
+        let mut parts: Vec<String> = call
+            .call_ranges
+            .iter()
+            .map(|r| {
+                format!(
+                    "{}:{}-{}:{}",
+                    r.start.line, r.start.character, r.end.line, r.end.character
+                )
+            })
+            .collect();
+        parts.sort();
+        parts.join("|")
+    };
+
+    (
+        call.item.name.clone(),
+        call.item.kind.clone(),
+        ranges_key,
+    )
+}
+
+fn should_replace_call_item(current: &CallHierarchyItemInfo, candidate: &CallHierarchyItemInfo) -> bool {
+    let current_external = current.external == Some(true);
+    let candidate_external = candidate.external == Some(true);
+    if current_external != candidate_external {
+        return current_external && !candidate_external;
+    }
+
+    let current_detail = current
+        .detail
+        .as_ref()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+    let candidate_detail = candidate
+        .detail
+        .as_ref()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+
+    candidate_detail && !current_detail
+}
+
 /// Filters calls to include only internal (non-external) entries.
 pub(crate) fn filter_internal_calls(calls: Vec<CallInfo>) -> Vec<CallInfo> {
     calls
@@ -712,6 +811,54 @@ mod tests {
         let result = dedupe_calls(calls);
 
         assert_eq!(result.len(), 3, "distinct entries must be preserved");
+    }
+
+    #[test]
+    fn dedupe_outgoing_calls_by_call_site_merges_duplicate_definitions() {
+        let mut call1 = make_call_info("node_modules/lib.dom.d.ts", 10, "setTimeout", Some(true));
+        let mut call2 =
+            make_call_info("node_modules/@types/node/timers.d.ts", 20, "setTimeout", Some(true));
+
+        let shared_range = Range {
+            start: Position { line: 50, character: 2 },
+            end: Position { line: 50, character: 12 },
+        };
+        call1.call_ranges = vec![shared_range.clone()];
+        call2.call_ranges = vec![shared_range];
+
+        let calls = vec![call1, call2];
+        let result = dedupe_outgoing_calls_by_call_site(calls);
+
+        assert_eq!(
+            result.len(),
+            1,
+            "duplicate callees at the same call site must be merged"
+        );
+    }
+
+    #[test]
+    fn dedupe_outgoing_calls_by_call_site_keeps_distinct_call_sites() {
+        let mut call1 = make_call_info("node_modules/lib.dom.d.ts", 10, "setTimeout", Some(true));
+        let mut call2 =
+            make_call_info("node_modules/@types/node/timers.d.ts", 20, "setTimeout", Some(true));
+
+        call1.call_ranges = vec![Range {
+            start: Position { line: 50, character: 2 },
+            end: Position { line: 50, character: 12 },
+        }];
+        call2.call_ranges = vec![Range {
+            start: Position { line: 80, character: 6 },
+            end: Position { line: 80, character: 16 },
+        }];
+
+        let calls = vec![call1, call2];
+        let result = dedupe_outgoing_calls_by_call_site(calls);
+
+        assert_eq!(
+            result.len(),
+            2,
+            "distinct call sites must remain separate"
+        );
     }
 
     #[test]
