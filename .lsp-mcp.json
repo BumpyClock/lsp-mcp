@@ -2,7 +2,7 @@
   "languages": ["rust"],
   "tools": {
     "preset": "full",
-    "disable": ["read_source_code", "list_files", "health"]
+    "disable": ["list_files"]
   },
   "debug": {
     "enabled": true,

@@ -43,6 +43,11 @@ impl LspMcpServer {
         }
     }
 
+    /// Returns whether debug mode is enabled.
+    pub fn debug_enabled(&self) -> bool {
+        self.debug_enabled
+    }
+
     /// Wrap tool output with request ID header when debug is enabled.
     fn wrap_output(&self, request_id: Uuid, output: ToolOutput) -> ToolOutput {
         if !self.debug_enabled {
@@ -61,12 +66,35 @@ impl LspMcpServer {
             other => other,
         }
     }
+
+    /// Get server instructions, with debug guidance when debug mode is enabled.
+    pub fn get_instructions(&self) -> String {
+        const BASE_INSTRUCTIONS: &str = "All line and character positions use 1-based indexing (first line is 1, first character is 1). This matches what editors display to users.";
+
+        if self.debug_enabled {
+            format!(
+                r#"{}
+
+## Using LSP-MCP in Debug Mode
+
+**CRITICAL**: After each task, evaluate the tools:
+- Did the lsp-mcp tools provide enough information to make coding decisions?
+- If you used a tool on a file and then immediately read that file, explain why the tool output was insufficient.
+- Surface any shortcomings and insights about what information was missing.
+
+When debug is enabled, logs are written to `.lsp-mcp/logs/sessions/{{session-id}}.log`.
+Use the `health` tool to get the current session ID and log file path for correlation."#,
+                BASE_INSTRUCTIONS
+            )
+        } else {
+            BASE_INSTRUCTIONS.to_string()
+        }
+    }
 }
 
 #[mcp_server(
     name = "lsp-mcp",
-    version = "0.4.4",
-    instructions = "All line and character positions use 1-based indexing (first line is 1, first character is 1). This matches what editors display to users."
+    version = "0.4.4"
 )]
 impl LspMcpServer {
     #[tool(name = "documentSymbol", description = "Symbols defined in a file (top-level only by default)")]
@@ -445,6 +473,56 @@ impl LspMcpServer {
 
         self.wrap_output(request_id, output)
     }
+
+    #[tool(
+        name = "initial_instructions",
+        description = "Read this on startup to know how to use LSP-MCP properly."
+    )]
+    async fn initial_instructions(&self) -> ToolOutput {
+        let instructions = if self.debug_enabled {
+            r#"# LSP-MCP Usage Instructions
+
+## Positioning
+All line and character positions use **1-based indexing** (first line is 1, first character is 1). This matches what editors display to users.
+
+## Debug Mode Active
+
+**CRITICAL**: After each task, evaluate the tools:
+- Did the lsp-mcp tools provide enough information to make coding decisions?
+- If you used a tool on a file and then immediately read that file, explain why the tool output was insufficient.
+- Surface any shortcomings and insights about what information was missing.
+
+## Log Correlation
+When debug is enabled, logs are written to `.lsp-mcp/logs/sessions/{session-id}.log`.
+Each tool response includes a request ID header (`<!-- request: uuid -->`).
+Use the `health` tool to get the current session ID and log file path for correlation.
+
+## Available Tools
+- `documentSymbol` - Get symbols defined in a file
+- `goToDefinition` - Jump to symbol definition
+- `findReferences` - Find all references to a symbol
+- `hover` - Get type/documentation info at a position
+- `workspaceSymbol` - Search for symbols by name
+- `callHierarchy` - Trace incoming/outgoing calls
+- `getDiagnostics` - Get compiler errors/warnings"#
+        } else {
+            r#"# LSP-MCP Usage Instructions
+
+## Positioning
+All line and character positions use **1-based indexing** (first line is 1, first character is 1). This matches what editors display to users.
+
+## Available Tools
+- `documentSymbol` - Get symbols defined in a file
+- `goToDefinition` - Jump to symbol definition
+- `findReferences` - Find all references to a symbol
+- `hover` - Get type/documentation info at a position
+- `workspaceSymbol` - Search for symbols by name
+- `callHierarchy` - Trace incoming/outgoing calls
+- `getDiagnostics` - Get compiler errors/warnings"#
+        };
+
+        ToolOutput::text(instructions)
+    }
 }
 
 #[cfg(test)]
@@ -648,5 +726,69 @@ mod tests {
         let text = extract_text_content(&output);
 
         assert!(text.contains("<!-- request:"), "Debug mode should add request ID header");
+    }
+
+    #[tokio::test]
+    async fn test_instructions_include_debug_guidance_when_enabled() {
+        use crate::config::DebugConfig;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let workspace_root = temp_dir.path();
+
+        let manager = Manager::new(workspace_root.to_str().unwrap())
+            .await
+            .expect("Failed to create manager");
+
+        let config = LspMcpConfig {
+            debug: Some(DebugConfig {
+                enabled: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let server = LspMcpServer::new(Arc::new(manager), &config, workspace_root);
+
+        let instructions = server.get_instructions();
+
+        assert!(
+            instructions.contains("CRITICAL"),
+            "Debug mode should include CRITICAL guidance"
+        );
+        assert!(
+            instructions.contains("evaluate the tools"),
+            "Debug mode should ask to evaluate tools"
+        );
+        assert!(
+            instructions.contains(".lsp-mcp/logs/sessions"),
+            "Debug mode should mention log location"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_instructions_are_basic_when_debug_disabled() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let workspace_root = temp_dir.path();
+
+        let manager = Manager::new(workspace_root.to_str().unwrap())
+            .await
+            .expect("Failed to create manager");
+
+        let config = LspMcpConfig::default(); // No debug config
+        let server = LspMcpServer::new(Arc::new(manager), &config, workspace_root);
+
+        let instructions = server.get_instructions();
+
+        assert!(
+            instructions.contains("1-based indexing"),
+            "Should contain base instructions"
+        );
+        assert!(
+            !instructions.contains("CRITICAL"),
+            "Should NOT contain debug guidance when disabled"
+        );
+        assert!(
+            !instructions.contains("evaluate the tools"),
+            "Should NOT mention tool evaluation when disabled"
+        );
     }
 }

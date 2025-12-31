@@ -19,6 +19,7 @@ pub const ALL_TOOLS: &[&str] = &[
     "readSourceCode",
     "health",
     "getDiagnostics",
+    "initial_instructions",
 ];
 
 /// Core tools (Tier 1+2): Enabled by default in "standard" preset
@@ -31,6 +32,7 @@ pub const CORE_TOOLS: &[&str] = &[
     "documentSymbol",
     "callHierarchy",
     "findReferencedSymbols",
+    "initial_instructions",
 ];
 
 /// Minimal tools (Tier 1): Essential navigation only
@@ -74,12 +76,12 @@ mod tests {
 
     #[test]
     fn test_all_tools_count() {
-        assert_eq!(ALL_TOOLS.len(), 13, "Expected 13 total tools");
+        assert_eq!(ALL_TOOLS.len(), 14, "Expected 14 total tools");
     }
 
     #[test]
     fn test_core_tools_count() {
-        assert_eq!(CORE_TOOLS.len(), 8, "Expected 8 core tools");
+        assert_eq!(CORE_TOOLS.len(), 9, "Expected 9 core tools");
     }
 
     #[test]
@@ -100,7 +102,7 @@ mod tests {
     #[test]
     fn test_get_preset_tools_standard() {
         let tools = get_preset_tools(ToolPreset::Standard);
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 9);
         // Should include all minimal tools
         assert!(tools.contains("goToDefinition"));
         assert!(tools.contains("findReferences"));
@@ -111,12 +113,13 @@ mod tests {
         assert!(tools.contains("documentSymbol"));
         assert!(tools.contains("callHierarchy"));
         assert!(tools.contains("findReferencedSymbols"));
+        assert!(tools.contains("initial_instructions"));
     }
 
     #[test]
     fn test_get_preset_tools_full() {
         let tools = get_preset_tools(ToolPreset::Full);
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 14);
         // Should include all tools
         for tool in ALL_TOOLS {
             assert!(tools.contains(*tool), "Missing tool: {}", tool);
