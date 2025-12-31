@@ -3,7 +3,7 @@
     "lsp-mcp": {
       "type": "stdio",
       "command": "/bin/bash",
-      "args": ["-c", "RUST_LOG=debug /home/bumpyclock/Projects/lsp-mcp/lsproxy/target/release/lsp-mcp 2>lsp-mcp-debug.log"]
+      "args": ["-c", "RUST_LOG=debug /home/bumpyclock/Projects/lsp-mcp/lsproxy/target/release/lsp-mcp 2> .lsp-mcp/.lsp-mcp-debug.log"]
     }
   }
 }

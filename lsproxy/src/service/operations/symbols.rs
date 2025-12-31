@@ -80,6 +80,7 @@ pub(crate) async fn workspace_symbol_impl(
     exact: bool,
     limit: Option<u32>,
     offset: Option<u32>,
+    context_lines: u32,
 ) -> Result<WorkspaceSymbolResponse, ServiceError> {
     let symbols = manager.workspace_symbol(query).await?;
     debug!(
@@ -162,7 +163,12 @@ pub(crate) async fn workspace_symbol_impl(
         None
     };
 
-    let (symbols, pagination) = paginate_items(filtered_symbols, limit, offset);
+    let (mut symbols, pagination) = paginate_items(filtered_symbols, limit, offset);
+
+    if context_lines > 0 {
+        attach_snippets_to_workspace_symbols(manager, &mut symbols, context_lines).await;
+    }
+
     Ok(WorkspaceSymbolResponse {
         raw_response,
         symbols,
@@ -170,6 +176,57 @@ pub(crate) async fn workspace_symbol_impl(
         offset: pagination.offset,
         truncated: pagination.truncated,
     })
+}
+
+async fn attach_snippets_to_workspace_symbols(
+    manager: &Arc<Manager>,
+    symbols: &mut [WorkspaceSymbolInfo],
+    context_lines: u32,
+) {
+    use crate::api_types::{CodeContext, FileRange, Range};
+    use lsp_types::Position as LspPosition;
+    use lsp_types::Range as LspRange;
+
+    for symbol in symbols.iter_mut() {
+        let line = symbol.location.position.line;
+        let start_line = line.saturating_sub(context_lines).max(1);
+        let end_line = line.saturating_add(context_lines).max(1);
+
+        let lsp_range = LspRange {
+            start: LspPosition {
+                line: start_line.saturating_sub(1),
+                character: 0,
+            },
+            end: LspPosition {
+                line: end_line,
+                character: 0,
+            },
+        };
+
+        match manager.read_source_code(&symbol.location.path, Some(lsp_range)).await {
+            Ok(source_code) => {
+                symbol.snippet = Some(CodeContext {
+                    range: FileRange {
+                        path: symbol.location.path.clone(),
+                        range: Range {
+                            start: crate::api_types::Position {
+                                line: start_line,
+                                character: 1,
+                            },
+                            end: crate::api_types::Position {
+                                line: end_line,
+                                character: 1,
+                            },
+                        },
+                    },
+                    source_code,
+                });
+            }
+            Err(e) => {
+                debug!("Failed to read snippet for workspace symbol {}: {}", symbol.name, e);
+            }
+        }
+    }
 }
 
 fn workspace_symbol_info_from_ast_match(ast_match: &AstGrepMatch) -> WorkspaceSymbolInfo {
@@ -191,6 +248,7 @@ fn workspace_symbol_info_from_ast_match(ast_match: &AstGrepMatch) -> WorkspaceSy
         match_kind: None,
         match_score: None,
         signature: None,
+        snippet: None,
     }
 }
 
@@ -484,6 +542,7 @@ mod tests {
             match_kind: None,
             match_score: None,
             signature: None,
+            snippet: None,
         };
 
         let matched = apply_query_match(&format!("score{}", unicode), false, info)
@@ -515,6 +574,7 @@ mod tests {
             match_kind: None,
             match_score: None,
             signature: None,
+            snippet: None,
         };
 
         let matched = apply_query_match(&format!("score{}", unicode), true, info);
@@ -537,6 +597,7 @@ mod tests {
             match_kind: None,
             match_score: None,
             signature: None,
+            snippet: None,
         };
 
         let matched = apply_query_match("", false, info).expect("negative: expected match");
@@ -568,6 +629,7 @@ mod tests {
             match_kind: Some("exact".to_string()),
             match_score: Some(1.0),
             signature: None,
+            snippet: None,
         };
         let reexport = WorkspaceSymbolInfo {
             name: name.clone(),
@@ -580,6 +642,7 @@ mod tests {
             match_kind: Some("exact".to_string()),
             match_score: Some(1.0),
             signature: None,
+            snippet: None,
         };
 
         let deduped = dedupe_workspace_symbols(vec![reexport, primary]);
@@ -610,6 +673,7 @@ mod tests {
             match_kind: Some("exact".to_string()),
             match_score: Some(1.0),
             signature: None,
+            snippet: None,
         };
         let second = WorkspaceSymbolInfo {
             name: name.clone(),
@@ -622,6 +686,7 @@ mod tests {
             match_kind: Some("exact".to_string()),
             match_score: Some(1.0),
             signature: None,
+            snippet: None,
         };
 
         let deduped = dedupe_workspace_symbols(vec![first.clone(), second]);

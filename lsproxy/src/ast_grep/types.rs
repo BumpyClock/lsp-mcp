@@ -160,6 +160,7 @@ impl From<AstGrepMatch> for Symbol {
             dependencies: None,
             line_count: None,
             children: None,
+            snippet: None,
         }
     }
 }

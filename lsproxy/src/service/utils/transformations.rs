@@ -142,6 +142,7 @@ pub(crate) fn workspace_symbol_info_from_lsp(
         match_kind: None,
         match_score: None,
         signature: None,
+        snippet: None,
     }
 }
 

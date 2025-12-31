@@ -285,6 +285,7 @@ fn convert_document_symbol(doc_sym: &DocumentSymbol, file_path: &str, is_top_lev
         dependencies: None,
         line_count: Some(doc_sym.range.end.line.saturating_sub(doc_sym.range.start.line) + 1),
         children,
+        snippet: None,
     }
 }
 
@@ -318,6 +319,7 @@ fn convert_symbol_information(sym_info: &lsp_types::SymbolInformation, _file_pat
         dependencies: None,
         line_count: Some(sym_info.location.range.end.line.saturating_sub(sym_info.location.range.start.line) + 1),
         children: None,
+        snippet: None,
     }
 }
 
@@ -423,6 +425,7 @@ pub(crate) async fn definitions_in_file_impl(
     include_locals: bool,
     limit: Option<u32>,
     offset: Option<u32>,
+    context_lines: u32,
 ) -> Result<McpSymbolsResponse, ServiceError> {
     use crate::api_types::get_mount_dir;
 
@@ -468,7 +471,11 @@ pub(crate) async fn definitions_in_file_impl(
         symbols = strip_symbol_children(symbols);
     }
 
-    let (symbols, pagination) = paginate_items(symbols, limit, offset);
+    let (mut symbols, pagination) = paginate_items(symbols, limit, offset);
+
+    if context_lines > 0 {
+        attach_snippets_to_symbols(manager, file_path, &mut symbols, context_lines).await;
+    }
 
     Ok(McpSymbolsResponse {
         path: file_path.to_string(),
@@ -478,6 +485,68 @@ pub(crate) async fn definitions_in_file_impl(
         offset: pagination.offset,
         truncated: pagination.truncated,
     })
+}
+
+async fn attach_snippets_to_symbols(
+    manager: &Arc<Manager>,
+    file_path: &str,
+    symbols: &mut [Symbol],
+    context_lines: u32,
+) {
+    for symbol in symbols.iter_mut() {
+        attach_snippet_to_symbol(manager, file_path, symbol, context_lines).await;
+        if let Some(ref mut children) = symbol.children {
+            Box::pin(attach_snippets_to_symbols(manager, file_path, children, context_lines)).await;
+        }
+    }
+}
+
+async fn attach_snippet_to_symbol(
+    manager: &Arc<Manager>,
+    file_path: &str,
+    symbol: &mut Symbol,
+    context_lines: u32,
+) {
+    use crate::api_types::{CodeContext, FileRange, Range};
+
+    let line = symbol.identifier_position.position.line;
+    let start_line = line.saturating_sub(context_lines).max(1);
+    let end_line = line.saturating_add(context_lines).max(1);
+
+    let lsp_range = LspRange {
+        start: LspPosition {
+            line: start_line.saturating_sub(1),
+            character: 0,
+        },
+        end: LspPosition {
+            line: end_line,
+            character: 0,
+        },
+    };
+
+    match manager.read_source_code(file_path, Some(lsp_range)).await {
+        Ok(source_code) => {
+            symbol.snippet = Some(CodeContext {
+                range: FileRange {
+                    path: file_path.to_string(),
+                    range: Range {
+                        start: crate::api_types::Position {
+                            line: start_line,
+                            character: 1,
+                        },
+                        end: crate::api_types::Position {
+                            line: end_line,
+                            character: 1,
+                        },
+                    },
+                },
+                source_code,
+            });
+        }
+        Err(e) => {
+            debug!("Failed to read snippet for symbol {}: {}", symbol.name, e);
+        }
+    }
 }
 
 /// Finds the definition of a symbol at the given position.
@@ -1176,6 +1245,7 @@ mod tests {
             dependencies: None,
             line_count: None,
             children: None,
+            snippet: None,
         };
 
         let mut parent = child.clone();

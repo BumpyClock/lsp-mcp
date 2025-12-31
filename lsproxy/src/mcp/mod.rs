@@ -48,6 +48,7 @@ impl LspMcpServer {
         include_locals: Option<bool>,
         limit: Option<u32>,
         offset: Option<u32>,
+        context_lines: Option<u32>,
     ) -> ToolOutput {
         definitions::definitions_in_file(
             &self.service,
@@ -56,6 +57,7 @@ impl LspMcpServer {
             include_locals,
             limit,
             offset,
+            context_lines,
         )
         .await
     }
@@ -132,9 +134,18 @@ impl LspMcpServer {
         exact: Option<bool>,
         limit: Option<u32>,
         offset: Option<u32>,
+        context_lines: Option<u32>,
     ) -> ToolOutput {
-        symbols::workspace_symbol(&self.service, self.output_mode, query, exact, limit, offset)
-            .await
+        symbols::workspace_symbol(
+            &self.service,
+            self.output_mode,
+            query,
+            exact,
+            limit,
+            offset,
+            context_lines,
+        )
+        .await
     }
 
     #[tool(description = "Implementations of interface/trait")]
@@ -156,6 +167,7 @@ impl LspMcpServer {
         character: u32,
         direction: String,
         externals: Option<bool>,
+        context_lines: Option<u32>,
     ) -> ToolOutput {
         call_hierarchy::call_hierarchy(
             &self.service,
@@ -165,6 +177,7 @@ impl LspMcpServer {
             character,
             direction,
             externals,
+            context_lines,
         )
         .await
     }
@@ -324,8 +337,8 @@ mod tests {
             let text = extract_text_content(&output);
             // Markdown output expectations
             assert!(!text.contains("\"ok\""));
-            assert!(text.contains("## Identifiers"), "Expected markdown header");
-            assert!(text.contains("**main**"), "Expected bold identifier name");
+            assert!(text.contains("Identifiers ("), "Expected markdown header");
+            assert!(text.contains("main ("), "negative: identifier name missing");
             assert!(!text.contains("\"meta\""));
         }
     }
@@ -338,10 +351,7 @@ mod tests {
 
         // Markdown output expectations
         assert!(!text.contains("\"ok\""));
-        assert!(
-            text.contains("## Workspace Files"),
-            "Expected markdown header"
-        );
+        assert!(text.contains("Workspace Files"), "Expected markdown header");
         // Note: Files may not be indexed in test environment, so we just check format
         assert!(text.contains("total)"), "Expected total count in header");
         assert!(!text.contains("\"meta\""));
@@ -357,7 +367,7 @@ mod tests {
 
         // Should be markdown, not JSON
         assert!(
-            text.contains("## Workspace Files"),
+            text.contains("Workspace Files"),
             "Expected markdown header even in verbose mode"
         );
         // Note: Files may not be indexed in test environment, so we just check format
@@ -382,7 +392,7 @@ mod tests {
             let text = extract_text_content(&output);
             // Markdown output expectations
             assert!(!text.contains("\"ok\""));
-            assert!(text.contains("## Source: test.rs"), "Expected markdown source header");
+            assert!(text.contains("Source: test.rs"), "Expected markdown source header");
             assert!(text.contains("```rust"), "Expected rust code fence");
             assert!(text.contains("fn main()"), "Expected source content");
             assert!(!text.contains("\"meta\""));
@@ -397,12 +407,9 @@ mod tests {
 
         // Markdown output expectations
         assert!(!text.contains("\"ok\":true"));
-        assert!(
-            text.contains("## LSP-MCP Health"),
-            "Expected markdown health header"
-        );
-        assert!(text.contains("**Status:**"), "Expected markdown status field");
-        assert!(text.contains("**Version:**"), "Expected markdown version field");
+        assert!(text.contains("LSP-MCP Health"), "Expected markdown health header");
+        assert!(text.contains("Status:"), "Expected markdown status field");
+        assert!(text.contains("Version:"), "Expected markdown version field");
         assert!(!text.contains("\"meta\""));
     }
 
@@ -414,10 +421,7 @@ mod tests {
 
         // Markdown output expectations
         assert!(!text.contains("\"ok\""));
-        assert!(
-            text.contains("## Diagnostics"),
-            "Expected markdown diagnostics header"
-        );
+        assert!(text.contains("Diagnostics ("), "Expected markdown diagnostics header");
         assert!(!text.contains("\"meta\""));
     }
 

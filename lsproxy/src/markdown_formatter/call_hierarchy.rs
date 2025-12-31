@@ -45,6 +45,21 @@ impl ToMarkdown for CallHierarchyResponse {
     }
 }
 
+fn format_call_snippet(source_code: &str, line_col: &str) -> String {
+    if source_code.contains('\n') {
+        let mut output = format!("  Line {}:\n", line_col);
+        output.push_str("  ```\n");
+        for line in source_code.lines() {
+            output.push_str(&format!("  {}\n", line));
+        }
+        output.push_str("  ```");
+        output
+    } else {
+        let escaped = escape_inline_code(source_code);
+        format!("  Line {}: `{}`", line_col, escaped)
+    }
+}
+
 fn format_call_info(call: &CallInfo) -> String {
     let item = &call.item;
     let position = format_file_position(
@@ -75,8 +90,7 @@ fn format_call_info(call: &CallInfo) -> String {
             let line_col = format!("{}:{}", range.start.line, range.start.character);
             match call.call_snippets.as_ref().and_then(|s| s.get(i)) {
                 Some(snippet) if !snippet.is_empty() => {
-                    let escaped = escape_inline_code(snippet.trim());
-                    format!("  Line {}: `{}`", line_col, escaped)
+                    format_call_snippet(snippet.trim(), &line_col)
                 }
                 _ => format!("  Line {}: call site", line_col),
             }
@@ -630,6 +644,79 @@ mod tests {
         assert!(
             markdown.contains("calcul\u{00e9}Total"),
             "must preserve unicode characters in function name: got {}",
+            markdown
+        );
+    }
+
+    #[test]
+    fn single_line_snippet_renders_as_inline_code() {
+        let call_line = random_line();
+        let response = CallHierarchyResponse {
+            direction: CallHierarchyDirection::Incoming,
+            raw_response: None,
+            calls: vec![CallInfo {
+                item: create_call_hierarchy_item("caller", "src/caller.rs", random_line()),
+                call_ranges: vec![Range {
+                    start: Position {
+                        line: call_line,
+                        character: 5,
+                    },
+                    end: Position {
+                        line: call_line,
+                        character: 20,
+                    },
+                }],
+                call_snippets: Some(vec!["doSomething\tNow()".to_string()]),
+            }],
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("`doSomething\tNow()`"),
+            "negative: single-line snippet must render as inline code: got {}",
+            markdown
+        );
+        assert!(
+            !markdown.contains("```"),
+            "negative: single-line snippet must not use fenced code blocks: got {}",
+            markdown
+        );
+    }
+
+    #[test]
+    fn multiline_snippet_renders_as_fenced_code_block() {
+        let call_line = random_line();
+        let multiline_snippet = "let result = calculate(\n    arg1,\n    arg2\t,\n);";
+        let response = CallHierarchyResponse {
+            direction: CallHierarchyDirection::Incoming,
+            raw_response: None,
+            calls: vec![CallInfo {
+                item: create_call_hierarchy_item("caller", "src/caller.rs", random_line()),
+                call_ranges: vec![Range {
+                    start: Position {
+                        line: call_line,
+                        character: 5,
+                    },
+                    end: Position {
+                        line: call_line,
+                        character: 20,
+                    },
+                }],
+                call_snippets: Some(vec![multiline_snippet.to_string()]),
+            }],
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("```"),
+            "negative: multiline snippet must use fenced code blocks: got {}",
+            markdown
+        );
+        assert!(
+            markdown.contains("let result = calculate("),
+            "negative: multiline snippet must contain the code: got {}",
             markdown
         );
     }

@@ -14,8 +14,10 @@ pub async fn workspace_symbol(
     exact: Option<bool>,
     limit: Option<u32>,
     offset: Option<u32>,
+    context_lines: Option<u32>,
 ) -> ToolOutput {
     let exact = resolve_exact(exact);
+    let context_lines = resolve_context_lines(context_lines);
     match service
         .workspace_symbol(
             &query,
@@ -23,6 +25,7 @@ pub async fn workspace_symbol(
             exact,
             limit,
             offset,
+            context_lines,
         )
         .await
     {
@@ -67,6 +70,10 @@ fn resolve_exact(exact: Option<bool>) -> bool {
     exact.unwrap_or(true)
 }
 
+fn resolve_context_lines(context_lines: Option<u32>) -> u32 {
+    context_lines.unwrap_or(1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,6 +97,27 @@ mod tests {
             resolved,
             explicit,
             "negative: explicit exact value must be preserved"
+        );
+    }
+
+    #[test]
+    fn it_defaults_context_lines_to_one_when_omitted() {
+        let resolved = resolve_context_lines(None);
+        assert_eq!(
+            resolved, 1,
+            "negative: context_lines must default to 1 when omitted"
+        );
+    }
+
+    #[test]
+    fn it_preserves_explicit_context_lines_value() {
+        let mut rng = rand::rng();
+        let explicit: u32 = rng.random_range(0..10);
+        let resolved = resolve_context_lines(Some(explicit));
+        assert_eq!(
+            resolved,
+            explicit,
+            "negative: explicit context_lines value must be preserved"
         );
     }
 }

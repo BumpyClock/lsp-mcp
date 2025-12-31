@@ -286,6 +286,7 @@ mod tests {
             dependencies: None,
             line_count: None,
             children: None,
+            snippet: None,
         }
     }
 

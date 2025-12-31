@@ -1,6 +1,7 @@
   {
     "languages": ["rust"],
     "tools": {
-      "preset": "full"
+      "preset": "full",
+      "disable": ["read_source_code", "list_files", "health"]
     }
   }

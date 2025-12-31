@@ -15,6 +15,7 @@ pub async fn call_hierarchy(
     character: u32,
     direction: String,
     externals: Option<bool>,
+    context_lines: Option<u32>,
 ) -> ToolOutput {
     let dir = match direction.to_lowercase().as_str() {
         "incoming" => CallHierarchyDirection::Incoming,
@@ -28,7 +29,11 @@ pub async fn call_hierarchy(
     };
     let pos = Position { line, character };
     let internal_only = resolve_internal_only(externals);
-    match service.call_hierarchy(&path, pos, dir, internal_only).await {
+    let context_lines = resolve_context_lines(context_lines);
+    match service
+        .call_hierarchy(&path, pos, dir, internal_only, context_lines)
+        .await
+    {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
             ToolOutput::text(resp)
@@ -39,6 +44,10 @@ pub async fn call_hierarchy(
 
 fn resolve_internal_only(externals: Option<bool>) -> bool {
     !externals.unwrap_or(false)
+}
+
+fn resolve_context_lines(context_lines: Option<u32>) -> u32 {
+    context_lines.unwrap_or(1)
 }
 
 pub async fn go_to_implementation(
@@ -64,6 +73,7 @@ pub async fn go_to_implementation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
 
     #[test]
     fn resolve_internal_only_defaults_to_true() {
@@ -83,6 +93,27 @@ mod tests {
         assert!(
             resolve_internal_only(Some(false)),
             "externals=false must keep internal-only filtering"
+        );
+    }
+
+    #[test]
+    fn it_defaults_context_lines_to_one_when_omitted() {
+        let resolved = resolve_context_lines(None);
+        assert_eq!(
+            resolved, 1,
+            "negative: context_lines must default to 1 when omitted"
+        );
+    }
+
+    #[test]
+    fn it_preserves_explicit_context_lines_value() {
+        let mut rng = rand::rng();
+        let explicit: u32 = rng.random_range(0..10);
+        let resolved = resolve_context_lines(Some(explicit));
+        assert_eq!(
+            resolved,
+            explicit,
+            "negative: explicit context_lines value must be preserved"
         );
     }
 }

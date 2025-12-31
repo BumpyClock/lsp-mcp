@@ -60,6 +60,7 @@ impl LspService {
         include_locals: bool,
         limit: Option<u32>,
         offset: Option<u32>,
+        context_lines: u32,
     ) -> Result<McpSymbolsResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
         definitions::definitions_in_file_impl(
@@ -68,6 +69,7 @@ impl LspService {
             include_locals,
             limit,
             offset,
+            context_lines,
         )
         .await
     }
@@ -239,9 +241,18 @@ impl LspService {
         exact: bool,
         limit: Option<u32>,
         offset: Option<u32>,
+        context_lines: u32,
     ) -> Result<WorkspaceSymbolResponse, ServiceError> {
-        symbols::workspace_symbol_impl(&self.manager, query, include_raw_response, exact, limit, offset)
-            .await
+        symbols::workspace_symbol_impl(
+            &self.manager,
+            query,
+            include_raw_response,
+            exact,
+            limit,
+            offset,
+            context_lines,
+        )
+        .await
     }
 
     /// Prepares the call hierarchy at the given position.
@@ -289,9 +300,18 @@ impl LspService {
         position: Position,
         direction: CallHierarchyDirection,
         internal_only: bool,
+        context_lines: u32,
     ) -> Result<CallHierarchyResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        call_hierarchy::call_hierarchy_impl(&self.manager, &file_path, position, direction, internal_only).await
+        call_hierarchy::call_hierarchy_impl(
+            &self.manager,
+            &file_path,
+            position,
+            direction,
+            internal_only,
+            context_lines,
+        )
+        .await
     }
 }
 
@@ -682,6 +702,7 @@ mod tests {
             dependencies: None,
             line_count: None,
             children: None,
+            snippet: None,
         };
         let snippet = CodeContext {
             range: FileRange {
@@ -843,7 +864,7 @@ mod tests {
         let service = create_service(Arc::new(manager));
 
         let response = service
-            .definitions_in_file("test.rs", false, None, None)
+            .definitions_in_file("test.rs", false, None, None, 1)
             .await?;
 
         assert_eq!(response.path, "test.rs");
@@ -877,7 +898,7 @@ fn internal_helper() {
         let service = create_service(Arc::new(manager));
 
         let response = service
-            .definitions_in_file("test.rs", true, None, None)
+            .definitions_in_file("test.rs", true, None, None, 1)
             .await?;
 
         let pub_fn = response.symbols.iter()
@@ -1769,6 +1790,7 @@ fn internal_helper() {
             match_kind: Some("exact".to_string()),
             match_score: Some(1.0),
             signature: None,
+            snippet: None,
         };
 
         let signatures = vec![Some("fn func1() -> i32".to_string())];

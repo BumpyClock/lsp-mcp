@@ -203,6 +203,9 @@ pub struct WorkspaceSymbolInfo {
     /// Type signature from LSP hover (e.g., "fn example() -> Result<T, E>")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    /// Source code snippet around the symbol definition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<CodeContext>,
 }
 
 #[cfg(test)]
@@ -311,6 +314,76 @@ mod tests {
         assert!(
             json.get("active_parameter").is_none(),
             "negative: active_parameter must be omitted when None"
+        );
+    }
+
+    #[test]
+    fn test_workspace_symbol_info_snippet_serializes_when_present() {
+        use crate::api_types::{FilePosition, FileRange, Position, Range};
+
+        let snippet = CodeContext {
+            range: FileRange {
+                path: "src/lib.rs".to_string(),
+                range: Range {
+                    start: Position { line: 9, character: 1 },
+                    end: Position { line: 11, character: 1 },
+                },
+            },
+            source_code: "pub fn example\tvalue() -> i32 {\n    42\n}".to_string(),
+        };
+
+        let symbol = WorkspaceSymbolInfo {
+            name: "example\tvalue".to_string(),
+            kind: "function".to_string(),
+            location: FilePosition {
+                path: "src/lib.rs".to_string(),
+                position: Position { line: 10, character: 8 },
+            },
+            container_name: None,
+            match_kind: None,
+            match_score: None,
+            signature: None,
+            snippet: Some(snippet),
+        };
+
+        let json = serde_json::to_value(&symbol).expect("negative: serialization failed");
+
+        assert!(
+            json.get("snippet").is_some(),
+            "negative: snippet must be serialized when present"
+        );
+        assert!(
+            json["snippet"]["source_code"]
+                .as_str()
+                .unwrap()
+                .contains("pub fn example\tvalue()"),
+            "negative: snippet must contain source code"
+        );
+    }
+
+    #[test]
+    fn test_workspace_symbol_info_snippet_skipped_when_none() {
+        use crate::api_types::{FilePosition, Position};
+
+        let symbol = WorkspaceSymbolInfo {
+            name: "bar\tvalue".to_string(),
+            kind: "variable".to_string(),
+            location: FilePosition {
+                path: "src/lib.rs".to_string(),
+                position: Position { line: 5, character: 5 },
+            },
+            container_name: None,
+            match_kind: None,
+            match_score: None,
+            signature: None,
+            snippet: None,
+        };
+
+        let json = serde_json::to_value(&symbol).expect("negative: serialization failed");
+
+        assert!(
+            json.get("snippet").is_none(),
+            "negative: snippet must be omitted when None"
         );
     }
 }

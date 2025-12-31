@@ -30,10 +30,9 @@ async fn fetch_call_snippets(
     mut calls: Vec<CallInfo>,
     direction: CallHierarchyDirection,
     source_file_path: &str,
+    context_lines: u32,
 ) -> Vec<CallInfo> {
     for call in &mut calls {
-        // For incoming calls, read from the caller's file (call.item.location.path)
-        // For outgoing calls, read from the original source file being analyzed
         let file_path = match direction {
             CallHierarchyDirection::Incoming => &call.item.location.path,
             CallHierarchyDirection::Outgoing => source_file_path,
@@ -41,13 +40,15 @@ async fn fetch_call_snippets(
 
         let mut snippets = Vec::with_capacity(call.call_ranges.len());
         for range in &call.call_ranges {
+            let start_line = range.start.line.saturating_sub(context_lines);
+            let end_line = range.start.line.saturating_add(context_lines);
             let lsp_range = LspRange {
                 start: LspPosition {
-                    line: range.start.line.saturating_sub(1),
+                    line: start_line.saturating_sub(1),
                     character: 0,
                 },
                 end: LspPosition {
-                    line: range.start.line,
+                    line: end_line,
                     character: 0,
                 },
             };
@@ -260,6 +261,7 @@ pub(crate) async fn call_hierarchy_impl(
     position: Position,
     direction: CallHierarchyDirection,
     internal_only: bool,
+    context_lines: u32,
 ) -> Result<CallHierarchyResponse, ServiceError> {
     debug!(
         "call_hierarchy_impl: file={}, position=({},{}), direction={:?}",
@@ -416,7 +418,7 @@ pub(crate) async fn call_hierarchy_impl(
         );
     }
 
-    let calls = fetch_call_snippets(manager, calls, direction, file_path).await;
+    let calls = fetch_call_snippets(manager, calls, direction, file_path, context_lines).await;
 
     debug!(
         "call_hierarchy_impl: returning {} calls after fetch_snippets",

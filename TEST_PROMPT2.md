@@ -3,13 +3,20 @@
   You are an agentic coding LLM. Test the lsp-mcp server tools in this repo and give blunt, critical feedback on output quality. The goal is to optimize for token efficiency and decision-ready info so
   an agent avoids redundant tool calls 80-90% of the time.
 
-  Start a background process to watch @lsp-mcp-debug.log When you use the mcp tools debug logs will be written here. Verify that the lsp-mcp tools are giving you the expected output. If there's a discrepancy then investigate the logs to spot where it might be. Then give me a report
+  Start a background process to watch `.lsp-mcp/logs/lsp-mcp-debug.log`. When you use the mcp tools debug logs will be written here. Verify that the lsp-mcp tools are giving you the expected output. If there's a discrepancy then investigate the logs to spot where it might be. Then give me a report
 
   The MCP uses **1-based** positions.
 
   ## Hard Constraints
   - No edits. No builds/tests. Read-only analysis.
-  - Use parallel tool calls when independent.
+  - Do **not** optimize for parallel tool calls. Instead, run tool calls **sequentially** and validate each result before moving on.
+  - After **every** tool call, do a quick sanity-check that the response is correct and decision-usable:
+    - Returned locations exist, are in the expected file(s), and match the expected symbol.
+    - Ranges/positions are consistent with **1-based** indexing and the queried location.
+    - Results are non-empty when they should be (and not wildly over/under-inclusive).
+    - **CRITICAL** If anything looks wrong (empty, wrong file/symbol, wrong ranges, surprising truncation, etc.) or if a response is unexpected (something you would flag as a possible issue), then stop and investigate the logs to see if you can spot what might be causing it:
+    - **CRITICAL** Inspect `.lsp-mcp/logs/lsp-mcp-debug.log` around the time of the call and try to identify what went wrong (e.g. file resolution, workspace root, LSP error, server capability mismatch, request/response shape). 
+    - Include the suspected root cause + the most relevant log excerpt summary in the bug report, tied to the specific tool call/input.
   - Use **both relative and absolute paths** as specified below.
   - For any “absolute path” inputs in this prompt:
     - The prompt uses `$HOME/...` placeholders. **First resolve `$HOME` to the real absolute path** on the machine you’re running on (e.g. `echo "$HOME"`).

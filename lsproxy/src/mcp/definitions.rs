@@ -14,10 +14,12 @@ pub async fn definitions_in_file(
     include_locals: Option<bool>,
     limit: Option<u32>,
     offset: Option<u32>,
+    context_lines: Option<u32>,
 ) -> ToolOutput {
     let include_locals = include_locals.unwrap_or(false);
+    let context_lines = resolve_context_lines(context_lines);
     match service
-        .definitions_in_file(&path, include_locals, limit, offset)
+        .definitions_in_file(&path, include_locals, limit, offset, context_lines)
         .await
     {
         Ok(response) => {
@@ -62,5 +64,36 @@ pub async fn find_definition(
             ToolOutput::text(markdown)
         }
         Err(e) => tool_output_from_error(e),
+    }
+}
+
+fn resolve_context_lines(context_lines: Option<u32>) -> u32 {
+    context_lines.unwrap_or(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::Rng;
+
+    #[test]
+    fn it_defaults_context_lines_to_one_when_omitted() {
+        let resolved = resolve_context_lines(None);
+        assert_eq!(
+            resolved, 1,
+            "negative: context_lines must default to 1 when omitted"
+        );
+    }
+
+    #[test]
+    fn it_preserves_explicit_context_lines_value() {
+        let mut rng = rand::rng();
+        let explicit: u32 = rng.random_range(0..10);
+        let resolved = resolve_context_lines(Some(explicit));
+        assert_eq!(
+            resolved,
+            explicit,
+            "negative: explicit context_lines value must be preserved"
+        );
     }
 }

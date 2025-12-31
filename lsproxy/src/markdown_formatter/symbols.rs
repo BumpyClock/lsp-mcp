@@ -52,6 +52,10 @@ impl ToMarkdown for WorkspaceSymbolResponse {
             if let Some(ref sig) = symbol.signature {
                 output.push_str(&format!("    `{}`\n", escape_inline_code(sig)));
             }
+
+            if let Some(ref snippet) = symbol.snippet {
+                format_snippet(&snippet.source_code, "  ", &mut output);
+            }
         }
 
         if self.truncated {
@@ -121,10 +125,26 @@ fn format_symbol_recursive(symbol: &Symbol, depth: usize, output: &mut String) {
         output.push_str(&format!("{}  `{}`\n", indent, escape_inline_code(sig)));
     }
 
+    if let Some(ref snippet) = symbol.snippet {
+        format_snippet(&snippet.source_code, &indent, output);
+    }
+
     if let Some(ref children) = symbol.children {
         for child in children {
             format_symbol_recursive(child, depth + 1, output);
         }
+    }
+}
+
+fn format_snippet(source_code: &str, indent: &str, output: &mut String) {
+    if source_code.contains('\n') {
+        output.push_str(&format!("{}```\n", indent));
+        for line in source_code.lines() {
+            output.push_str(&format!("{}{}\n", indent, line));
+        }
+        output.push_str(&format!("{}```\n", indent));
+    } else if !source_code.is_empty() {
+        output.push_str(&format!("{}  `{}`\n", indent, escape_inline_code(source_code)));
     }
 }
 
@@ -160,6 +180,7 @@ mod tests {
             dependencies: None,
             line_count: None,
             children: None,
+            snippet: None,
         }
     }
 
@@ -181,6 +202,7 @@ mod tests {
             match_kind: None,
             match_score: None,
             signature,
+            snippet: None,
         }
     }
 
@@ -315,6 +337,7 @@ mod tests {
                 create_symbol("methodA", "method", 15, None),
                 create_symbol("methodB", "method", 20, None),
             ]),
+            snippet: None,
         };
 
         let response = McpSymbolsResponse {
@@ -577,6 +600,7 @@ mod tests {
             dependencies: None,
             line_count: None,
             children: None,
+            snippet: None,
         };
 
         let child = Symbol {
@@ -599,6 +623,7 @@ mod tests {
             dependencies: None,
             line_count: None,
             children: Some(vec![grandchild]),
+            snippet: None,
         };
 
         let parent = Symbol {
@@ -621,6 +646,7 @@ mod tests {
             dependencies: None,
             line_count: None,
             children: Some(vec![child]),
+            snippet: None,
         };
 
         let response = McpSymbolsResponse {
@@ -742,6 +768,126 @@ mod tests {
         assert!(
             markdown.contains("[Showing 1 of more]"),
             "negative: truncation indicator must be present"
+        );
+    }
+
+    #[test]
+    fn format_snippet_renders_multiline_as_fenced_code_block() {
+        let mut output = String::new();
+        let source = "fn foo() {\n    bar()\n}";
+        format_snippet(source, "", &mut output);
+
+        assert!(
+            output.contains("```"),
+            "negative: multiline snippet must be fenced with triple backticks"
+        );
+        assert!(
+            output.contains("fn foo()"),
+            "negative: snippet must include source code"
+        );
+        assert!(
+            output.contains("    bar()"),
+            "negative: snippet must preserve indentation"
+        );
+    }
+
+    #[test]
+    fn format_snippet_renders_single_line_as_inline_code() {
+        let mut output = String::new();
+        let source = "let x = 42;";
+        format_snippet(source, "", &mut output);
+
+        assert!(
+            output.contains("`let x = 42;`"),
+            "negative: single-line snippet must use inline code"
+        );
+        assert!(
+            !output.contains("```"),
+            "negative: single-line snippet must not use fenced block"
+        );
+    }
+
+    #[test]
+    fn format_snippet_skips_empty_source() {
+        let mut output = String::new();
+        format_snippet("", "", &mut output);
+
+        assert!(
+            output.is_empty(),
+            "negative: empty snippet must produce no output"
+        );
+    }
+
+    #[test]
+    fn mcp_symbols_response_renders_snippet_when_present() {
+        use crate::api_types::CodeContext;
+
+        let snippet = CodeContext {
+            range: FileRange {
+                path: "src/test.ts".to_string(),
+                range: Range {
+                    start: Position { line: 9, character: 1 },
+                    end: Position { line: 11, character: 1 },
+                },
+            },
+            source_code: "function foo\tbar() {\n  return 42;\n}".to_string(),
+        };
+
+        let mut symbol = create_symbol("foo\tbar", "function", 10, None);
+        symbol.snippet = Some(snippet);
+
+        let response = McpSymbolsResponse {
+            path: "src/test.ts".to_string(),
+            mtime: "2025-01-01T00:00:00Z".to_string(),
+            symbols: vec![symbol],
+            limit: 100,
+            offset: 0,
+            truncated: false,
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("```"),
+            "negative: multiline snippet must use fenced code block"
+        );
+        assert!(
+            markdown.contains("function foo\tbar()"),
+            "negative: snippet source must be rendered"
+        );
+    }
+
+    #[test]
+    fn workspace_symbol_response_renders_snippet_when_present() {
+        use crate::api_types::CodeContext;
+
+        let snippet = CodeContext {
+            range: FileRange {
+                path: "src/lib.rs".to_string(),
+                range: Range {
+                    start: Position { line: 9, character: 1 },
+                    end: Position { line: 11, character: 1 },
+                },
+            },
+            source_code: "pub fn example\tvalue() -> i32".to_string(),
+        };
+
+        let mut symbol = create_workspace_symbol("example\tvalue", "function", "src/lib.rs", 10, None);
+        symbol.snippet = Some(snippet);
+
+        let response = WorkspaceSymbolResponse {
+            raw_response: None,
+            symbols: vec![symbol],
+            limit: 100,
+            offset: 0,
+            truncated: false,
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("`pub fn example\tvalue() -> i32`"),
+            "negative: single-line snippet must render as inline code"
         );
     }
 }

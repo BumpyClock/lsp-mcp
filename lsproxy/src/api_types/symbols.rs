@@ -46,6 +46,10 @@ pub struct Symbol {
     /// Nested child symbols (for hierarchical structure from LSP documentSymbol).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<Symbol>>,
+
+    /// Source code snippet around the symbol definition.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<CodeContext>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -275,6 +279,80 @@ mod tests {
         assert!(
             json.get("implements").is_none(),
             "empty implements must still be skipped"
+        );
+    }
+
+    #[test]
+    fn test_symbol_snippet_serializes_when_present() {
+        let snippet = CodeContext {
+            range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position { line: 9, character: 1 },
+                    end: Position { line: 11, character: 1 },
+                },
+            },
+            source_code: "fn foo\tbar() {\n    bar()\n}".to_string(),
+        };
+
+        let symbol = Symbol {
+            name: "foo\tbar".to_string(),
+            kind: "function".to_string(),
+            identifier_position: FilePosition {
+                path: "test.rs".to_string(),
+                position: Position { line: 10, character: 4 },
+            },
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position { line: 10, character: 1 },
+                    end: Position { line: 12, character: 1 },
+                },
+            },
+            snippet: Some(snippet),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_value(&symbol).expect("negative: serialization failed");
+
+        assert!(
+            json.get("snippet").is_some(),
+            "negative: snippet must be serialized when present"
+        );
+        assert!(
+            json["snippet"]["source_code"]
+                .as_str()
+                .unwrap()
+                .contains("fn foo\tbar()"),
+            "negative: snippet must contain source code"
+        );
+    }
+
+    #[test]
+    fn test_symbol_snippet_skipped_when_none() {
+        let symbol = Symbol {
+            name: "bar\tvalue".to_string(),
+            kind: "variable".to_string(),
+            identifier_position: FilePosition {
+                path: "test.rs".to_string(),
+                position: Position { line: 5, character: 5 },
+            },
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position { line: 5, character: 1 },
+                    end: Position { line: 5, character: 20 },
+                },
+            },
+            snippet: None,
+            ..Default::default()
+        };
+
+        let json = serde_json::to_value(&symbol).expect("negative: serialization failed");
+
+        assert!(
+            json.get("snippet").is_none(),
+            "negative: snippet must be omitted when None"
         );
     }
 }
