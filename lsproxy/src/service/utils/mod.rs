@@ -10,6 +10,6 @@ pub mod transformations;
 
 pub use external::{ExternalInfo, PackageInfo};
 pub use signature::{
-    filter_sibling_exports, is_internal_builder_symbol, truncate_signature,
-    DEFAULT_MAX_SIGNATURE_LENGTH,
+    extract_active_signature, filter_sibling_exports, is_internal_builder_symbol,
+    truncate_signature, ActiveSignatureInfo, DEFAULT_MAX_SIGNATURE_LENGTH,
 };

@@ -417,6 +417,35 @@ pub fn filter_sibling_exports(siblings: Vec<Symbol>, limit: u32) -> Vec<Symbol> 
         .collect()
 }
 
+/// Result of extracting active signature from SignatureHelp
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActiveSignatureInfo {
+    pub label: String,
+    pub active_parameter: Option<u32>,
+}
+
+/// Extracts the active signature label and parameter from LSP SignatureHelp
+///
+/// Returns the active signature's label (truncated) and the active parameter index.
+/// If no signatures are available, returns None.
+pub fn extract_active_signature(sig_help: &lsp_types::SignatureHelp) -> Option<ActiveSignatureInfo> {
+    if sig_help.signatures.is_empty() {
+        return None;
+    }
+
+    let active_idx = sig_help.active_signature.unwrap_or(0) as usize;
+    let signature = sig_help.signatures.get(active_idx).or_else(|| sig_help.signatures.first())?;
+
+    let active_param = signature
+        .active_parameter
+        .or(sig_help.active_parameter);
+
+    Some(ActiveSignatureInfo {
+        label: truncate_signature(&signature.label, None),
+        active_parameter: active_param,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -675,5 +704,201 @@ mod tests {
             "Should not return example block. Got: {}",
             sig
         );
+    }
+
+    mod active_signature_tests {
+        use super::*;
+        use lsp_types::{ParameterInformation, ParameterLabel, SignatureHelp, SignatureInformation};
+
+        fn create_signature_info(label: &str, active_param: Option<u32>) -> SignatureInformation {
+            SignatureInformation {
+                label: label.to_string(),
+                documentation: None,
+                parameters: Some(vec![
+                    ParameterInformation {
+                        label: ParameterLabel::Simple("arg1".to_string()),
+                        documentation: None,
+                    },
+                    ParameterInformation {
+                        label: ParameterLabel::Simple("arg2".to_string()),
+                        documentation: None,
+                    },
+                ]),
+                active_parameter: active_param,
+            }
+        }
+
+        #[test]
+        fn it_returns_none_when_signatures_array_is_empty() {
+            let sig_help = SignatureHelp {
+                signatures: vec![],
+                active_signature: None,
+                active_parameter: None,
+            };
+
+            let result = extract_active_signature(&sig_help);
+
+            assert!(
+                result.is_none(),
+                "negative: must return None for empty signatures"
+            );
+        }
+
+        #[test]
+        fn it_extracts_first_signature_when_active_signature_is_none() {
+            let sig_help = SignatureHelp {
+                signatures: vec![
+                    create_signature_info("fn\tfirst(\u{00A0}x: i32)", None),
+                    create_signature_info("fn second(y: String)", None),
+                ],
+                active_signature: None,
+                active_parameter: Some(1),
+            };
+
+            let result = extract_active_signature(&sig_help);
+
+            assert!(result.is_some(), "negative: must extract signature");
+            let info = result.unwrap();
+            assert!(
+                info.label.contains("first"),
+                "negative: must use first signature when active_signature is None, got: {}",
+                info.label
+            );
+            assert_eq!(
+                info.active_parameter,
+                Some(1),
+                "negative: must use SignatureHelp.active_parameter"
+            );
+        }
+
+        #[test]
+        fn it_extracts_signature_at_active_signature_index() {
+            let sig_help = SignatureHelp {
+                signatures: vec![
+                    create_signature_info("fn zeroth()", None),
+                    create_signature_info("fn\tone(\u{4E2D}\u{6587}_param: \u{1F600})", Some(0)),
+                    create_signature_info("fn second()", None),
+                ],
+                active_signature: Some(1),
+                active_parameter: None,
+            };
+
+            let result = extract_active_signature(&sig_help);
+
+            assert!(result.is_some(), "negative: must extract signature");
+            let info = result.unwrap();
+            assert!(
+                info.label.contains("one"),
+                "negative: must use signature at active_signature index, got: {}",
+                info.label
+            );
+            assert_eq!(
+                info.active_parameter,
+                Some(0),
+                "negative: must prefer SignatureInformation.active_parameter"
+            );
+        }
+
+        #[test]
+        fn it_falls_back_to_first_signature_when_index_out_of_bounds() {
+            let sig_help = SignatureHelp {
+                signatures: vec![create_signature_info("fn only_one()", None)],
+                active_signature: Some(99),
+                active_parameter: Some(0),
+            };
+
+            let result = extract_active_signature(&sig_help);
+
+            assert!(result.is_some(), "negative: must extract signature");
+            let info = result.unwrap();
+            assert!(
+                info.label.contains("only_one"),
+                "negative: must fallback to first signature when index OOB, got: {}",
+                info.label
+            );
+        }
+
+        #[test]
+        fn it_truncates_long_signature_labels() {
+            let long_label = format!(
+                "fn very_long_function_name<T: SomeTrait + AnotherTrait>(arg1: {}, arg2: {})",
+                "VeryLongTypeName".repeat(10),
+                "AnotherLongType".repeat(10)
+            );
+            let sig_help = SignatureHelp {
+                signatures: vec![create_signature_info(&long_label, None)],
+                active_signature: Some(0),
+                active_parameter: None,
+            };
+
+            let result = extract_active_signature(&sig_help);
+
+            assert!(result.is_some(), "negative: must extract signature");
+            let info = result.unwrap();
+            assert!(
+                info.label.len() <= DEFAULT_MAX_SIGNATURE_LENGTH,
+                "negative: signature must be truncated to max length, got len={}",
+                info.label.len()
+            );
+        }
+
+        #[test]
+        fn it_prefers_signature_active_parameter_over_help_active_parameter() {
+            let sig_help = SignatureHelp {
+                signatures: vec![create_signature_info("fn test()", Some(42))],
+                active_signature: Some(0),
+                active_parameter: Some(7),
+            };
+
+            let result = extract_active_signature(&sig_help);
+
+            assert!(result.is_some(), "negative: must extract signature");
+            let info = result.unwrap();
+            assert_eq!(
+                info.active_parameter,
+                Some(42),
+                "negative: must prefer SignatureInformation.active_parameter over SignatureHelp.active_parameter"
+            );
+        }
+
+        #[test]
+        fn it_uses_help_active_parameter_when_signature_has_none() {
+            let sig_help = SignatureHelp {
+                signatures: vec![create_signature_info("fn test()", None)],
+                active_signature: Some(0),
+                active_parameter: Some(3),
+            };
+
+            let result = extract_active_signature(&sig_help);
+
+            assert!(result.is_some(), "negative: must extract signature");
+            let info = result.unwrap();
+            assert_eq!(
+                info.active_parameter,
+                Some(3),
+                "negative: must fallback to SignatureHelp.active_parameter"
+            );
+        }
+
+        #[test]
+        fn it_handles_unicode_in_signature_label() {
+            let sig_help = SignatureHelp {
+                signatures: vec![create_signature_info(
+                    "fn \u{4E2D}\u{6587}\u{51FD}\u{6570}(\u{53C2}\u{6570}: \u{5B57}\u{7B26}\u{4E32}) -> \u{7ED3}\u{679C}",
+                    None,
+                )],
+                active_signature: Some(0),
+                active_parameter: None,
+            };
+
+            let result = extract_active_signature(&sig_help);
+
+            assert!(result.is_some(), "negative: must extract unicode signature");
+            let info = result.unwrap();
+            assert!(
+                info.label.contains('\u{4E2D}'),
+                "negative: must preserve CJK characters in signature"
+            );
+        }
     }
 }

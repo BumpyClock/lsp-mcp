@@ -3,7 +3,7 @@
 
 use super::{escape_inline_code, ToMarkdown};
 use crate::api_types::ReferencedSymbolsResponse;
-use crate::service::types::response::{McpReferencesResponse, ReferenceType};
+use crate::service::types::response::{McpReferencesResponse, McpReferenceLocation, ReferenceType};
 
 impl ToMarkdown for McpReferencesResponse {
     fn to_markdown(&self) -> String {
@@ -21,37 +21,51 @@ impl ToMarkdown for McpReferencesResponse {
                 file_group.path, file_group.count, ref_word
             ));
 
+            let mut grouped_refs: Vec<Vec<&McpReferenceLocation>> = vec![vec![], vec![], vec![], vec![]];
+
             for reference in &file_group.refs {
-                let line = reference.position.line;
-                let tag = reference_type_tag(reference.reference_type);
-                match &reference.snippet {
-                    Some(ctx) => {
-                        let context_start_line = ctx.range.range.start.line;
-                        let offset = line.saturating_sub(context_start_line) as usize;
+                let index = match reference.reference_type {
+                    ReferenceType::Definition => 0,
+                    ReferenceType::Import => 1,
+                    ReferenceType::ReExport => 2,
+                    ReferenceType::Call => 3,
+                };
+                grouped_refs[index].push(reference);
+            }
 
-                        let target_line = ctx
-                            .source_code
-                            .lines()
-                            .nth(offset)
-                            .or_else(|| ctx.source_code.lines().next())
-                            .unwrap_or("");
+            for group in grouped_refs {
+                for reference in group {
+                    let line = reference.position.line;
+                    let tag = reference_type_tag(reference.reference_type);
+                    match &reference.snippet {
+                        Some(ctx) => {
+                            let context_start_line = ctx.range.range.start.line;
+                            let offset = line.saturating_sub(context_start_line) as usize;
 
-                        let escaped = escape_inline_code(target_line.trim());
-                        output.push_str(&format!(
-                            "  [{}] Line {}:{}: `{}`\n",
-                            tag,
-                            line,
-                            reference.position.character,
-                            escaped
-                        ));
-                    }
-                    None => {
-                        output.push_str(&format!(
-                            "  [{}] Line {}:{}\n",
-                            tag,
-                            line,
-                            reference.position.character
-                        ));
+                            let target_line = ctx
+                                .source_code
+                                .lines()
+                                .nth(offset)
+                                .or_else(|| ctx.source_code.lines().next())
+                                .unwrap_or("");
+
+                            let escaped = escape_inline_code(target_line.trim());
+                            output.push_str(&format!(
+                                "  [{}] Line {}:{}: `{}`\n",
+                                tag,
+                                line,
+                                reference.position.character,
+                                escaped
+                            ));
+                        }
+                        None => {
+                            output.push_str(&format!(
+                                "  [{}] Line {}:{}\n",
+                                tag,
+                                line,
+                                reference.position.character
+                            ));
+                        }
                     }
                 }
             }

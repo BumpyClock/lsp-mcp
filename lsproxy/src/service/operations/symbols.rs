@@ -154,6 +154,8 @@ pub(crate) async fn workspace_symbol_impl(
         }
     }
 
+    filtered_symbols = dedupe_workspace_symbols(filtered_symbols);
+
     let raw_response = if include_raw_response {
         serde_json::to_value(&filtered_symbols).ok()
     } else {
@@ -288,6 +290,37 @@ pub(crate) fn is_fuzzy_match(query: &str, name: &str) -> bool {
         }
     }
     true
+}
+
+/// Deduplicates workspace symbols by (name, kind) with stable primary selection.
+/// When duplicates exist, prefers non-reexport over reexport kind, then first occurrence.
+fn dedupe_workspace_symbols(symbols: Vec<WorkspaceSymbolInfo>) -> Vec<WorkspaceSymbolInfo> {
+    use std::collections::HashMap;
+
+    let mut seen: HashMap<(String, String), WorkspaceSymbolInfo> = HashMap::new();
+
+    for symbol in symbols {
+        let base_kind = symbol.kind.replace(" (re-export)", "");
+        let key = (symbol.name.clone(), base_kind.clone());
+
+        let is_reexport = symbol.kind.contains("re-export");
+
+        match seen.get(&key) {
+            Some(existing) => {
+                let existing_is_reexport = existing.kind.contains("re-export");
+                if !is_reexport && existing_is_reexport {
+                    seen.insert(key, symbol);
+                }
+            }
+            None => {
+                seen.insert(key, symbol);
+            }
+        }
+    }
+
+    let mut result: Vec<WorkspaceSymbolInfo> = seen.into_values().collect();
+    result.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.kind.cmp(&b.kind)));
+    result
 }
 
 #[cfg(test)]
@@ -517,6 +550,86 @@ mod tests {
             matched.match_score.unwrap_or(1.0),
             0.0,
             "negative: empty query must set score to zero"
+        );
+    }
+
+    #[test]
+    fn dedupe_workspace_symbols_prefers_non_reexport() {
+        let unicode = char::from_u32(241).expect("negative: unicode should be valid");
+        let name = format!("api{}{}", unicode, random_irregular_string());
+        let primary = WorkspaceSymbolInfo {
+            name: name.clone(),
+            kind: "function".to_string(),
+            location: FilePosition {
+                path: "src/api.ts".to_string(),
+                position: Position { line: 5, character: 10 },
+            },
+            container_name: None,
+            match_kind: Some("exact".to_string()),
+            match_score: Some(1.0),
+            signature: None,
+        };
+        let reexport = WorkspaceSymbolInfo {
+            name: name.clone(),
+            kind: "function (re-export)".to_string(),
+            location: FilePosition {
+                path: "src/index.ts".to_string(),
+                position: Position { line: 2, character: 15 },
+            },
+            container_name: None,
+            match_kind: Some("exact".to_string()),
+            match_score: Some(1.0),
+            signature: None,
+        };
+
+        let deduped = dedupe_workspace_symbols(vec![reexport, primary]);
+
+        assert_eq!(deduped.len(), 1, "negative: must dedupe to single symbol");
+        assert_eq!(
+            deduped[0].kind, "function",
+            "negative: must prefer non-reexport kind"
+        );
+        assert_eq!(
+            deduped[0].location.path, "src/api.ts",
+            "negative: must select primary definition"
+        );
+    }
+
+    #[test]
+    fn dedupe_workspace_symbols_stable_order_when_same_kind() {
+        let unicode = char::from_u32(241).expect("negative: unicode should be valid");
+        let name = format!("util{}{}", unicode, random_irregular_string());
+        let first = WorkspaceSymbolInfo {
+            name: name.clone(),
+            kind: "function".to_string(),
+            location: FilePosition {
+                path: "src/util.ts".to_string(),
+                position: Position { line: 3, character: 8 },
+            },
+            container_name: None,
+            match_kind: Some("exact".to_string()),
+            match_score: Some(1.0),
+            signature: None,
+        };
+        let second = WorkspaceSymbolInfo {
+            name: name.clone(),
+            kind: "function".to_string(),
+            location: FilePosition {
+                path: "src/helpers.ts".to_string(),
+                position: Position { line: 10, character: 5 },
+            },
+            container_name: None,
+            match_kind: Some("exact".to_string()),
+            match_score: Some(1.0),
+            signature: None,
+        };
+
+        let deduped = dedupe_workspace_symbols(vec![first.clone(), second]);
+
+        assert_eq!(deduped.len(), 1, "negative: must dedupe to single symbol");
+        assert_eq!(
+            deduped[0].location.path, "src/util.ts",
+            "negative: must preserve first occurrence for stable order"
         );
     }
 }

@@ -10,7 +10,9 @@ use std::sync::Arc;
 
 use crate::service::types::errors::ServiceError;
 use crate::service::utils::identifiers::find_identifier_at_position;
-use crate::service::utils::signature::{extract_identifier_name_from_hover, extract_signature_and_docs};
+use crate::service::utils::signature::{
+    extract_active_signature, extract_identifier_name_from_hover, extract_signature_and_docs,
+};
 use crate::service::utils::transformations::extract_hover_contents;
 
 /// Gets hover information (documentation, type info) for a symbol at a given position.
@@ -54,18 +56,32 @@ pub(crate) async fn hover_impl(
         None => (None, None, None),
     };
 
-    // Optionally fetch definition location
+    let lsp_position = LspPosition {
+        line: position.line.saturating_sub(1),
+        character: position.character.saturating_sub(1),
+    };
+
     let definitions = if include_definition {
         fetch_definition_locations_impl(manager, file_path, position).await
     } else {
         Vec::new()
     };
+    let (active_signature, active_parameter) =
+        match manager.signature_help(file_path, lsp_position).await {
+            Ok(Some(sig_help)) => match extract_active_signature(&sig_help) {
+                Some(info) => (Some(info.label), info.active_parameter),
+                None => (None, None),
+            },
+            _ => (None, None),
+        };
 
     Ok(HoverResponse {
         raw_response,
         contents,
         range,
         definitions,
+        active_signature,
+        active_parameter,
     })
 }
 

@@ -170,6 +170,7 @@ impl From<AstGrepMatch> for Identifier {
         let match_range = ast_match.get_context_range();
         let kind = match ast_match.rule_id.as_str() {
             "all-identifiers" => None,
+            "component-render" => Some("jsx-element".to_string()),
             _ => Some(ast_match.rule_id),
         };
 
@@ -190,5 +191,133 @@ impl From<AstGrepMatch> for Identifier {
                 },
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identifier_from_ast_match_maps_component_render_to_jsx_element() {
+        let ast_match = AstGrepMatch {
+            text: "<Button />".to_string(),
+            range: AstGrepRange {
+                byte_offset: ByteOffset { start: 0, end: 10 },
+                start: AstGrepPosition { line: 5, column: 3 },
+                end: AstGrepPosition { line: 5, column: 13 },
+            },
+            file: "/tmp/App.tsx".to_string(),
+            lines: "<Button />".to_string(),
+            char_count: CharCount { leading: 0, trailing: 0 },
+            language: "tsx".to_string(),
+            meta_variables: MetaVariables {
+                single: SingleVariable {
+                    name: MetaVariable {
+                        text: "Button".to_string(),
+                        range: AstGrepRange {
+                            byte_offset: ByteOffset { start: 1, end: 7 },
+                            start: AstGrepPosition { line: 5, column: 4 },
+                            end: AstGrepPosition { line: 5, column: 10 },
+                        },
+                    },
+                    context: None,
+                },
+                multi: MultiVariables { secondary: None },
+            },
+            rule_id: "component-render".to_string(),
+            labels: None,
+        };
+
+        let identifier: Identifier = ast_match.into();
+
+        assert_eq!(
+            identifier.kind,
+            Some("jsx-element".to_string()),
+            "negative: component-render must map to jsx-element"
+        );
+        assert_eq!(
+            identifier.name, "Button",
+            "negative: identifier name must be preserved"
+        );
+    }
+
+    #[test]
+    fn identifier_from_ast_match_preserves_other_rule_ids() {
+        let ast_match = AstGrepMatch {
+            text: "function example".to_string(),
+            range: AstGrepRange {
+                byte_offset: ByteOffset { start: 0, end: 16 },
+                start: AstGrepPosition { line: 2, column: 0 },
+                end: AstGrepPosition { line: 2, column: 16 },
+            },
+            file: "/tmp/utils.ts".to_string(),
+            lines: "function example".to_string(),
+            char_count: CharCount { leading: 0, trailing: 0 },
+            language: "typescript".to_string(),
+            meta_variables: MetaVariables {
+                single: SingleVariable {
+                    name: MetaVariable {
+                        text: "example".to_string(),
+                        range: AstGrepRange {
+                            byte_offset: ByteOffset { start: 9, end: 16 },
+                            start: AstGrepPosition { line: 2, column: 9 },
+                            end: AstGrepPosition { line: 2, column: 16 },
+                        },
+                    },
+                    context: None,
+                },
+                multi: MultiVariables { secondary: None },
+            },
+            rule_id: "exported-function".to_string(),
+            labels: None,
+        };
+
+        let identifier: Identifier = ast_match.into();
+
+        assert_eq!(
+            identifier.kind,
+            Some("exported-function".to_string()),
+            "negative: other rule IDs must be preserved unchanged"
+        );
+    }
+
+    #[test]
+    fn identifier_from_ast_match_handles_all_identifiers_special_case() {
+        let ast_match = AstGrepMatch {
+            text: "someVar".to_string(),
+            range: AstGrepRange {
+                byte_offset: ByteOffset { start: 0, end: 7 },
+                start: AstGrepPosition { line: 10, column: 5 },
+                end: AstGrepPosition { line: 10, column: 12 },
+            },
+            file: "/tmp/vars.ts".to_string(),
+            lines: "someVar".to_string(),
+            char_count: CharCount { leading: 0, trailing: 0 },
+            language: "typescript".to_string(),
+            meta_variables: MetaVariables {
+                single: SingleVariable {
+                    name: MetaVariable {
+                        text: "someVar".to_string(),
+                        range: AstGrepRange {
+                            byte_offset: ByteOffset { start: 0, end: 7 },
+                            start: AstGrepPosition { line: 10, column: 5 },
+                            end: AstGrepPosition { line: 10, column: 12 },
+                        },
+                    },
+                    context: None,
+                },
+                multi: MultiVariables { secondary: None },
+            },
+            rule_id: "all-identifiers".to_string(),
+            labels: None,
+        };
+
+        let identifier: Identifier = ast_match.into();
+
+        assert!(
+            identifier.kind.is_none(),
+            "negative: all-identifiers must have None kind"
+        );
     }
 }

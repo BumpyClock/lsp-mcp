@@ -32,6 +32,18 @@ impl ToMarkdown for HoverResponse {
     fn to_markdown(&self) -> String {
         let mut output = String::new();
 
+        if let Some(sig) = &self.active_signature {
+            output.push_str("**Active Signature:**\n```\n");
+            output.push_str(sig);
+            output.push_str("\n```");
+            if let Some(param_idx) = self.active_parameter {
+                output.push_str("\n*Active parameter: ");
+                output.push_str(&param_idx.to_string());
+                output.push('*');
+            }
+            output.push_str("\n\n");
+        }
+
         let content = self.extract_content();
         if content.is_empty() {
             output.push_str("No hover information available");
@@ -90,6 +102,8 @@ mod tests {
             contents: Some(HoverContents::Markup(content.to_string())),
             range: None,
             definitions: Vec::new(),
+            active_signature: None,
+            active_parameter: None,
         }
     }
 
@@ -99,6 +113,8 @@ mod tests {
             contents: Some(HoverContents::Array(items.into_iter().map(String::from).collect())),
             range: None,
             definitions: Vec::new(),
+            active_signature: None,
+            active_parameter: None,
         }
     }
 
@@ -117,6 +133,8 @@ mod tests {
                 line,
                 external,
             }],
+            active_signature: None,
+            active_parameter: None,
         }
     }
 
@@ -127,6 +145,8 @@ mod tests {
             contents: None,
             range: None,
             definitions: Vec::new(),
+            active_signature: None,
+            active_parameter: None,
         };
 
         let markdown = response.to_markdown();
@@ -248,6 +268,8 @@ mod tests {
                     external: None,
                 },
             ],
+            active_signature: None,
+            active_parameter: None,
         };
 
         let markdown = response.to_markdown();
@@ -302,6 +324,8 @@ mod tests {
             contents: Some(HoverContents::Array(vec![])),
             range: None,
             definitions: Vec::new(),
+            active_signature: None,
+            active_parameter: None,
         };
 
         let markdown = response.to_markdown();
@@ -377,6 +401,8 @@ mod tests {
                 contents: Some(HoverContents::Markup(content.to_string())),
                 range: None,
                 definitions: Vec::new(),
+                active_signature: None,
+                active_parameter: None,
             })
         }
 
@@ -504,6 +530,132 @@ mod tests {
             assert!(
                 !markdown.contains("---"),
                 "negative: results must not use horizontal rule separator"
+            );
+        }
+    }
+
+    mod active_signature_markdown_tests {
+        use super::*;
+
+        #[test]
+        fn it_renders_active_signature_at_top() {
+            let response = HoverResponse {
+                raw_response: None,
+                contents: Some(HoverContents::Markup("Docs".to_string())),
+                range: None,
+                definitions: Vec::new(),
+                active_signature: Some("fn \u{4E2D}\u{6587}(arg1: i32, arg2: String)".to_string()),
+                active_parameter: None,
+            };
+
+            let markdown = response.to_markdown();
+
+            assert!(
+                markdown.starts_with("**Active Signature:**"),
+                "negative: active signature must appear at top of output"
+            );
+            assert!(
+                markdown.contains("fn \u{4E2D}\u{6587}"),
+                "negative: active signature must preserve unicode characters"
+            );
+        }
+
+        #[test]
+        fn it_renders_active_signature_in_code_block() {
+            let response = HoverResponse {
+                raw_response: None,
+                contents: Some(HoverContents::Markup("Docs".to_string())),
+                range: None,
+                definitions: Vec::new(),
+                active_signature: Some("fn test(\ttab: i32)".to_string()),
+                active_parameter: None,
+            };
+
+            let markdown = response.to_markdown();
+
+            assert!(
+                markdown.contains("```\nfn test(\ttab: i32)\n```"),
+                "negative: active signature must be wrapped in code block"
+            );
+        }
+
+        #[test]
+        fn it_renders_active_parameter_index() {
+            let response = HoverResponse {
+                raw_response: None,
+                contents: Some(HoverContents::Markup("Docs".to_string())),
+                range: None,
+                definitions: Vec::new(),
+                active_signature: Some("fn example(a: i32, b: String)".to_string()),
+                active_parameter: Some(1),
+            };
+
+            let markdown = response.to_markdown();
+
+            assert!(
+                markdown.contains("Active parameter: 1"),
+                "negative: must render active parameter index"
+            );
+        }
+
+        #[test]
+        fn it_omits_active_parameter_when_none() {
+            let response = HoverResponse {
+                raw_response: None,
+                contents: Some(HoverContents::Markup("Docs".to_string())),
+                range: None,
+                definitions: Vec::new(),
+                active_signature: Some("fn example()".to_string()),
+                active_parameter: None,
+            };
+
+            let markdown = response.to_markdown();
+
+            assert!(
+                !markdown.contains("Active parameter"),
+                "negative: must not render active parameter when None"
+            );
+        }
+
+        #[test]
+        fn it_separates_active_signature_from_hover_content() {
+            let response = HoverResponse {
+                raw_response: None,
+                contents: Some(HoverContents::Markup("Hover content here".to_string())),
+                range: None,
+                definitions: Vec::new(),
+                active_signature: Some("fn sig()".to_string()),
+                active_parameter: None,
+            };
+
+            let markdown = response.to_markdown();
+
+            assert!(
+                markdown.contains("```\n\nHover content here"),
+                "negative: active signature must be separated from hover content by double newline"
+            );
+        }
+
+        #[test]
+        fn it_omits_active_signature_section_when_none() {
+            let response = HoverResponse {
+                raw_response: None,
+                contents: Some(HoverContents::Markup("Just docs".to_string())),
+                range: None,
+                definitions: Vec::new(),
+                active_signature: None,
+                active_parameter: None,
+            };
+
+            let markdown = response.to_markdown();
+
+            assert!(
+                !markdown.contains("Active Signature"),
+                "negative: must not render active signature section when None"
+            );
+            assert!(
+                markdown.starts_with("Just docs"),
+                "negative: content must start with hover docs when no active signature"
             );
         }
     }

@@ -15,8 +15,8 @@ use lsp_types::{
     DidOpenTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse,
     GotoDefinitionParams, GotoDefinitionResponse, InitializeParams, InitializeResult, Location,
     PartialResultParams, Position, PublishDiagnosticsParams, Range, ReferenceContext,
-    ReferenceParams, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
-    WorkDoneProgressParams, WorkspaceFolder,
+    ReferenceParams, SignatureHelp, SignatureHelpParams, TextDocumentIdentifier, TextDocumentItem,
+    TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -317,6 +317,46 @@ pub trait LspClient: Send {
 
         debug!("Received hover response");
         Ok(hover_resp)
+    }
+
+    async fn text_document_signature_help(
+        &mut self,
+        file_path: &str,
+        position: Position,
+    ) -> Result<Option<SignatureHelp>, Box<dyn Error + Send + Sync>> {
+        debug!(
+            "Requesting signature help for {}, line {}, character {}",
+            file_path, position.line, position.character
+        );
+
+        self.ensure_document_open(file_path).await?;
+
+        let params = SignatureHelpParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+                },
+                position,
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            context: None,
+        };
+
+        let result = self
+            .send_request(
+                "textDocument/signatureHelp",
+                Some(serde_json::to_value(params)?),
+            )
+            .await?;
+
+        let sig_help: Option<SignatureHelp> = if result.is_null() {
+            None
+        } else {
+            serde_json::from_value(result)?
+        };
+
+        debug!("Received signature help response");
+        Ok(sig_help)
     }
 
     async fn text_document_document_symbol(

@@ -127,6 +127,12 @@ pub struct HoverResponse {
     /// Definition locations (optional, when include_definition is true)
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub definitions: Vec<DefinitionLocation>,
+    /// Active signature at call site from signatureHelp (for overload resolution)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_signature: Option<String>,
+    /// Active parameter index within the active signature
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_parameter: Option<u32>,
 }
 
 /// The contents of a hover response
@@ -215,6 +221,8 @@ mod tests {
                 line: 1847,
                 external: Some(true),
             }],
+            active_signature: None,
+            active_parameter: None,
         };
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
@@ -232,10 +240,59 @@ mod tests {
             contents: Some(HoverContents::Markup("some docs".to_string())),
             range: None,
             definitions: Vec::new(),
+            active_signature: None,
+            active_parameter: None,
         };
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
 
         assert!(json.get("definitions").is_none(), "empty definitions must be skipped in serialization");
+    }
+
+    #[test]
+    fn test_hover_response_with_active_signature() {
+        let hover = HoverResponse {
+            raw_response: None,
+            contents: Some(HoverContents::Markup("hover\tcontent with\t\u{00A0}tabs".to_string())),
+            range: None,
+            definitions: Vec::new(),
+            active_signature: Some("fn \u{4E2D}\u{6587}(arg1: i32, arg2: String)".to_string()),
+            active_parameter: Some(1),
+        };
+
+        let json = serde_json::to_value(&hover).expect("failed to serialize");
+
+        assert_eq!(
+            json["active_signature"],
+            "fn \u{4E2D}\u{6587}(arg1: i32, arg2: String)",
+            "negative: active_signature must be serialized"
+        );
+        assert_eq!(
+            json["active_parameter"], 1,
+            "negative: active_parameter must be serialized"
+        );
+    }
+
+    #[test]
+    fn test_hover_response_skips_none_active_signature() {
+        let hover = HoverResponse {
+            raw_response: None,
+            contents: Some(HoverContents::Markup("docs".to_string())),
+            range: None,
+            definitions: Vec::new(),
+            active_signature: None,
+            active_parameter: None,
+        };
+
+        let json = serde_json::to_value(&hover).expect("failed to serialize");
+
+        assert!(
+            json.get("active_signature").is_none(),
+            "negative: active_signature must be omitted when None"
+        );
+        assert!(
+            json.get("active_parameter").is_none(),
+            "negative: active_parameter must be omitted when None"
+        );
     }
 }

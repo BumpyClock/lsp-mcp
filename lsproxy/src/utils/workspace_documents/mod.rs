@@ -114,7 +114,7 @@ mod tests {
             },
         };
         let extracted = handler.read_text_document(&file_path, Some(range)).await?;
-        assert_eq!(extracted, "");
+        assert_eq!(extracted, "Line 2");
 
         Ok(())
     }

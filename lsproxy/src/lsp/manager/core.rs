@@ -442,6 +442,31 @@ impl Manager {
             .map_err(|e| LspManagerError::InternalError(format!("Hover retrieval failed: {}", e)))
     }
 
+    pub async fn signature_help(
+        &self,
+        file_path: &str,
+        position: Position,
+    ) -> Result<Option<lsp_types::SignatureHelp>, LspManagerError> {
+        let full_path = get_mount_dir().join(file_path);
+        let full_path_str = full_path.to_str().unwrap_or_default();
+        let lsp_type = detect_language(full_path_str).map_err(|e| {
+            LspManagerError::InternalError(format!("Language detection failed: {}", e))
+        })?;
+
+        let client = self
+            .get_client(lsp_type)
+            .await
+            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let mut locked_client = client.lock().await;
+
+        locked_client
+            .text_document_signature_help(full_path_str, position)
+            .await
+            .map_err(|e| {
+                LspManagerError::InternalError(format!("Signature help retrieval failed: {}", e))
+            })
+    }
+
     pub async fn code_action(
         &self,
         file_path: &str,

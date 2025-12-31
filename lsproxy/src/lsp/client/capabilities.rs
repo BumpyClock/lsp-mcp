@@ -3,8 +3,9 @@
 
 use lsp_types::{
     ClientCapabilities, CodeActionClientCapabilities, CodeActionKindLiteralSupport,
-    CodeActionLiteralSupport, DiagnosticTag, DocumentSymbolClientCapabilities,
-    PublishDiagnosticsClientCapabilities, TagSupport, TextDocumentClientCapabilities,
+    CodeActionLiteralSupport, DiagnosticTag, DocumentSymbolClientCapabilities, MarkupKind,
+    PublishDiagnosticsClientCapabilities, SignatureHelpClientCapabilities,
+    SignatureInformationSettings, TagSupport, TextDocumentClientCapabilities,
 };
 
 /// Creates default client capabilities for LSP initialization
@@ -41,6 +42,15 @@ pub fn create_default_capabilities() -> ClientCapabilities {
             data_support: Some(true),
             resolve_support: None,
             honors_change_annotations: None,
+        }),
+        signature_help: Some(SignatureHelpClientCapabilities {
+            dynamic_registration: Some(false),
+            signature_information: Some(SignatureInformationSettings {
+                documentation_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]),
+                active_parameter_support: Some(true),
+                ..Default::default()
+            }),
+            context_support: Some(true),
         }),
         ..Default::default()
     });
