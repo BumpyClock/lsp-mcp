@@ -56,7 +56,7 @@ Full example:
   },
   "tools": {
     "preset": "standard",
-    "enable": ["find_referenced_symbols"],
+    "enable": ["findReferencedSymbols"],
     "disable": ["incoming_calls"]
   },
   "output": {

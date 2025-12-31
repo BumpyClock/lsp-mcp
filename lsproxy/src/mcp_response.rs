@@ -339,8 +339,8 @@ mod tests {
             "negative: error format should include suggestions section"
         );
         assert!(
-            result.contains("definitions_in_file"),
-            "negative: error format should include definitions_in_file suggestion"
+            result.contains("documentSymbol"),
+            "negative: error format should include documentSymbol suggestion"
         );
     }
 

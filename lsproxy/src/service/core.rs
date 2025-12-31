@@ -1231,8 +1231,8 @@ fn internal_helper() {
 
         assert!(!suggestions.is_empty(), "negative: IdentifierNotFound should provide suggestions");
         assert!(
-            suggestions.iter().any(|s| s.contains("definitions_in_file")),
-            "negative: suggestions should mention definitions_in_file tool"
+            suggestions.iter().any(|s| s.contains("documentSymbol")),
+            "negative: suggestions should mention documentSymbol tool"
         );
     }
 

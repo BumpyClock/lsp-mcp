@@ -124,7 +124,7 @@
 
   ## Required Tool Calls (exact inputs)
 
-  ### 1) `find_definition`
+  ### 1) `goToDefinition`
   - Relative: `scoreMember` at `src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx:83:23`
   - Absolute: `scoreMember` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Pages/Library/Checkout/TypeAheadSearch.tsx:74:20`
   - Relative: `normalizeMember` at `src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx:78:36`
@@ -132,13 +132,13 @@
   - Absolute: `filterNavigationByPermissions` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Components/Navigation/MobileExpandableHeader.tsx:80:12`
   - Relative: `useFileViewerState` at `src/Pages/Class/ClassTeacherPage/Grading/HomeworkFileViewer.tsx:119:30`
 
-  ### 2) `find_references`
+  ### 2) `findReferences`
   - Relative: `scoreMember` at `src/utilities/memberScoring.ts:36:17`
   - Absolute: `isAttendanceBelowPromotion` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/utilities/promotionCriteriaUtils.ts:30:14`
   - Relative: `filterNavigationByPermissions` at `src/Components/Navigation/navigationConstants.ts:185:14`
   - Relative: `useFileViewerState` at `src/Pages/Class/ClassTeacherPage/Grading/hooks/useFileViewerState.ts:126:14`
 
-  ### 3) `call_hierarchy` (outgoing)
+  ### 3) `callHierarchy` (outgoing)
   - Relative: `scoreMember` at `src/utilities/memberScoring.ts:36:17`
   - Absolute: `isAttendanceBelowPromotion` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/utilities/promotionCriteriaUtils.ts:30:14`
   - Relative: `filterNavigationByPermissions` at `src/Components/Navigation/navigationConstants.ts:185:14`
@@ -151,14 +151,14 @@
   - Relative: `filterNavigationByPermissions` at `src/Components/Navigation/TopNav.tsx:31:25`
   - Relative: `useFileViewerState` at `src/Pages/Class/ClassTeacherPage/Grading/HomeworkFileViewer.tsx:119:30`
 
-  ### 5) `definitions_in_file`
+  ### 5) `documentSymbol`
   - Relative: `src/utilities/memberScoring.ts`
   - Absolute: `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Components/LibrarySearchCombobox/utils.ts`
   - Relative: `src/utilities/promotionCriteriaUtils.ts`
   - Relative: `src/Components/Navigation/navigationConstants.ts`
   - Relative: `src/Pages/Class/ClassTeacherPage/Grading/hooks/useFileViewerState.ts`
 
-  ### 6) `workspace_symbol`
+  ### 6) `workspaceSymbol`
   Run queries exactly:
   - `scoreMember`
   - `LibraryMember`
@@ -170,7 +170,7 @@
   - `useFileViewerState`
   - `fileViewerReducer`
 
-  ### 7) `get_diagnostics`
+  ### 7) `getDiagnostics`
   - Relative: `src/utilities/memberScoring.ts`
   - Absolute: `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx`
   - Relative: `src/utilities/promotionCriteriaUtils.ts`
@@ -178,7 +178,7 @@
   - Relative: `src/Pages/Class/ClassTeacherPage/Grading/hooks/useFileViewerState.ts`
   - Relative: `src/Pages/Class/ClassTeacherPage/Grading/HomeworkFileViewer.tsx`
 
-  ### 8) `find_referenced_symbols`
+  ### 8) `findReferencedSymbols`
   If available, run on:
   - `scoreMember` at `src/utilities/memberScoring.ts:36:17`
   If not available, explicitly note missing tool and impact.

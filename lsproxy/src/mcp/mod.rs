@@ -41,7 +41,7 @@ impl LspMcpServer {
     instructions = "All line and character positions use 1-based indexing (first line is 1, first character is 1). This matches what editors display to users."
 )]
 impl LspMcpServer {
-    #[tool(description = "Symbols defined in a file (top-level only by default)")]
+    #[tool(name = "documentSymbol", description = "Symbols defined in a file (top-level only by default)")]
     async fn definitions_in_file(
         &self,
         path: String,
@@ -62,7 +62,7 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5).")]
+    #[tool(name = "goToDefinition", description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5).")]
     async fn find_definition(
         &self,
         path: String,
@@ -83,7 +83,7 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "References to symbol at position")]
+    #[tool(name = "findReferences", description = "References to symbol at position")]
     async fn find_references(
         &self,
         path: String,
@@ -106,7 +106,7 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "Hover info at position. Use include_definition to also get definition location. Use 'requests' for batch mode with array of {path, line, character}")]
+    #[tool(name = "hover", description = "Hover info at position. Use include_definition to also get definition location. Use 'requests' for batch mode with array of {path, line, character}")]
     async fn hover(
         &self,
         path: Option<String>,
@@ -127,7 +127,7 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "Search symbols by name")]
+    #[tool(name = "workspaceSymbol", description = "Search symbols by name")]
     async fn workspace_symbol(
         &self,
         query: String,
@@ -148,7 +148,7 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "Implementations of interface/trait")]
+    #[tool(name = "goToImplementation", description = "Implementations of interface/trait")]
     async fn go_to_implementation(
         &self,
         path: String,
@@ -159,7 +159,7 @@ impl LspMcpServer {
             .await
     }
 
-    #[tool(description = "Incoming or outgoing calls at position. External deps included by default. Set externals=false to exclude.")]
+    #[tool(name = "callHierarchy", description = "Incoming or outgoing calls at position. External deps included by default. Set externals=false to exclude.")]
     async fn call_hierarchy(
         &self,
         path: String,
@@ -182,7 +182,7 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "Symbols referenced by definition. External deps included by default. Set externals=false to exclude.")]
+    #[tool(name = "findReferencedSymbols", description = "Symbols referenced by definition. External deps included by default. Set externals=false to exclude.")]
     async fn find_referenced_symbols(
         &self,
         path: String,
@@ -203,7 +203,7 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "Identifiers by name in file")]
+    #[tool(name = "findIdentifier", description = "Identifiers by name in file")]
     async fn find_identifier(
         &self,
         path: String,
@@ -226,12 +226,12 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "List workspace files")]
+    #[tool(name = "listFiles", description = "List workspace files")]
     async fn list_files(&self, limit: Option<u32>, offset: Option<u32>) -> ToolOutput {
         files::list_files(&self.service, self.output_mode, limit, offset).await
     }
 
-    #[tool(description = "Read source code from file")]
+    #[tool(name = "readSourceCode", description = "Read source code from file")]
     async fn read_source_code(
         &self,
         path: String,
@@ -252,12 +252,12 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "Service status")]
+    #[tool(name = "health", description = "Service status")]
     async fn health(&self) -> ToolOutput {
         diagnostics::health(&self.service, self.output_mode).await
     }
 
-    #[tool(description = "Diagnostics for file or workspace")]
+    #[tool(name = "getDiagnostics", description = "Diagnostics for file or workspace")]
     async fn get_diagnostics(&self, file_path: Option<String>) -> ToolOutput {
         diagnostics::get_diagnostics(&self.service, self.output_mode, file_path).await
     }

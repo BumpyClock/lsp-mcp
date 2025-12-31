@@ -6,39 +6,39 @@ use std::collections::HashSet;
 
 /// All available MCP tool names (must match #[tool] method names in mcp.rs)
 pub const ALL_TOOLS: &[&str] = &[
-    "definitions_in_file",
-    "find_definition",
-    "find_references",
+    "documentSymbol",
+    "goToDefinition",
+    "findReferences",
     "hover",
-    "workspace_symbol",
-    "go_to_implementation",
-    "call_hierarchy",
-    "find_referenced_symbols",
-    "find_identifier",
-    "list_files",
-    "read_source_code",
+    "workspaceSymbol",
+    "goToImplementation",
+    "callHierarchy",
+    "findReferencedSymbols",
+    "findIdentifier",
+    "listFiles",
+    "readSourceCode",
     "health",
-    "get_diagnostics",
+    "getDiagnostics",
 ];
 
 /// Core tools (Tier 1+2): Enabled by default in "standard" preset
 pub const CORE_TOOLS: &[&str] = &[
-    "find_definition",
-    "find_references",
+    "goToDefinition",
+    "findReferences",
     "hover",
-    "get_diagnostics",
-    "workspace_symbol",
-    "definitions_in_file",
-    "call_hierarchy",
-    "find_referenced_symbols",
+    "getDiagnostics",
+    "workspaceSymbol",
+    "documentSymbol",
+    "callHierarchy",
+    "findReferencedSymbols",
 ];
 
 /// Minimal tools (Tier 1): Essential navigation only
 pub const MINIMAL_TOOLS: &[&str] = &[
-    "find_definition",
-    "find_references",
+    "goToDefinition",
+    "findReferences",
     "hover",
-    "get_diagnostics",
+    "getDiagnostics",
 ];
 
 /// Tool preset configurations
@@ -91,10 +91,10 @@ mod tests {
     fn test_get_preset_tools_minimal() {
         let tools = get_preset_tools(ToolPreset::Minimal);
         assert_eq!(tools.len(), 4);
-        assert!(tools.contains("find_definition"));
-        assert!(tools.contains("find_references"));
+        assert!(tools.contains("goToDefinition"));
+        assert!(tools.contains("findReferences"));
         assert!(tools.contains("hover"));
-        assert!(tools.contains("get_diagnostics"));
+        assert!(tools.contains("getDiagnostics"));
     }
 
     #[test]
@@ -102,15 +102,15 @@ mod tests {
         let tools = get_preset_tools(ToolPreset::Standard);
         assert_eq!(tools.len(), 8);
         // Should include all minimal tools
-        assert!(tools.contains("find_definition"));
-        assert!(tools.contains("find_references"));
+        assert!(tools.contains("goToDefinition"));
+        assert!(tools.contains("findReferences"));
         assert!(tools.contains("hover"));
-        assert!(tools.contains("get_diagnostics"));
+        assert!(tools.contains("getDiagnostics"));
         // Plus additional core tools
-        assert!(tools.contains("workspace_symbol"));
-        assert!(tools.contains("definitions_in_file"));
-        assert!(tools.contains("call_hierarchy"));
-        assert!(tools.contains("find_referenced_symbols"));
+        assert!(tools.contains("workspaceSymbol"));
+        assert!(tools.contains("documentSymbol"));
+        assert!(tools.contains("callHierarchy"));
+        assert!(tools.contains("findReferencedSymbols"));
     }
 
     #[test]
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_is_valid_tool() {
-        assert!(is_valid_tool("find_definition"));
+        assert!(is_valid_tool("goToDefinition"));
         assert!(is_valid_tool("hover"));
         assert!(!is_valid_tool("nonexistent_tool"));
         assert!(!is_valid_tool(""));

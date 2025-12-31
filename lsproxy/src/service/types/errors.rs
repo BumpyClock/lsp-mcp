@@ -95,7 +95,7 @@ impl PositionError {
         match self {
             PositionError::IdentifierNotFound { closest } => {
                 let mut suggestions = vec![
-                    "Use definitions_in_file to see available symbols in this file".to_string(),
+                    "Use documentSymbol to see available symbols in this file".to_string(),
                 ];
                 if !closest.is_empty() {
                     let names: Vec<&str> = closest.iter().take(3).map(|id| id.name.as_str()).collect();

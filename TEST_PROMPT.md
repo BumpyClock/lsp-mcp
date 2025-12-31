@@ -109,13 +109,13 @@ For each tool, include:
 
 Run and evaluate these lsp-mcp tools:
 
-- call_hierarchy
-- definitions_in_file
-- find_definition
-- find_referenced_symbols
-- find_references
-- get_diagnostics
+- callHierarchy
+- documentSymbol
+- goToDefinition
+- findReferencedSymbols
+- findReferences
+- getDiagnostics
 - hover
-- workspace_symbol
+- workspaceSymbol
 
 If a tool fails or returns empty data, note that explicitly and explain how it affects usability.

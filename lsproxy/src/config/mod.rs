@@ -24,8 +24,8 @@ pub use types::{OutputConfig, OutputMode};
 ///   },
 ///   "tools": {
 ///     "preset": "standard",
-///     "enable": ["find_referenced_symbols"],
-///     "disable": ["call_hierarchy"]
+///     "enable": ["findReferencedSymbols"],
+///     "disable": ["callHierarchy"]
 ///   },
 ///   "output": {
 ///     "mode": "verbose"
@@ -203,8 +203,8 @@ mod tests {
         let config_content = r#"{
             "tools": {
                 "preset": "standard",
-                "enable": ["find_referenced_symbols"],
-                "disable": ["call_hierarchy"]
+                "enable": ["findReferencedSymbols"],
+                "disable": ["callHierarchy"]
             }
         }"#;
         let config_path = temp_dir.path().join(".lsp-mcp.json");
@@ -214,8 +214,8 @@ mod tests {
         let config = result.expect("Expected config to load");
 
         assert_eq!(config.tools.preset, ToolPreset::Standard);
-        assert!(config.tools.enable.contains(&"find_referenced_symbols".to_string()));
-        assert!(config.tools.disable.contains(&"call_hierarchy".to_string()));
+        assert!(config.tools.enable.contains(&"findReferencedSymbols".to_string()));
+        assert!(config.tools.disable.contains(&"callHierarchy".to_string()));
     }
 
     #[test]
@@ -239,14 +239,14 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert_eq!(tools.len(), 8);
-        assert!(tools.contains("find_definition"));
-        assert!(tools.contains("find_references"));
+        assert!(tools.contains("goToDefinition"));
+        assert!(tools.contains("findReferences"));
         assert!(tools.contains("hover"));
-        assert!(tools.contains("get_diagnostics"));
-        assert!(tools.contains("workspace_symbol"));
-        assert!(tools.contains("definitions_in_file"));
-        assert!(tools.contains("call_hierarchy"));
-        assert!(tools.contains("find_referenced_symbols"));
+        assert!(tools.contains("getDiagnostics"));
+        assert!(tools.contains("workspaceSymbol"));
+        assert!(tools.contains("documentSymbol"));
+        assert!(tools.contains("callHierarchy"));
+        assert!(tools.contains("findReferencedSymbols"));
     }
 
     #[test]
@@ -254,7 +254,7 @@ mod tests {
         let config = LspMcpConfig {
             tools: ToolsConfig {
                 preset: ToolPreset::Standard,
-                enable: vec!["find_referenced_symbols".to_string()],
+                enable: vec!["findReferencedSymbols".to_string()],
                 disable: vec![],
             },
             ..Default::default()
@@ -262,7 +262,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert_eq!(tools.len(), 8);
-        assert!(tools.contains("find_referenced_symbols"));
+        assert!(tools.contains("findReferencedSymbols"));
     }
 
     #[test]
@@ -271,14 +271,14 @@ mod tests {
             tools: ToolsConfig {
                 preset: ToolPreset::Standard,
                 enable: vec![],
-                disable: vec!["call_hierarchy".to_string()],
+                disable: vec!["callHierarchy".to_string()],
             },
             ..Default::default()
         };
         let tools = config.enabled_tools();
 
         assert_eq!(tools.len(), 7);
-        assert!(!tools.contains("call_hierarchy"));
+        assert!(!tools.contains("callHierarchy"));
     }
 
     #[test]
@@ -286,14 +286,14 @@ mod tests {
         let config = LspMcpConfig {
             tools: ToolsConfig {
                 preset: ToolPreset::Minimal,
-                enable: vec!["list_files".to_string()],
-                disable: vec!["list_files".to_string()],
+                enable: vec!["listFiles".to_string()],
+                disable: vec!["listFiles".to_string()],
             },
             ..Default::default()
         };
         let tools = config.enabled_tools();
 
-        assert!(!tools.contains("list_files"));
+        assert!(!tools.contains("listFiles"));
     }
 
     #[test]
