@@ -2,12 +2,12 @@
 // ABOUTME: Handles finding usages of symbols across the codebase.
 
 use crate::api_types::{
-    CodeContext, FilePosition, FileRange, Identifier, Position, Range,
+    get_mount_dir, CodeContext, FilePosition, FileRange, Identifier, Position, Range,
     ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse,
 };
 use crate::lsp::manager::Manager;
 use crate::utils::file_utils::uri_to_relative_path_string;
-use lsp_types::{GotoDefinitionResponse, Location, Position as LspPosition, Range as LspRange};
+use lsp_types::{GotoDefinitionResponse, Location, Position as LspPosition, Range as LspRange, Url};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -298,6 +298,13 @@ pub(crate) async fn find_referenced_symbols_impl(
     })
 }
 
+/// Checks if a URI refers to a file within the workspace.
+fn is_workspace_file(uri: &Url) -> bool {
+    uri.to_file_path()
+        .map(|p| p.starts_with(get_mount_dir()))
+        .unwrap_or(false)
+}
+
 /// Finds and filters references to return only workspace files.
 pub(crate) async fn find_and_filter_references(
     manager: &Manager,
@@ -313,14 +320,9 @@ pub(crate) async fn find_and_filter_references(
         )
         .await?;
 
-    let files = manager.list_files().await?;
-    let files_set: HashSet<String> = files.into_iter().collect();
     let mut filtered_refs: Vec<_> = references
         .into_iter()
-        .filter(|reference| {
-            let path = uri_to_relative_path_string(&reference.uri);
-            files_set.contains(&path)
-        })
+        .filter(|reference| is_workspace_file(&reference.uri))
         .collect();
 
     filtered_refs.sort_by(|a, b| {
@@ -424,7 +426,18 @@ pub(crate) fn group_references_by_file(references: &[McpReferenceLocation]) -> V
     file_groups
 }
 
+/// Reads a single source line from a file.
+/// Uses range-based read to avoid loading entire file into memory.
+async fn read_source_line(manager: &Manager, path: &str, line: u32) -> Option<String> {
+    let range = LspRange {
+        start: LspPosition { line, character: 0 },
+        end: LspPosition { line: line + 1, character: 0 },
+    };
+    manager.read_source_code(path, Some(range)).await.ok()
+}
+
 /// Classifies references by type (definition, import, re-export, call).
+/// Uses range-based reads to fetch only the lines needed for classification.
 pub(crate) async fn classify_references_by_type(
     manager: &Manager,
     references: &[Location],
@@ -444,16 +457,11 @@ pub(crate) async fn classify_references_by_type(
         if reference_type == ReferenceType::Call {
             let path = uri_to_relative_path_string(&reference.uri);
             let line_num = reference.range.start.line;
-            if let Ok(source) = manager.read_source_code(
-                &path,
-                Some(LspRange::new(
-                    LspPosition { line: line_num, character: 0 },
-                    LspPosition { line: line_num + 1, character: 0 },
-                )),
-            ).await {
-                if is_reexport_line(&source) {
+
+            if let Some(line) = read_source_line(manager, &path, line_num).await {
+                if is_reexport_line(&line) {
                     reference_type = ReferenceType::ReExport;
-                } else if is_import_line(&source) {
+                } else if is_import_line(&line) {
                     reference_type = ReferenceType::Import;
                 }
             }

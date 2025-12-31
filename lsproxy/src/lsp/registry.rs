@@ -1,5 +1,5 @@
 // ABOUTME: Language registry providing a single source of truth for language server metadata
-// ABOUTME: Centralizes file patterns, extensions, and factory functions for all supported languages
+// ABOUTME: Centralizes extensions and factory functions for all supported languages
 
 use crate::api_types::SupportedLanguages;
 use crate::lsp::client::LspClient;
@@ -8,11 +8,8 @@ use crate::lsp::languages::{
     RustAnalyzerClient, TypeScriptLanguageClient,
 };
 use crate::utils::workspace_documents::{
-    CSHARP_EXTENSIONS, CSHARP_FILE_PATTERNS, C_AND_CPP_EXTENSIONS, C_AND_CPP_FILE_PATTERNS,
-    GOLANG_EXTENSIONS, GOLANG_FILE_PATTERNS, JAVA_EXTENSIONS, JAVA_FILE_PATTERNS, PHP_EXTENSIONS,
-    PHP_FILE_PATTERNS, PYTHON_EXTENSIONS, PYTHON_FILE_PATTERNS, RUBY_EXTENSIONS,
-    RUBY_FILE_PATTERNS, RUST_EXTENSIONS, RUST_FILE_PATTERNS, TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS,
-    TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS,
+    CSHARP_EXTENSIONS, C_AND_CPP_EXTENSIONS, GOLANG_EXTENSIONS, JAVA_EXTENSIONS, PHP_EXTENSIONS,
+    PYTHON_EXTENSIONS, RUBY_EXTENSIONS, RUST_EXTENSIONS, TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS,
 };
 use notify_debouncer_mini::DebouncedEvent;
 use std::future::Future;
@@ -158,8 +155,6 @@ pub struct LanguageMetadata {
     pub id: SupportedLanguages,
     /// Display name (e.g., "Python", "TypeScript/JavaScript")
     pub name: &'static str,
-    /// Glob patterns for source files
-    pub file_patterns: &'static [&'static str],
     /// File extensions (without dots)
     pub extensions: &'static [&'static str],
     /// Factory function for creating LSP client instances
@@ -171,63 +166,54 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
     LanguageMetadata {
         id: SupportedLanguages::Python,
         name: "Python",
-        file_patterns: PYTHON_FILE_PATTERNS,
         extensions: PYTHON_EXTENSIONS,
         factory: create_python_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::TypeScriptJavaScript,
         name: "TypeScript/JavaScript",
-        file_patterns: TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS,
         extensions: TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS,
         factory: create_typescript_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Rust,
         name: "Rust",
-        file_patterns: RUST_FILE_PATTERNS,
         extensions: RUST_EXTENSIONS,
         factory: create_rust_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::CPP,
         name: "C/C++",
-        file_patterns: C_AND_CPP_FILE_PATTERNS,
         extensions: C_AND_CPP_EXTENSIONS,
         factory: create_cpp_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::CSharp,
         name: "C#",
-        file_patterns: CSHARP_FILE_PATTERNS,
         extensions: CSHARP_EXTENSIONS,
         factory: create_csharp_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Java,
         name: "Java",
-        file_patterns: JAVA_FILE_PATTERNS,
         extensions: JAVA_EXTENSIONS,
         factory: create_java_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Golang,
         name: "Go",
-        file_patterns: GOLANG_FILE_PATTERNS,
         extensions: GOLANG_EXTENSIONS,
         factory: create_golang_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::PHP,
         name: "PHP",
-        file_patterns: PHP_FILE_PATTERNS,
         extensions: PHP_EXTENSIONS,
         factory: create_php_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Ruby,
         name: "Ruby",
-        file_patterns: RUBY_FILE_PATTERNS,
         extensions: RUBY_EXTENSIONS,
         factory: create_ruby_client,
     },
@@ -348,16 +334,16 @@ mod tests {
     }
 
     #[test]
-    fn typescript_javascript_metadata_has_correct_file_patterns() {
+    fn typescript_javascript_metadata_has_correct_extensions() {
         let metadata = LanguageMetadata::get(SupportedLanguages::TypeScriptJavaScript)
             .expect("TypeScriptJavaScript must be in registry");
         assert!(
-            metadata.file_patterns.contains(&"**/*.ts"),
-            "TS/JS file_patterns must contain **/*.ts"
+            metadata.extensions.contains(&"ts"),
+            "TS/JS extensions must contain ts"
         );
         assert!(
-            metadata.file_patterns.contains(&"**/*.jsx"),
-            "TS/JS file_patterns must contain **/*.jsx"
+            metadata.extensions.contains(&"jsx"),
+            "TS/JS extensions must contain jsx"
         );
     }
 

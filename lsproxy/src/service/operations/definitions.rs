@@ -16,7 +16,7 @@ use crate::service::types::errors::{PositionError, ServiceError};
 use crate::service::types::response::{McpDefinitionResponse, McpSymbolsResponse};
 use crate::service::utils::identifiers::find_identifier_at_position;
 use crate::service::utils::pagination::paginate_items;
-use crate::service::utils::signature::{enrich_symbol, extract_identifier_name_from_hover, truncate_signature};
+use crate::service::utils::signature::{batch_enrich_symbols, extract_identifier_name_from_hover, truncate_signature, DEFAULT_ENRICHMENT_CONCURRENCY};
 use crate::service::utils::transformations::{
     definition_item_from_location, definition_locations, definition_locations_lsp,
 };
@@ -406,18 +406,6 @@ async fn rank_definition_locations(
     sort_definition_candidates(candidates)
 }
 
-/// Recursively enriches a symbol and all its children with LSP hover data.
-/// Uses Box::pin to handle recursive async calls.
-async fn enrich_symbol_tree(manager: &Manager, file_path: &str, symbol: &mut Symbol) {
-    enrich_symbol(manager, file_path, symbol).await;
-
-    if let Some(ref mut children) = symbol.children {
-        for child in children {
-            Box::pin(enrich_symbol_tree(manager, file_path, child)).await;
-        }
-    }
-}
-
 /// Retrieves all symbol definitions in a file with enriched metadata.
 pub(crate) async fn definitions_in_file_impl(
     manager: &Arc<Manager>,
@@ -460,14 +448,10 @@ pub(crate) async fn definitions_in_file_impl(
         None => Vec::new(),
     };
 
-    if include_locals {
-        for symbol in &mut symbols {
-            enrich_symbol_tree(manager, file_path, symbol).await;
-        }
-    } else {
-        for symbol in &mut symbols {
-            enrich_symbol(manager, file_path, symbol).await;
-        }
+    // Enrich symbols with LSP hover data using parallel processing
+    batch_enrich_symbols(manager, file_path, &mut symbols, DEFAULT_ENRICHMENT_CONCURRENCY).await;
+
+    if !include_locals {
         symbols = strip_symbol_children(symbols);
     }
 

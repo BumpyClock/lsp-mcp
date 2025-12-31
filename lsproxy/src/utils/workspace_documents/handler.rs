@@ -78,8 +78,14 @@ impl WorkspaceDocumentsHandler {
             while let Ok(event) = watch_events_rx.recv().await {
                 debug!("Received event: {:?}", event);
                 if WorkspaceDocumentsHandler::matches_patterns(&event.path, &patterns_clone).await {
-                    cache_clone.write().await.clear();
-                    debug!("Cache cleared for {:?}", event.path);
+                    let mut cache = cache_clone.write().await;
+                    if cache.contains_key(&event.path) {
+                        cache.remove(&event.path);
+                        debug!("Cache invalidated for {:?}", event.path);
+                    } else {
+                        cache.insert(event.path.clone(), None);
+                        debug!("New file added to cache: {:?}", event.path);
+                    }
                 }
             }
         });

@@ -3,6 +3,7 @@
 
 use crate::api_types::{Position, Symbol};
 use crate::lsp::manager::Manager;
+use futures::stream::{self, StreamExt};
 use lsp_types::Position as LspPosition;
 
 /// Default maximum length for signatures in responses
@@ -277,33 +278,58 @@ pub(crate) async fn batch_hover_for_signatures(
     join_all(futures).await
 }
 
-/// Enriches a symbol with LSP hover data and source-based heuristics
-pub(crate) async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &mut Symbol) {
-    symbol.line_count = Some(
-        symbol.file_range.range.end.line
-            .saturating_sub(symbol.file_range.range.start.line)
-            .saturating_add(1)
-    );
+/// Detects if a symbol is exported based on its kind (best-effort heuristic)
+pub(crate) fn detect_exported(kind: &str) -> Option<bool> {
+    match kind {
+        k if k.contains("export") => Some(true),
+        k if k.contains("pub") => Some(true),
+        k if k.starts_with("public-") => Some(true),
+        _ => Some(false),
+    }
+}
+
+/// Holds enrichment data computed for a symbol.
+/// Used for parallel batch processing.
+#[derive(Default)]
+struct SymbolEnrichment {
+    signature: Option<String>,
+    jsdoc_summary: Option<String>,
+    exported: Option<bool>,
+    dependencies: Option<Vec<String>>,
+    line_count: Option<u32>,
+}
+
+/// Computes enrichment data for a symbol without mutating it.
+/// This allows parallel execution across multiple symbols.
+async fn compute_symbol_enrichment(
+    manager: &Manager,
+    file_path: &str,
+    symbol: &Symbol,
+) -> SymbolEnrichment {
+    let mut enrichment = SymbolEnrichment {
+        line_count: Some(
+            symbol.file_range.range.end.line
+                .saturating_sub(symbol.file_range.range.start.line)
+                .saturating_add(1)
+        ),
+        exported: detect_exported(&symbol.kind),
+        ..Default::default()
+    };
 
     let hover_position = lsp_types::Position {
         line: symbol.identifier_position.position.line.saturating_sub(1),
         character: symbol.identifier_position.position.character.saturating_sub(1),
     };
 
+    // Try LSP hover first
     if let Ok(Some(hover)) = manager.hover(file_path, hover_position).await {
         let (sig, jsdoc) = extract_signature_and_docs(&hover.contents);
-        if sig.is_some() {
-            symbol.signature = sig;
-        }
-        if jsdoc.is_some() {
-            symbol.jsdoc_summary = jsdoc;
-        }
+        enrichment.signature = sig;
+        enrichment.jsdoc_summary = jsdoc;
     }
 
-    if symbol.signature.is_none() || symbol.jsdoc_summary.is_none() {
-        // Read source code for the symbol's range
-        // Note: LSP ranges have exclusive end, so we use end.line directly (not -1)
-        // to ensure we read the full content including the last line
+    // Fallback to source-based extraction if needed
+    if enrichment.signature.is_none() || enrichment.jsdoc_summary.is_none() {
         if let Ok(source_code) = manager.read_source_code(
             file_path,
             Some(lsp_types::Range::new(
@@ -312,26 +338,26 @@ pub(crate) async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &m
                     character: 0,
                 },
                 lsp_types::Position {
-                    line: symbol.file_range.range.end.line, // No saturating_sub - LSP end is exclusive
+                    line: symbol.file_range.range.end.line,
                     character: 0,
                 },
             )),
         ).await {
-            if symbol.signature.is_none() {
-                symbol.signature = extract_signature_from_source(&source_code, &symbol.name);
+            if enrichment.signature.is_none() {
+                enrichment.signature = extract_signature_from_source(&source_code, &symbol.name);
             }
-            if symbol.jsdoc_summary.is_none() {
-                symbol.jsdoc_summary = extract_docs_from_source(&source_code);
+            if enrichment.jsdoc_summary.is_none() {
+                enrichment.jsdoc_summary = extract_docs_from_source(&source_code);
             }
         }
     }
 
-    if let Some(ref sig) = symbol.signature {
-        symbol.signature = Some(truncate_signature(sig, None));
+    // Truncate signature
+    if let Some(ref sig) = enrichment.signature {
+        enrichment.signature = Some(truncate_signature(sig, None));
     }
 
-    symbol.exported = detect_exported(&symbol.kind);
-
+    // Get dependencies
     let position = lsp_types::Position {
         line: symbol.identifier_position.position.line.saturating_sub(1),
         character: symbol.identifier_position.position.character.saturating_sub(1),
@@ -368,18 +394,129 @@ pub(crate) async fn enrich_symbol(manager: &Manager, file_path: &str, symbol: &m
         if !deps.is_empty() {
             let mut unique_deps: Vec<String> = deps.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect();
             unique_deps.sort();
-            symbol.dependencies = Some(unique_deps);
+            enrichment.dependencies = Some(unique_deps);
         }
+    }
+
+    enrichment
+}
+
+/// Applies enrichment data to a symbol.
+fn apply_enrichment(symbol: &mut Symbol, enrichment: SymbolEnrichment) {
+    symbol.line_count = enrichment.line_count;
+    symbol.exported = enrichment.exported;
+    if enrichment.signature.is_some() {
+        symbol.signature = enrichment.signature;
+    }
+    if enrichment.jsdoc_summary.is_some() {
+        symbol.jsdoc_summary = enrichment.jsdoc_summary;
+    }
+    if enrichment.dependencies.is_some() {
+        symbol.dependencies = enrichment.dependencies;
     }
 }
 
-/// Detects if a symbol is exported based on its kind (best-effort heuristic)
-pub(crate) fn detect_exported(kind: &str) -> Option<bool> {
-    match kind {
-        k if k.contains("export") => Some(true),
-        k if k.contains("pub") => Some(true),
-        k if k.starts_with("public-") => Some(true),
-        _ => Some(false),
+/// Index path to locate a symbol in a nested tree.
+/// Each element is the index at that level of nesting.
+type SymbolIndexPath = Vec<usize>;
+
+/// Collects all symbols from a tree into a flat list with their index paths.
+fn collect_symbol_paths(symbols: &[Symbol]) -> Vec<(SymbolIndexPath, Position)> {
+    fn collect_recursive(
+        symbols: &[Symbol],
+        current_path: &[usize],
+        result: &mut Vec<(SymbolIndexPath, Position)>,
+    ) {
+        for (i, symbol) in symbols.iter().enumerate() {
+            let mut path = current_path.to_vec();
+            path.push(i);
+            result.push((path.clone(), symbol.identifier_position.position.clone()));
+
+            if let Some(ref children) = symbol.children {
+                collect_recursive(children, &path, result);
+            }
+        }
+    }
+
+    let mut result = Vec::new();
+    collect_recursive(symbols, &[], &mut result);
+    result
+}
+
+/// Gets a mutable reference to a symbol at the given index path.
+fn get_symbol_mut<'a>(symbols: &'a mut [Symbol], path: &[usize]) -> Option<&'a mut Symbol> {
+    if path.is_empty() {
+        return None;
+    }
+
+    let mut current = symbols.get_mut(path[0])?;
+    for &idx in &path[1..] {
+        current = current.children.as_mut()?.get_mut(idx)?;
+    }
+    Some(current)
+}
+
+/// Gets a reference to a symbol at the given index path.
+fn get_symbol<'a>(symbols: &'a [Symbol], path: &[usize]) -> Option<&'a Symbol> {
+    if path.is_empty() {
+        return None;
+    }
+
+    let mut current = symbols.get(path[0])?;
+    for &idx in &path[1..] {
+        current = current.children.as_ref()?.get(idx)?;
+    }
+    Some(current)
+}
+
+/// Default concurrency limit for batch enrichment.
+pub const DEFAULT_ENRICHMENT_CONCURRENCY: usize = 8;
+
+/// Enriches multiple symbols in parallel with bounded concurrency.
+///
+/// This function:
+/// 1. Flattens the symbol tree into a list of index paths
+/// 2. Computes enrichment for each symbol concurrently (limited to `concurrency_limit`)
+/// 3. Applies results back to the symbols
+///
+/// Using bounded concurrency prevents overwhelming the LSP server while still
+/// achieving significant speedup over sequential processing.
+pub(crate) async fn batch_enrich_symbols(
+    manager: &Manager,
+    file_path: &str,
+    symbols: &mut [Symbol],
+    concurrency_limit: usize,
+) {
+    let symbol_paths = collect_symbol_paths(symbols);
+
+    if symbol_paths.is_empty() {
+        return;
+    }
+
+    // Collect (path, symbol_clone) pairs for processing
+    // We clone symbols because we can't hold references across await points
+    let symbol_data: Vec<(SymbolIndexPath, Symbol)> = symbol_paths
+        .iter()
+        .filter_map(|(path, _)| {
+            get_symbol(symbols, path).map(|s| (path.clone(), s.clone()))
+        })
+        .collect();
+
+    // Process symbols with bounded concurrency
+    let enrichments: Vec<(SymbolIndexPath, SymbolEnrichment)> = stream::iter(symbol_data)
+        .map(|(path, symbol)| async move {
+            let enrichment = compute_symbol_enrichment(manager, file_path, &symbol).await;
+            (path, enrichment)
+        })
+        .buffer_unordered(concurrency_limit)
+        .collect()
+        .await;
+
+    // Apply enrichments back to symbols
+    for (path, enrichment) in enrichments {
+        if let Some(symbol) = get_symbol_mut(symbols, &path) {
+            apply_enrichment(symbol, enrichment);
+        }
     }
 }
 

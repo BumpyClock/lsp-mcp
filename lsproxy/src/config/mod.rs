@@ -8,7 +8,7 @@ mod types;
 use std::collections::HashMap;
 
 pub use tools_config::ToolsConfig;
-pub use types::{OutputConfig, OutputMode};
+pub use types::{DebugConfig, DebugLogLevel, OutputConfig, OutputMode};
 
 /// Configuration for the lsp-mcp server loaded from .lsp-mcp.json.
 ///
@@ -38,6 +38,7 @@ pub struct LspMcpConfig {
     pub binaries: HashMap<String, String>,
     pub tools: ToolsConfig,
     pub output: Option<OutputConfig>,
+    pub debug: Option<DebugConfig>,
 }
 
 #[cfg(test)]
@@ -529,5 +530,41 @@ mod tests {
         let merged = global.merge(project);
 
         assert_eq!(merged.output_mode(), OutputMode::Verbose);
+    }
+
+    #[test]
+    fn it_parses_debug_config_from_config_file() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let config_content = r#"{"debug": {"enabled": true, "log_level": "trace", "log_dir": ".custom/logs"}}"#;
+        let config_path = temp_dir.path().join(".lsp-mcp.json");
+        std::fs::write(&config_path, config_content).expect("Failed to write config");
+
+        let result = LspMcpConfig::load(temp_dir.path());
+        let config = result.expect("Expected config to load");
+
+        let debug = config.debug.expect("Expected debug config");
+        assert!(debug.enabled);
+        assert_eq!(debug.log_level, DebugLogLevel::Trace);
+        assert_eq!(debug.log_dir, Some(".custom/logs".to_string()));
+    }
+
+    #[test]
+    fn it_defaults_debug_config_when_not_specified() {
+        let config = LspMcpConfig::default();
+        assert!(config.debug.is_none());
+        assert!(config.debug_config().is_none());
+    }
+
+    #[test]
+    fn debug_config_returns_none_when_disabled() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let config_content = r#"{"debug": {"enabled": false}}"#;
+        let config_path = temp_dir.path().join(".lsp-mcp.json");
+        std::fs::write(&config_path, config_content).expect("Failed to write config");
+
+        let result = LspMcpConfig::load(temp_dir.path());
+        let config = result.expect("Expected config to load");
+
+        assert!(config.debug_config().is_none());
     }
 }

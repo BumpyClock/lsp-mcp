@@ -1,7 +1,7 @@
 // ABOUTME: Configuration loaders for the lsp-mcp server.
 // ABOUTME: Loads and merges global and project-level .lsp-mcp.json config files.
 
-use super::{LspMcpConfig, OutputConfig, OutputMode, ToolsConfig};
+use super::{DebugConfig, LspMcpConfig, OutputConfig, OutputMode, ToolsConfig};
 use log::info;
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -18,6 +18,8 @@ pub(crate) struct LspMcpConfigFile {
     pub tools: ToolsConfig,
     #[serde(default)]
     pub output: Option<OutputConfig>,
+    #[serde(default)]
+    pub debug: Option<DebugConfig>,
 }
 
 impl LspMcpConfig {
@@ -91,6 +93,7 @@ impl LspMcpConfig {
             },
             tools: self.tools.merge(project.tools),
             output: project.output.or(self.output),
+            debug: project.debug.or(self.debug),
         }
     }
 
@@ -110,6 +113,11 @@ impl LspMcpConfig {
             .map(|output| output.mode)
             .unwrap_or_default()
     }
+
+    /// Get the debug config if enabled
+    pub fn debug_config(&self) -> Option<&DebugConfig> {
+        self.debug.as_ref().filter(|d| d.enabled)
+    }
 }
 
 impl From<LspMcpConfigFile> for LspMcpConfig {
@@ -119,6 +127,7 @@ impl From<LspMcpConfigFile> for LspMcpConfig {
             binaries: file.binaries,
             tools: file.tools,
             output: file.output,
+            debug: file.debug,
         }
     }
 }

@@ -14,6 +14,7 @@ pub mod lsp;
 pub mod markdown_formatter;
 pub mod mcp;
 pub mod mcp_response;
+pub mod session;
 pub mod service;
 pub mod tool_registry;
 mod ast_grep;

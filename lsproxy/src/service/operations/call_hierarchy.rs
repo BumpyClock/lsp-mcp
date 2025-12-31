@@ -571,16 +571,17 @@ pub(crate) fn dedupe_calls(calls: Vec<CallInfo>) -> Vec<CallInfo> {
         );
         seen.entry(key)
             .and_modify(|existing| {
-                let mut merged_ranges = existing.call_ranges.clone();
+                let mut seen_positions: HashSet<(u32, u32)> = existing
+                    .call_ranges
+                    .iter()
+                    .map(|r| (r.start.line, r.start.character))
+                    .collect();
                 for r in &call.call_ranges {
-                    let dup = merged_ranges.iter().any(|er| {
-                        er.start.line == r.start.line && er.start.character == r.start.character
-                    });
-                    if !dup {
-                        merged_ranges.push(r.clone());
+                    let key = (r.start.line, r.start.character);
+                    if seen_positions.insert(key) {
+                        existing.call_ranges.push(r.clone());
                     }
                 }
-                existing.call_ranges = merged_ranges;
 
                 if let (Some(existing_snippets), Some(new_snippets)) =
                     (&mut existing.call_snippets, &call.call_snippets)
@@ -613,16 +614,17 @@ fn dedupe_outgoing_calls_by_call_site(calls: Vec<CallInfo>) -> Vec<CallInfo> {
                 if should_replace_call_item(&existing.item, &call.item) {
                     existing.item = call.item.clone();
                 }
-                let mut merged_ranges = existing.call_ranges.clone();
+                let mut seen_positions: HashSet<(u32, u32)> = existing
+                    .call_ranges
+                    .iter()
+                    .map(|r| (r.start.line, r.start.character))
+                    .collect();
                 for r in &call.call_ranges {
-                    let dup = merged_ranges.iter().any(|er| {
-                        er.start.line == r.start.line && er.start.character == r.start.character
-                    });
-                    if !dup {
-                        merged_ranges.push(r.clone());
+                    let key = (r.start.line, r.start.character);
+                    if seen_positions.insert(key) {
+                        existing.call_ranges.push(r.clone());
                     }
                 }
-                existing.call_ranges = merged_ranges;
 
                 if let (Some(existing_snippets), Some(new_snippets)) =
                     (&mut existing.call_snippets, &call.call_snippets)
