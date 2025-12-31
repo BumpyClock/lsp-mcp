@@ -65,13 +65,24 @@ impl ToMarkdown for McpDefinitionResponse {
                 }
             }
 
-            if let Some(ref snippet) = def.snippet {
+            let source_to_render = if let Some(ref snippet) = def.snippet {
                 if !snippet.source_code.is_empty() {
-                    let language = detect_language(&def.path);
-                    let truncated_source = truncate_lines(&snippet.source_code, SOURCE_CODE_MAX_LINES);
-                    output.push_str("\nSource\n");
-                    output.push_str(&format!("```{}\n{}\n```\n", language, truncated_source));
+                    Some(snippet.source_code.as_str())
+                } else {
+                    None
                 }
+            } else {
+                self.source_code_context
+                    .as_ref()
+                    .and_then(|contexts| contexts.get(index))
+                    .map(|ctx| ctx.source_code.as_str())
+            };
+
+            if let Some(source) = source_to_render {
+                let language = detect_language(&def.path);
+                let truncated_source = truncate_lines(source, SOURCE_CODE_MAX_LINES);
+                output.push_str("\nSource\n");
+                output.push_str(&format!("```{}\n{}\n```\n", language, truncated_source));
             }
         }
 
@@ -880,6 +891,150 @@ mod tests {
         assert!(
             !result.contains("()"),
             "negative: empty kind must not show empty parentheses"
+        );
+    }
+
+    #[test]
+    fn it_renders_source_from_source_code_context_when_snippet_is_none() {
+        let mut def = create_minimal_definition("src/test.ts", 10, 5);
+        def.snippet = None;
+
+        let mut response = create_response_with_definitions("testFunc", vec![def]);
+        response.source_code_context = Some(vec![CodeContext {
+            range: create_file_range("src/test.ts", 10, 15),
+            source_code: "export function testFunc(): void {\n  console.log('from context');\n}".to_string(),
+        }]);
+
+        let result = response.to_markdown();
+
+        assert!(
+            result.contains("Source"),
+            "negative: source_code_context must render Source section when snippet is None"
+        );
+        assert!(
+            result.contains("from context"),
+            "negative: source_code_context content must be rendered"
+        );
+        assert!(
+            result.contains("```typescript"),
+            "negative: output must use typescript code fence"
+        );
+    }
+
+    #[test]
+    fn it_truncates_source_code_context_exceeding_100_lines() {
+        let long_source = (0..150)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let mut def = create_minimal_definition("src/test.go", 10, 1);
+        def.snippet = None;
+
+        let mut response = create_response_with_definitions("test", vec![def]);
+        response.source_code_context = Some(vec![CodeContext {
+            range: create_file_range("src/test.go", 10, 160),
+            source_code: long_source,
+        }]);
+
+        let result = response.to_markdown();
+
+        assert!(
+            result.contains("[truncated, 150 total lines]"),
+            "negative: source_code_context must show truncation indicator for long source"
+        );
+    }
+
+    #[test]
+    fn it_prefers_snippet_over_source_code_context_when_both_present() {
+        let def = create_full_definition(
+            "src/test.rs",
+            42,
+            5,
+            "function",
+            "()",
+            "",
+            "fn from_snippet() {}",
+        );
+
+        let mut response = create_response_with_definitions("testFunc", vec![def]);
+        response.source_code_context = Some(vec![CodeContext {
+            range: create_file_range("src/test.rs", 42, 47),
+            source_code: "fn from_context() {}".to_string(),
+        }]);
+
+        let result = response.to_markdown();
+
+        assert!(
+            result.contains("from_snippet"),
+            "negative: snippet must be preferred over source_code_context"
+        );
+        assert!(
+            !result.contains("from_context"),
+            "negative: source_code_context must not be used when snippet exists"
+        );
+    }
+
+    #[test]
+    fn it_omits_source_section_when_neither_snippet_nor_context() {
+        let def = create_minimal_definition("src/test.ts", 10, 5);
+        let response = create_response_with_definitions("test", vec![def]);
+
+        let result = response.to_markdown();
+
+        assert!(
+            !result.contains("Source"),
+            "negative: Source section must not appear when no snippet or context"
+        );
+    }
+
+    #[test]
+    fn it_handles_multiple_definitions_with_source_code_context() {
+        let mut def1 = create_minimal_definition("src/utils.ts", 10, 5);
+        def1.snippet = None;
+        let mut def2 = create_minimal_definition("src/helpers.ts", 20, 3);
+        def2.snippet = None;
+
+        let mut response = create_response_with_definitions("test", vec![def1, def2]);
+        response.source_code_context = Some(vec![
+            CodeContext {
+                range: create_file_range("src/utils.ts", 10, 15),
+                source_code: "function test() { /* first */ }".to_string(),
+            },
+            CodeContext {
+                range: create_file_range("src/helpers.ts", 20, 25),
+                source_code: "function test() { /* second */ }".to_string(),
+            },
+        ]);
+
+        let result = response.to_markdown();
+
+        assert!(
+            result.contains("first"),
+            "negative: first definition source_code_context must be rendered"
+        );
+        assert!(
+            result.contains("second"),
+            "negative: second definition source_code_context must be rendered"
+        );
+    }
+
+    #[test]
+    fn it_handles_unicode_in_source_code_context() {
+        let mut def = create_minimal_definition("src/test.py", 10, 5);
+        def.snippet = None;
+
+        let mut response = create_response_with_definitions("тест", vec![def]);
+        response.source_code_context = Some(vec![CodeContext {
+            range: create_file_range("src/test.py", 10, 15),
+            source_code: "def тест():\n  print('Привет мир 🚀')".to_string(),
+        }]);
+
+        let result = response.to_markdown();
+
+        assert!(
+            result.contains("Привет мир 🚀"),
+            "negative: unicode in source_code_context must be preserved"
         );
     }
 }

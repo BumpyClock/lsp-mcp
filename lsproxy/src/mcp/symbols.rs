@@ -15,11 +15,12 @@ pub async fn workspace_symbol(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> ToolOutput {
+    let exact = resolve_exact(exact);
     match service
         .workspace_symbol(
             &query,
             output_mode == OutputMode::Verbose,
-            exact.unwrap_or(false),
+            exact,
             limit,
             offset,
         )
@@ -59,5 +60,36 @@ pub async fn find_identifier(
             ToolOutput::text(resp)
         }
         Err(e) => tool_output_from_error(e),
+    }
+}
+
+fn resolve_exact(exact: Option<bool>) -> bool {
+    exact.unwrap_or(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::Rng;
+
+    #[test]
+    fn it_defaults_exact_to_true_when_omitted() {
+        let resolved = resolve_exact(None);
+        assert!(
+            resolved,
+            "negative: exact must default to true when omitted"
+        );
+    }
+
+    #[test]
+    fn it_preserves_explicit_exact_value() {
+        let mut rng = rand::rng();
+        let explicit = rng.random_range(0..2) == 1;
+        let resolved = resolve_exact(Some(explicit));
+        assert_eq!(
+            resolved,
+            explicit,
+            "negative: explicit exact value must be preserved"
+        );
     }
 }

@@ -18,6 +18,7 @@ pub async fn find_references(
     offset: Option<u32>,
 ) -> ToolOutput {
     let pos = Position { line, character };
+    let context_lines = resolve_context_lines(context_lines);
     match service
         .find_references(
             &path,
@@ -47,12 +48,13 @@ pub async fn find_referenced_symbols(
     externals: Option<bool>,
 ) -> ToolOutput {
     let pos = Position { line, character };
+    let include_externals = resolve_include_externals(externals);
     match service
         .find_referenced_symbols(
             &path,
             pos,
             full_scan.unwrap_or(false),
-            externals.unwrap_or(true),
+            include_externals,
         )
         .await
     {
@@ -61,5 +63,63 @@ pub async fn find_referenced_symbols(
             ToolOutput::text(resp)
         }
         Err(e) => tool_output_from_error(e),
+    }
+}
+
+fn resolve_context_lines(context_lines: Option<u32>) -> Option<u32> {
+    Some(context_lines.unwrap_or(1))
+}
+
+fn resolve_include_externals(externals: Option<bool>) -> bool {
+    externals.unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::Rng;
+
+    #[test]
+    fn it_defaults_context_lines_to_one_when_omitted() {
+        let context_lines = None;
+        let resolved = resolve_context_lines(context_lines);
+        assert_eq!(
+            resolved,
+            Some(1),
+            "negative: omitted context lines must default to one line"
+        );
+    }
+
+    #[test]
+    fn it_preserves_explicit_context_line_values() {
+        let mut rng = rand::rng();
+        let value: u32 = rng.random_range(2..50);
+        let resolved = resolve_context_lines(Some(value));
+        assert_eq!(
+            resolved,
+            Some(value),
+            "negative: explicit context lines must be preserved"
+        );
+    }
+
+    #[test]
+    fn it_defaults_externals_to_false_when_omitted() {
+        let resolved = resolve_include_externals(None);
+        assert!(
+            !resolved,
+            "negative: externals must default to false when omitted"
+        );
+    }
+
+    #[test]
+    fn it_preserves_explicit_externals_value() {
+        let mut rng = rand::rng();
+        let explicit = rng.random_range(0..2) == 1;
+        let resolved = resolve_include_externals(Some(explicit));
+        assert_eq!(
+            resolved,
+            explicit,
+            "negative: explicit externals value must be preserved"
+        );
     }
 }
