@@ -8,3 +8,4 @@ add debug logging to the LSP-MCP code and user can run the mcp server with "RUST
 ## Use LSP-MCP to develop
 **CRITICAL** This is important. After each task run you must do this.
 As you use the lsp-mcp to navigate the codebase to make coding decisions evaluate where the information provided by mcp were not enough and you had to read the file anyways and surface up these shortcomings and insights to the user.
+Answer the question if the tool calls and the information provided by the tools helped you navigate the codebase faster and gather required information quicker. 

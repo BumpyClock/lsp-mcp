@@ -365,9 +365,12 @@ pub(crate) async fn call_hierarchy_impl(
                 })
                 .collect();
 
+            calls = filter_outgoing_callables(calls);
+
             if calls.is_empty() {
                 calls = outgoing_calls_from_references(manager, file_path, &position, &workspace_set)
                     .await;
+                calls = filter_outgoing_callables(calls);
                 used_fallback = true;
             }
             calls
@@ -391,6 +394,7 @@ pub(crate) async fn call_hierarchy_impl(
     );
     if calls.is_empty() && direction_is_outgoing && !used_fallback {
         calls = outgoing_calls_from_references(manager, file_path, &position, &workspace_set).await;
+        calls = filter_outgoing_callables(calls);
         if internal_only {
             calls = filter_internal_calls(calls);
         }
@@ -426,6 +430,26 @@ pub(crate) async fn call_hierarchy_impl(
     })
 }
 
+/// Determines if an ast-grep rule_id should be included in call hierarchy references.
+/// Accepts function-call and decorator rules, rejects component-render and other non-call rules.
+fn allow_call_hierarchy_reference_rule(rule_id: &str) -> bool {
+    if rule_id.starts_with("component-render") {
+        debug!(
+            "allow_call_hierarchy_reference_rule skipping rule_id={}",
+            rule_id
+        );
+        return false;
+    }
+    if rule_id.starts_with("function-call") || rule_id.starts_with("decorator") {
+        return true;
+    }
+    debug!(
+        "allow_call_hierarchy_reference_rule skipping rule_id={}",
+        rule_id
+    );
+    false
+}
+
 async fn outgoing_calls_from_references(
     manager: &Arc<Manager>,
     file_path: &str,
@@ -457,6 +481,9 @@ async fn outgoing_calls_from_references(
     );
     let mut calls = Vec::new();
     for (ast_match, def_response) in referenced_symbols {
+        if !allow_call_hierarchy_reference_rule(&ast_match.rule_id) {
+            continue;
+        }
         let locations = definition_locations_lsp(&def_response);
         if locations.is_empty() {
             continue;
@@ -670,6 +697,26 @@ pub(crate) fn filter_internal_calls(calls: Vec<CallInfo>) -> Vec<CallInfo> {
         .into_iter()
         .filter(|call| call.item.external != Some(true))
         .collect()
+}
+
+/// Filters outgoing calls to include only callable symbols (exclude property and field kinds).
+fn filter_outgoing_callables(calls: Vec<CallInfo>) -> Vec<CallInfo> {
+    let before_count = calls.len();
+    let filtered: Vec<CallInfo> = calls
+        .into_iter()
+        .filter(|call| {
+            let kind = call.item.kind.as_str();
+            kind != "property" && kind != "field"
+        })
+        .collect();
+    let after_count = filtered.len();
+    if before_count > after_count {
+        debug!(
+            "filter_outgoing_callables filtered {} non-callable items (property/field)",
+            before_count - after_count
+        );
+    }
+    filtered
 }
 
 /// Normalizes a path for consistent comparison.
@@ -975,5 +1022,73 @@ mod tests {
         // This is edge case - files shouldn't have trailing slash but testing normalization
         let result = is_external_call("src/lib.rs/", &workspace_files);
         assert!(!result, "path normalization must handle trailing slash");
+    }
+
+    #[test]
+    fn filter_outgoing_callables_removes_property_and_field_kinds() {
+        let unicode = char::from_u32(0xF1).expect("negative: unicode should be valid");
+        let mut rng = rand::rng();
+        let random_line: u32 = rng.random_range(100..500);
+
+        let mut callable = make_call_info("src/lib.rs", random_line, "foo", None);
+        callable.item.kind = "function".to_string();
+
+        let mut property_call = make_call_info(
+            &format!("src/{}_file.rs", unicode),
+            random_line + 10,
+            &format!("prop_{}", random_irregular_string()),
+            None
+        );
+        property_call.item.kind = "property".to_string();
+
+        let mut field_call = make_call_info(
+            &format!("lib/{}_mod.rs", random_irregular_string()),
+            random_line + 20,
+            &format!("field_{}", unicode),
+            None
+        );
+        field_call.item.kind = "field".to_string();
+
+        let mut method_call = make_call_info("src/api.rs", random_line + 30, "bar", None);
+        method_call.item.kind = "method".to_string();
+
+        let calls = vec![callable, property_call, field_call, method_call];
+        let result = filter_outgoing_callables(calls);
+
+        assert_eq!(result.len(), 2, "negative: property and field kinds must be filtered");
+        for call in &result {
+            assert_ne!(call.item.kind, "property", "negative: property kind must not remain");
+            assert_ne!(call.item.kind, "field", "negative: field kind must not remain");
+        }
+    }
+
+    #[test]
+    fn allow_call_hierarchy_reference_rule_rejects_component_render() {
+        let unicode = char::from_u32(0x263A).expect("negative: unicode should be valid");
+        let rule_id = format!("component-render{}{}", unicode, random_irregular_string());
+
+        let result = allow_call_hierarchy_reference_rule(&rule_id);
+
+        assert!(!result, "negative: component-render rule must be rejected");
+    }
+
+    #[test]
+    fn allow_call_hierarchy_reference_rule_accepts_function_call() {
+        let unicode = char::from_u32(0x2665).expect("negative: unicode should be valid");
+        let suffix = random_irregular_string();
+        let rule_id = format!("function-call{}{}", unicode, suffix);
+
+        let result = allow_call_hierarchy_reference_rule(&rule_id);
+
+        assert!(result, "negative: function-call rule must be accepted");
+    }
+
+    #[test]
+    fn allow_call_hierarchy_reference_rule_accepts_decorator() {
+        let rule_id = format!("decorator{}", random_irregular_string());
+
+        let result = allow_call_hierarchy_reference_rule(&rule_id);
+
+        assert!(result, "negative: decorator rule must be accepted");
     }
 }

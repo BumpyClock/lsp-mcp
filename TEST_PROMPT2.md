@@ -9,6 +9,10 @@
   - No edits. No builds/tests. Read-only analysis.
   - Use parallel tool calls when independent.
   - Use **both relative and absolute paths** as specified below.
+  - For any “absolute path” inputs in this prompt:
+    - The prompt uses `$HOME/...` placeholders. **First resolve `$HOME` to the real absolute path** on the machine you’re running on (e.g. `echo "$HOME"`).
+    - Then **expand `$HOME/...` into a concrete absolute path** and use that expanded path in actual tool inputs.
+    - If the expanded path doesn’t exist locally, **find the actual absolute path** to the referenced file/project on disk and use that instead (while keeping the prompt’s relative-path targets unchanged).
   - If a tool fails or returns empty data, call it out and explain the impact.
 
   ## Required Output Format
@@ -32,8 +36,8 @@
 
   **Call sites (multiple refs):**
   - `scoreMember` at `src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx:83:23`
-  - `scoreMember` at `/home/bumpyclock/Projects/Gurukul/SchoolWeb/UdaanUI/src/Pages/Library/Checkout/TypeAheadSearch.tsx:74:20`
-  - `scoreMember` at `/home/bumpyclock/Projects/Gurukul/SchoolWeb/UdaanUI/src/Pages/Library/Checkout/TypeAheadSearch.tsx:75:20`
+  - `scoreMember` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Pages/Library/Checkout/TypeAheadSearch.tsx:74:20`
+  - `scoreMember` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Pages/Library/Checkout/TypeAheadSearch.tsx:75:20`
 
   **Related helper (coverage):**
   - `normalizeMember` call at `src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx:78:36`
@@ -113,34 +117,34 @@
 
   ### 1) `find_definition`
   - Relative: `scoreMember` at `src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx:83:23`
-  - Absolute: `scoreMember` at `/home/bumpyclock/Projects/Gurukul/SchoolWeb/UdaanUI/src/Pages/Library/Checkout/TypeAheadSearch.tsx:74:20`
+  - Absolute: `scoreMember` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Pages/Library/Checkout/TypeAheadSearch.tsx:74:20`
   - Relative: `normalizeMember` at `src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx:78:36`
   - Relative: `filterNavigationByPermissions` at `src/Components/Navigation/TopNav.tsx:31:25`
-  - Absolute: `filterNavigationByPermissions` at `/home/bumpyclock/Projects/Gurukul/SchoolWeb/UdaanUI/src/Components/Navigation/MobileExpandableHeader.tsx:80:12`
+  - Absolute: `filterNavigationByPermissions` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Components/Navigation/MobileExpandableHeader.tsx:80:12`
   - Relative: `useFileViewerState` at `src/Pages/Class/ClassTeacherPage/Grading/HomeworkFileViewer.tsx:119:30`
 
   ### 2) `find_references`
   - Relative: `scoreMember` at `src/utilities/memberScoring.ts:36:17`
-  - Absolute: `isAttendanceBelowPromotion` at `/home/bumpyclock/Projects/Gurukul/SchoolWeb/UdaanUI/src/utilities/promotionCriteriaUtils.ts:30:14`
+  - Absolute: `isAttendanceBelowPromotion` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/utilities/promotionCriteriaUtils.ts:30:14`
   - Relative: `filterNavigationByPermissions` at `src/Components/Navigation/navigationConstants.ts:185:14`
   - Relative: `useFileViewerState` at `src/Pages/Class/ClassTeacherPage/Grading/hooks/useFileViewerState.ts:126:14`
 
   ### 3) `call_hierarchy` (outgoing)
   - Relative: `scoreMember` at `src/utilities/memberScoring.ts:36:17`
-  - Absolute: `isAttendanceBelowPromotion` at `/home/bumpyclock/Projects/Gurukul/SchoolWeb/UdaanUI/src/utilities/promotionCriteriaUtils.ts:30:14`
+  - Absolute: `isAttendanceBelowPromotion` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/utilities/promotionCriteriaUtils.ts:30:14`
   - Relative: `filterNavigationByPermissions` at `src/Components/Navigation/navigationConstants.ts:185:14`
   - Relative: `useFileViewerState` at `src/Pages/Class/ClassTeacherPage/Grading/hooks/useFileViewerState.ts:126:14`
 
   ### 4) `hover` (include_definition = true)
   - Relative: `LibraryMember` at `src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx:75:18`
-  - Absolute: `scoreMember` at `/home/bumpyclock/Projects/Gurukul/SchoolWeb/UdaanUI/src/Pages/Library/Checkout/TypeAheadSearch.tsx:74:20`
+  - Absolute: `scoreMember` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Pages/Library/Checkout/TypeAheadSearch.tsx:74:20`
   - Relative: `isAttendanceBelowPromotion` at `src/Pages/Class/ClassTeacherPage/StudentRoster/components/StudentRosterTable.tsx:206:40`
   - Relative: `filterNavigationByPermissions` at `src/Components/Navigation/TopNav.tsx:31:25`
   - Relative: `useFileViewerState` at `src/Pages/Class/ClassTeacherPage/Grading/HomeworkFileViewer.tsx:119:30`
 
   ### 5) `definitions_in_file`
   - Relative: `src/utilities/memberScoring.ts`
-  - Absolute: `/home/bumpyclock/Projects/Gurukul/SchoolWeb/UdaanUI/src/Components/LibrarySearchCombobox/utils.ts`
+  - Absolute: `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Components/LibrarySearchCombobox/utils.ts`
   - Relative: `src/utilities/promotionCriteriaUtils.ts`
   - Relative: `src/Components/Navigation/navigationConstants.ts`
   - Relative: `src/Pages/Class/ClassTeacherPage/Grading/hooks/useFileViewerState.ts`
@@ -159,7 +163,7 @@
 
   ### 7) `get_diagnostics`
   - Relative: `src/utilities/memberScoring.ts`
-  - Absolute: `/home/bumpyclock/Projects/Gurukul/SchoolWeb/UdaanUI/src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx`
+  - Absolute: `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/Components/LibrarySearchCombobox/LibrarySearchCombobox.tsx`
   - Relative: `src/utilities/promotionCriteriaUtils.ts`
   - Relative: `src/Components/Navigation/navigationConstants.ts`
   - Relative: `src/Pages/Class/ClassTeacherPage/Grading/hooks/useFileViewerState.ts`

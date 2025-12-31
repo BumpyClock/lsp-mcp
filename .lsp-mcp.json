@@ -1,6 +1,6 @@
   {
     "languages": ["rust"],
     "tools": {
-      "preset": "standard"
+      "preset": "full"
     }
   }
