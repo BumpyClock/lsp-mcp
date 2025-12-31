@@ -81,24 +81,36 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
 
 /// Extracts signature from source code (fallback when LSP unavailable)
 pub(crate) fn extract_signature_from_source(source: &str, symbol_name: &str) -> Option<String> {
-    for line in source.lines() {
-        let trimmed = line.trim();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+
+        // Skip comments and blank lines
         if trimmed.starts_with("//") || trimmed.starts_with("#") || trimmed.starts_with("/*") || trimmed.is_empty() {
+            i += 1;
             continue;
         }
+
         if trimmed.contains(symbol_name) {
-            let is_arrow = trimmed.contains("=>")
+            // Check for single-line arrow function
+            let is_single_line_arrow = trimmed.contains("=>")
                 && (trimmed.contains("const ")
                     || trimmed.contains("let ")
                     || trimmed.contains("var ")
                     || trimmed.contains("export const ")
                     || trimmed.contains("export let ")
                     || trimmed.contains("export var "));
-            if trimmed.contains("fn ") || trimmed.contains("function ") ||
+
+            // Check for non-arrow signatures (fn, function, class, etc.)
+            let is_standard_sig = trimmed.contains("fn ") || trimmed.contains("function ") ||
                trimmed.contains("class ") || trimmed.contains("def ") ||
                trimmed.contains("struct ") || trimmed.contains("enum ") ||
-               trimmed.contains("interface ") || trimmed.contains("type ") ||
-               is_arrow {
+               trimmed.contains("interface ") || trimmed.contains("type ");
+
+            if is_single_line_arrow || is_standard_sig {
+                // Single-line signature: truncate at `{` or `;`
                 let sig = if let Some(brace_pos) = trimmed.find('{') {
                     trimmed[..brace_pos].trim()
                 } else if let Some(semi_pos) = trimmed.find(';') {
@@ -108,7 +120,58 @@ pub(crate) fn extract_signature_from_source(source: &str, symbol_name: &str) -> 
                 };
                 return Some(sig.to_string());
             }
+
+            // Check for multi-line const/let/var arrow function declaration
+            let is_multiline_arrow_start = !trimmed.contains("=>")
+                && (trimmed.contains("const ")
+                    || trimmed.contains("let ")
+                    || trimmed.contains("var ")
+                    || trimmed.contains("export const ")
+                    || trimmed.contains("export let ")
+                    || trimmed.contains("export var "))
+                && (trimmed.contains('(') || trimmed.contains('='));
+
+            if is_multiline_arrow_start {
+                // Accumulate lines until we hit `=>`, `{`, or `;`
+                let mut accumulated = trimmed.to_string();
+                let max_lookahead = 8;
+
+                for j in 1..=max_lookahead {
+                    if i + j >= lines.len() {
+                        break;
+                    }
+                    let next_line = lines[i + j].trim();
+                    // Skip comments and blank lines in accumulation
+                    if next_line.starts_with("//") || next_line.starts_with("#") || next_line.starts_with("/*") || next_line.is_empty() {
+                        continue;
+                    }
+                    accumulated.push(' ');
+                    accumulated.push_str(next_line);
+
+                    // Check if we've found the arrow or terminator
+                    if accumulated.contains("=>") || accumulated.contains('{') || accumulated.contains(';') {
+                        break;
+                    }
+                }
+
+                // Only return if we found `=>`
+                if accumulated.contains("=>") {
+                    // Truncate at `{` or `;` if present
+                    let sig = if let Some(brace_pos) = accumulated.find('{') {
+                        accumulated[..brace_pos].trim()
+                    } else if let Some(semi_pos) = accumulated.find(';') {
+                        accumulated[..semi_pos].trim()
+                    } else {
+                        accumulated.trim()
+                    };
+                    // Normalize whitespace
+                    let normalized: String = sig.split_whitespace().collect::<Vec<_>>().join(" ");
+                    return Some(normalized);
+                }
+            }
         }
+
+        i += 1;
     }
     None
 }

@@ -131,14 +131,24 @@ impl LspService {
     }
 
     /// Finds all symbols referenced at the given position and resolves their definitions.
+    ///
+    /// When `include_externals` is false (default), external_symbols and not_found are omitted.
     pub async fn find_referenced_symbols(
         &self,
         file_path: &str,
         position: Position,
         full_scan: bool,
+        include_externals: bool,
     ) -> Result<ReferencedSymbolsResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        references::find_referenced_symbols_impl(&self.manager, &file_path, position, full_scan).await
+        references::find_referenced_symbols_impl(
+            &self.manager,
+            &file_path,
+            position,
+            full_scan,
+            include_externals,
+        )
+        .await
     }
 
     /// Finds identifiers matching the given name in a file.
@@ -1046,6 +1056,7 @@ fn internal_helper() {
                 definition: 0,
                 import: 3,
                 call: 12,
+                reexport: 0,
             },
         };
 

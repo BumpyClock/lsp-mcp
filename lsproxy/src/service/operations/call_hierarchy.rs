@@ -3,20 +3,23 @@
 
 use crate::api_types::{
     CallHierarchyDirection, CallHierarchyItemInfo, CallHierarchyResponse, CallInfo,
-    IncomingCallInfo, IncomingCallsResponse, OutgoingCallInfo, OutgoingCallsResponse, Position,
-    PrepareCallHierarchyResponse, Range,
+    FilePosition, IncomingCallInfo, IncomingCallsResponse, OutgoingCallInfo,
+    OutgoingCallsResponse, Position, PrepareCallHierarchyResponse, Range,
 };
 use crate::lsp::manager::Manager;
+use crate::mcp_response::normalize_kind;
+use crate::service::types::errors::ServiceError;
+use crate::service::utils::external::ExternalInfo;
+use crate::service::utils::transformations::{
+    call_hierarchy_item_to_info, definition_locations_lsp,
+};
+use crate::utils::file_utils::uri_to_relative_path_string;
 use log::debug;
 use lsp_types::Position as LspPosition;
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use crate::service::types::errors::ServiceError;
-use crate::service::utils::transformations::call_hierarchy_item_to_info;
-use crate::service::utils::external::ExternalInfo;
 use lsp_types::Range as LspRange;
+use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 /// Fetches 1-line source code snippets for each call site.
 ///
@@ -326,7 +329,7 @@ pub(crate) async fn call_hierarchy_impl(
         }
         CallHierarchyDirection::Outgoing => {
             let lsp_calls = manager.outgoing_calls(file_path, &item).await?;
-            lsp_calls
+            let mut calls: Vec<CallInfo> = lsp_calls
                 .into_iter()
                 .map(|call| {
                     let mut item = call_hierarchy_item_to_info(&call.to);
@@ -352,7 +355,98 @@ pub(crate) async fn call_hierarchy_impl(
                         call_snippets: None,
                     }
                 })
-                .collect()
+                .collect();
+
+            // Fallback to ast-grep when LSP returns empty
+            if calls.is_empty() {
+                debug!("call_hierarchy_impl: LSP returned empty, trying ast-grep fallback");
+                let lsp_position = LspPosition {
+                    line: position.line.saturating_sub(1),
+                    character: position.character.saturating_sub(1),
+                };
+                if let Ok(referenced_symbols) =
+                    manager.find_referenced_symbols(file_path, lsp_position, false).await
+                {
+                    debug!(
+                        "call_hierarchy_impl: ast-grep found {} referenced symbols",
+                        referenced_symbols.len()
+                    );
+                    for (ast_match, def_response) in referenced_symbols {
+                        let locations = definition_locations_lsp(&def_response);
+                        if locations.is_empty() {
+                            continue;
+                        }
+
+                        for location in locations {
+                            let def_path = uri_to_relative_path_string(&location.uri);
+
+                            let def_lsp_position = location.range.start;
+                            let (kind, def_range) = match manager
+                                .get_symbol_from_position(&def_path, &def_lsp_position)
+                                .await
+                            {
+                                Ok(symbol) => (normalize_kind(&symbol.kind), symbol.file_range.range),
+                                Err(_) => (
+                                    "function".to_string(),
+                                    Range {
+                                        start: Position {
+                                            line: location.range.start.line + 1,
+                                            character: location.range.start.character + 1,
+                                        },
+                                        end: Position {
+                                            line: location.range.end.line + 1,
+                                            character: location.range.end.character + 1,
+                                        },
+                                    },
+                                ),
+                            };
+
+                            let external = if is_external_call(&def_path, &workspace_set) {
+                                Some(true)
+                            } else {
+                                None
+                            };
+
+                            let id_range = ast_match.get_identifier_range();
+                            let call_range = Range {
+                                start: Position {
+                                    line: id_range.start.line + 1,
+                                    character: id_range.start.column + 1,
+                                },
+                                end: Position {
+                                    line: id_range.end.line + 1,
+                                    character: id_range.end.column + 1,
+                                },
+                            };
+
+                            let call_info = CallInfo {
+                                item: CallHierarchyItemInfo {
+                                    name: ast_match.meta_variables.single.name.text.clone(),
+                                    kind,
+                                    location: FilePosition {
+                                        path: def_path.clone(),
+                                        position: Position {
+                                            line: location.range.start.line + 1,
+                                            character: location.range.start.character + 1,
+                                        },
+                                    },
+                                    range: def_range,
+                                    detail: None,
+                                    external,
+                                },
+                                call_ranges: vec![call_range],
+                                call_snippets: None,
+                            };
+                            calls.push(call_info);
+                        }
+                    }
+                    debug!(
+                        "call_hierarchy_impl: ast-grep fallback produced {} calls",
+                        calls.len()
+                    );
+                }
+            }
+            calls
         }
     };
 

@@ -74,6 +74,7 @@ fn reference_type_tag(reference_type: ReferenceType) -> &'static str {
         ReferenceType::Definition => "def",
         ReferenceType::Import => "import",
         ReferenceType::Call => "call",
+        ReferenceType::ReExport => "re-export",
     }
 }
 

@@ -44,10 +44,16 @@ pub async fn find_referenced_symbols(
     line: u32,
     character: u32,
     full_scan: Option<bool>,
+    externals: Option<bool>,
 ) -> ToolOutput {
     let pos = Position { line, character };
     match service
-        .find_referenced_symbols(&path, pos, full_scan.unwrap_or(false))
+        .find_referenced_symbols(
+            &path,
+            pos,
+            full_scan.unwrap_or(false),
+            externals.unwrap_or(false),
+        )
         .await
     {
         Ok(response) => {

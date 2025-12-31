@@ -12,6 +12,7 @@ pub enum ReferenceType {
     Definition,
     Import,
     Call,
+    ReExport,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -80,6 +81,12 @@ pub struct TypeCounts {
     pub definition: u32,
     pub import: u32,
     pub call: u32,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub reexport: u32,
+}
+
+fn is_zero(val: &u32) -> bool {
+    *val == 0
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]

@@ -159,11 +159,15 @@ pub(crate) async fn find_references_impl(
 }
 
 /// Finds all symbols referenced at the given position and resolves their definitions.
+///
+/// When `include_externals` is false (default), external_symbols and not_found are empty.
+/// Workspace symbols are deduplicated by (name + first definition location).
 pub(crate) async fn find_referenced_symbols_impl(
     manager: &Arc<Manager>,
     file_path: &str,
     position: Position,
     full_scan: bool,
+    include_externals: bool,
 ) -> Result<ReferencedSymbolsResponse, ServiceError> {
     let referenced_symbols = manager
         .find_referenced_symbols(
@@ -189,10 +193,14 @@ pub(crate) async fn find_referenced_symbols_impl(
     let mut workspace_symbols = Vec::new();
     let mut external_symbols = Vec::new();
     let mut not_found = Vec::new();
+    // Track seen (name, first_definition_key) for deduplication
+    let mut seen_workspace: HashSet<(String, String, u32, u32)> = HashSet::new();
 
     for (identifier, definitions) in unwrapped_definitions {
         if definitions.is_empty() {
-            not_found.push(identifier);
+            if include_externals {
+                not_found.push(identifier);
+            }
         } else {
             let has_internal_definition =
                 definitions.iter().any(|def| files.contains(&def.path));
@@ -213,14 +221,24 @@ pub(crate) async fn find_referenced_symbols_impl(
                     }
                 }
                 if !symbols_with_definitions.is_empty() {
-                    workspace_symbols.push(ReferenceWithSymbolDefinitions {
-                        reference: identifier.clone(),
-                        definitions: symbols_with_definitions,
-                    });
-                } else {
+                    // Deduplicate: use (name, first_def_path, first_def_line, first_def_char) as key
+                    let first_def = &symbols_with_definitions[0];
+                    let dedup_key = (
+                        identifier.name.clone(),
+                        first_def.identifier_position.path.clone(),
+                        first_def.identifier_position.position.line,
+                        first_def.identifier_position.position.character,
+                    );
+                    if seen_workspace.insert(dedup_key) {
+                        workspace_symbols.push(ReferenceWithSymbolDefinitions {
+                            reference: identifier.clone(),
+                            definitions: symbols_with_definitions,
+                        });
+                    }
+                } else if include_externals {
                     not_found.push(identifier.clone());
                 }
-            } else {
+            } else if include_externals {
                 external_symbols.push(identifier.clone());
             }
         }
@@ -244,31 +262,33 @@ pub(crate) async fn find_referenced_symbols_impl(
         }
     });
 
-    external_symbols.sort_by(|a, b| {
-        let path_cmp = a.file_range.path.cmp(&b.file_range.path);
-        if path_cmp.is_eq() {
-            a.file_range
-                .range
-                .start
-                .line
-                .cmp(&b.file_range.range.start.line)
-        } else {
-            path_cmp
-        }
-    });
+    if include_externals {
+        external_symbols.sort_by(|a, b| {
+            let path_cmp = a.file_range.path.cmp(&b.file_range.path);
+            if path_cmp.is_eq() {
+                a.file_range
+                    .range
+                    .start
+                    .line
+                    .cmp(&b.file_range.range.start.line)
+            } else {
+                path_cmp
+            }
+        });
 
-    not_found.sort_by(|a, b| {
-        let path_cmp = a.file_range.path.cmp(&b.file_range.path);
-        if path_cmp.is_eq() {
-            a.file_range
-                .range
-                .start
-                .line
-                .cmp(&b.file_range.range.start.line)
-        } else {
-            path_cmp
-        }
-    });
+        not_found.sort_by(|a, b| {
+            let path_cmp = a.file_range.path.cmp(&b.file_range.path);
+            if path_cmp.is_eq() {
+                a.file_range
+                    .range
+                    .start
+                    .line
+                    .cmp(&b.file_range.range.start.line)
+            } else {
+                path_cmp
+            }
+        });
+    }
 
     Ok(ReferencedSymbolsResponse {
         workspace_symbols,
@@ -402,7 +422,7 @@ pub(crate) fn group_references_by_file(references: &[McpReferenceLocation]) -> V
     file_groups
 }
 
-/// Classifies references by type (definition, import, call).
+/// Classifies references by type (definition, import, re-export, call).
 pub(crate) async fn classify_references_by_type(
     manager: &Manager,
     references: &[Location],
@@ -429,7 +449,9 @@ pub(crate) async fn classify_references_by_type(
                     LspPosition { line: line_num + 1, character: 0 },
                 )),
             ).await {
-                if is_import_line(&source) {
+                if is_reexport_line(&source) {
+                    reference_type = ReferenceType::ReExport;
+                } else if is_import_line(&source) {
                     reference_type = ReferenceType::Import;
                 }
             }
@@ -439,6 +461,7 @@ pub(crate) async fn classify_references_by_type(
             ReferenceType::Definition => counts.definition += 1,
             ReferenceType::Import => counts.import += 1,
             ReferenceType::Call => counts.call += 1,
+            ReferenceType::ReExport => counts.reexport += 1,
         }
         types.push(reference_type);
     }
@@ -520,4 +543,39 @@ pub(crate) fn is_import_line(line: &str) -> bool {
         || trimmed.starts_with("from \"")
         || trimmed.starts_with("from '")
         || trimmed.starts_with("from ")
+}
+
+/// Detects if a line is a re-export statement.
+/// Matches patterns like:
+/// - `export { foo } from '...'`
+/// - `export { foo as bar } from '...'`
+/// - `export * from '...'`
+/// - `export * as name from '...'`
+/// - `pub use module::item;` (Rust)
+pub(crate) fn is_reexport_line(line: &str) -> bool {
+    let trimmed = line.trim();
+
+    // Skip comments
+    if trimmed.starts_with("//") || trimmed.starts_with('#') || trimmed.starts_with("/*") {
+        return false;
+    }
+
+    // JavaScript/TypeScript re-exports: export { ... } from '...' or export * from '...'
+    if trimmed.starts_with("export ") {
+        // Check for "from" clause which indicates re-export
+        if trimmed.contains(" from ") {
+            return true;
+        }
+        // export * from ... (barrel export)
+        if trimmed.starts_with("export *") {
+            return true;
+        }
+    }
+
+    // Rust pub use re-exports: pub use module::item
+    if trimmed.starts_with("pub use ") {
+        return true;
+    }
+
+    false
 }

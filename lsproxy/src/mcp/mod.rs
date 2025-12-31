@@ -169,13 +169,14 @@ impl LspMcpServer {
         .await
     }
 
-    #[tool(description = "Symbols referenced by definition")]
+    #[tool(description = "Symbols referenced by definition. Set externals=true to include external deps")]
     async fn find_referenced_symbols(
         &self,
         path: String,
         line: u32,
         character: u32,
         full_scan: Option<bool>,
+        externals: Option<bool>,
     ) -> ToolOutput {
         references::find_referenced_symbols(
             &self.service,
@@ -184,6 +185,7 @@ impl LspMcpServer {
             line,
             character,
             full_scan,
+            externals,
         )
         .await
     }
