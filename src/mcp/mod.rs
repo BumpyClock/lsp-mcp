@@ -41,6 +41,25 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+const TOOL_QUICK_REFERENCE: &[(&str, &str)] = &[
+    ("documentSymbol", "Symbols defined in a file"),
+    ("goToDefinition", "Go to definition at position"),
+    ("findReferences", "Find references at position"),
+    ("hover", "Hover info at position"),
+    ("workspaceSymbol", "Search symbols by name"),
+    ("goToImplementation", "Go to implementation at position"),
+    ("callHierarchy", "Call hierarchy for symbol at position"),
+    ("findReferencedSymbols", "Symbols referenced by definition"),
+    ("findIdentifier", "Find identifier occurrences in a file"),
+    ("listFiles", "List workspace files"),
+    ("readSourceCode", "Read source code from file"),
+    ("health", "Service status"),
+    ("getDiagnostics", "Diagnostics for file or workspace"),
+    ("initialInstructions", "LSP-MCP usage instructions"),
+    ("initialSetup", "Guided project setup"),
+    ("semanticSearch", "Semantic code search"),
+];
+
 /// LSP MCP Server that exposes code navigation tools for a workspace.
 pub struct LspMcpServer {
     service: LspService,
@@ -139,6 +158,16 @@ To keep it enabled, set `"tools": { "initial_setup": "enabled" }` in your config
         }
 
         instructions
+    }
+
+    fn tool_quick_reference(&self) -> String {
+        let mut lines = Vec::new();
+        for (name, description) in TOOL_QUICK_REFERENCE {
+            if self.enabled_tools.contains(*name) {
+                lines.push(format!("- `{}`: {}", name, description));
+            }
+        }
+        lines.join("\n")
     }
 
     fn format_initial_setup_language_list(&self) -> String {
@@ -628,34 +657,27 @@ If you used a tool and then immediately read that file, explain why.
 Logs are written to `.lsp-mcp/logs/sessions/{session-id}.log`.
 Each tool response includes a request ID header (`<!-- request: uuid -->`).
 Use request IDs to correlate tool output with log entries.
-
-## Available Tools
-- `documentSymbol` - Get symbols defined in a file (use `include_children` for nesting)
-- `goToDefinition` - Jump to symbol definition
-- `findReferences` - Find all references to a symbol
-- `hover` - Get type/documentation info at a position
-- `workspaceSymbol` - Search for symbols by name
-- `callHierarchy` - Trace incoming/outgoing calls
-- `getDiagnostics` - Get compiler errors/warnings
-- `initialSetup` - Guided first-time setup for project configuration"#
+"#
             .to_string()
         } else {
             r#"# LSP-MCP Usage Instructions
 
 ## Positioning
 All line and character positions use **1-based indexing** (first line is 1, first character is 1). This matches what editors display to users.
-
-## Available Tools
-- `documentSymbol` - Get symbols defined in a file (use `include_children` for nesting)
-- `goToDefinition` - Jump to symbol definition
-- `findReferences` - Find all references to a symbol
-- `hover` - Get type/documentation info at a position
-- `workspaceSymbol` - Search for symbols by name
-- `callHierarchy` - Trace incoming/outgoing calls
-- `getDiagnostics` - Get compiler errors/warnings
-- `initialSetup` - Guided first-time setup for project configuration"#
+"#
             .to_string()
         };
+
+        let tool_reference = self.tool_quick_reference();
+        if !tool_reference.is_empty() {
+            instructions.push_str(
+                r#"
+
+## Tool Quick Reference
+"#,
+            );
+            instructions.push_str(&tool_reference);
+        }
 
         if self.enabled_tools.contains("initialSetup") {
             instructions.push_str(

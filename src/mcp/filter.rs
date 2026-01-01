@@ -7,13 +7,16 @@ use crate::session::new_request_id;
 use rmcp::{
     ServerHandler,
     model::{
-        CallToolResult, Content, ListToolsResult, ServerInfo, Tool,
+        CallToolResult, Content, JsonObject, ListToolsResult, ServerInfo, Tool,
         CallToolRequestParam, PaginatedRequestParam,
     },
     service::{RequestContext, RoleServer},
     ErrorData as McpError,
 };
+use serde_json::Map;
 use std::collections::HashSet;
+use std::sync::Arc;
+use serde_json::Value;
 
 /// Wrapper that filters tools based on configuration.
 ///
@@ -38,7 +41,51 @@ impl FilteredLspMcpServer {
         tools
             .into_iter()
             .filter(|tool| enabled.contains(&tool.name.to_string()))
+            .map(Self::strip_tool_schema)
             .collect()
+    }
+
+    fn strip_tool_schema(tool: Tool) -> Tool {
+        let mut tool = tool;
+        let mut schema = (*tool.input_schema).clone();
+        Self::strip_schema_fields(&mut schema);
+        tool.input_schema = Arc::new(schema);
+        tool.description = None;
+        tool
+    }
+
+    fn strip_schema_fields(schema: &mut JsonObject) {
+        schema.remove("$schema");
+        schema.remove("title");
+        schema.remove("description");
+        if let Some(Value::Object(properties)) = schema.get_mut("properties") {
+            Self::minimize_properties(properties);
+        }
+    }
+
+    fn minimize_properties(properties: &mut Map<String, Value>) {
+        for property in properties.values_mut() {
+            if let Value::Object(property_schema) = property {
+                let mut minimized = Map::new();
+                if let Some(property_type) = property_schema.get("type") {
+                    minimized.insert("type".to_string(), property_type.clone());
+                }
+                if let Some(items) = property_schema.get("items") {
+                    let minimized_items = match items {
+                        Value::Object(items_schema) => {
+                            let mut items_minimized = Map::new();
+                            if let Some(items_type) = items_schema.get("type") {
+                                items_minimized.insert("type".to_string(), items_type.clone());
+                            }
+                            Value::Object(items_minimized)
+                        }
+                        _ => items.clone(),
+                    };
+                    minimized.insert("items".to_string(), minimized_items);
+                }
+                *property_schema = minimized;
+            }
+        }
     }
 
     fn disabled_tool_result(&self, tool_name: &str) -> CallToolResult {
@@ -181,6 +228,106 @@ mod tests {
         assert!(
             text.contains(&tool_disabled_message("health")),
             "Disabled tool message missing"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_filter_tools_strips_schema_fields() {
+        let enabled_tools: HashSet<String> = ["hover".to_string()].into_iter().collect();
+        let (server, _temp) = create_test_server(false, enabled_tools).await;
+
+        let mut property_schema = serde_json::Map::new();
+        property_schema.insert("type".to_string(), Value::String("integer".to_string()));
+        property_schema.insert("format".to_string(), Value::String("uint32".to_string()));
+        property_schema.insert("minimum".to_string(), Value::Number(0.into()));
+        property_schema.insert("nullable".to_string(), Value::Bool(true));
+
+        let mut properties = serde_json::Map::new();
+        properties.insert("limit".to_string(), Value::Object(property_schema));
+
+        let mut schema = serde_json::Map::new();
+        schema.insert("$schema".to_string(), Value::String("schema".to_string()));
+        schema.insert("title".to_string(), Value::String("Title".to_string()));
+        schema.insert("description".to_string(), Value::String("Desc".to_string()));
+        schema.insert("type".to_string(), Value::String("object".to_string()));
+        schema.insert("properties".to_string(), Value::Object(properties));
+
+        let tools = vec![Tool {
+            name: Cow::Borrowed("hover"),
+            title: None,
+            description: None,
+            input_schema: Arc::new(schema),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+            meta: None,
+        }];
+
+        let filtered = server.filter_tools(tools);
+        let schema = filtered[0].input_schema.as_ref();
+        assert!(
+            !schema.contains_key("$schema"),
+            "Schema still included $schema"
+        );
+        assert!(!schema.contains_key("title"), "Schema still included title");
+        assert!(
+            !schema.contains_key("description"),
+            "Schema still included description"
+        );
+
+        let properties = schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .expect("Schema properties missing");
+        let limit_schema = properties
+            .get("limit")
+            .and_then(Value::as_object)
+            .expect("Property schema missing");
+        assert_eq!(
+            limit_schema.get("type"),
+            Some(&Value::String("integer".to_string())),
+            "Property type was not preserved"
+        );
+        assert_eq!(
+            limit_schema.len(),
+            1,
+            "Property schema includes extra fields"
+        );
+        assert!(
+            !limit_schema.contains_key("format"),
+            "Property schema still included format"
+        );
+        assert!(
+            !limit_schema.contains_key("minimum"),
+            "Property schema still included minimum"
+        );
+        assert!(
+            !limit_schema.contains_key("nullable"),
+            "Property schema still included nullable"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_filter_tools_clears_description() {
+        let enabled_tools: HashSet<String> = ["hover".to_string()].into_iter().collect();
+        let (server, _temp) = create_test_server(false, enabled_tools).await;
+
+        let schema = Arc::new(serde_json::Map::new());
+        let tools = vec![Tool {
+            name: Cow::Borrowed("hover"),
+            title: None,
+            description: Some(Cow::Borrowed("Long description")),
+            input_schema: schema,
+            output_schema: None,
+            annotations: None,
+            icons: None,
+            meta: None,
+        }];
+
+        let filtered = server.filter_tools(tools);
+        assert!(
+            filtered[0].description.is_none(),
+            "Tool description was not cleared"
         );
     }
 }
