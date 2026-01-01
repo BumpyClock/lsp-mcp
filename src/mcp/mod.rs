@@ -743,7 +743,7 @@ If indexing is still running, the tool returns status text; retry once indexing 
 impl ServerHandler for LspMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            protocol_version: ProtocolVersion::V_2024_11_05,
+            protocol_version: ProtocolVersion::V_2025_06_18,
             server_info: Implementation {
                 name: "lsp-mcp".into(),
                 version: "0.4.4".into(),

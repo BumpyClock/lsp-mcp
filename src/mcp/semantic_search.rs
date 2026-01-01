@@ -431,7 +431,7 @@ pub async fn semantic_search(
         None => Vec::new(),
     };
     let rerank = rerank.unwrap_or(false);
-    let per_file = per_file.unwrap_or(true);
+    let per_file = per_file.unwrap_or(false);
 
     match manager
         .search(&query, limit.map(|l| l as usize), path.clone())
