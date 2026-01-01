@@ -411,6 +411,7 @@ pub(crate) async fn definitions_in_file_impl(
     manager: &Arc<Manager>,
     file_path: &str,
     include_locals: bool,
+    include_children: bool,
     limit: Option<u32>,
     offset: Option<u32>,
     context_lines: u32,
@@ -451,7 +452,7 @@ pub(crate) async fn definitions_in_file_impl(
     // Enrich symbols with LSP hover data using parallel processing
     batch_enrich_symbols(manager, file_path, &mut symbols, DEFAULT_ENRICHMENT_CONCURRENCY).await;
 
-    if !include_locals {
+    if !include_children {
         symbols = strip_symbol_children(symbols);
     }
 
@@ -543,17 +544,26 @@ pub(crate) async fn find_definition_impl(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<McpDefinitionResponse, ServiceError> {
-    let file_identifiers = manager.get_file_identifiers(file_path).await?;
+    let file_identifiers = match manager.get_file_identifiers(file_path).await {
+        Ok(identifiers) => Some(identifiers),
+        Err(err) if err.is_ast_grep_missing() => None,
+        Err(err) => return Err(err.into()),
+    };
 
     // Try to find identifier at position first
-    let identifier_result = find_identifier_at_position(
-        file_identifiers,
-        &FilePosition {
-            path: file_path.to_string(),
-            position: position.clone(),
-        },
-    )
-    .await;
+    let identifier_result = match file_identifiers {
+        Some(identifiers) => {
+            find_identifier_at_position(
+                identifiers,
+                &FilePosition {
+                    path: file_path.to_string(),
+                    position: position.clone(),
+                },
+            )
+            .await
+        }
+        None => Err(PositionError::IdentifierNotFound { closest: Vec::new() }),
+    };
 
     // Try to get definitions from LSP regardless of identifier result
     let lsp_position = LspPosition {
@@ -841,12 +851,18 @@ pub(crate) async fn fetch_definition_source_code(
     // Process workspace definitions batched by file (one ast-grep call per unique file)
     for (relative_path, file_definitions) in workspace_by_file {
         // Call ast-grep once for this file
-        let file_symbols = manager.definitions_in_file_ast_grep(&relative_path).await?;
+        let file_symbols = match manager.definitions_in_file_ast_grep(&relative_path).await {
+            Ok(symbols) => Some(symbols),
+            Err(err) if err.is_ast_grep_missing() => None,
+            Err(err) => return Err(err.into()),
+        };
 
         for definition in file_definitions {
-            let symbol = file_symbols.iter().find(|s| {
-                s.get_identifier_range().start.line == definition.range.start.line
-                    && s.get_identifier_range().start.column == definition.range.start.character
+            let symbol = file_symbols.as_ref().and_then(|symbols| {
+                symbols.iter().find(|s| {
+                    s.get_identifier_range().start.line == definition.range.start.line
+                        && s.get_identifier_range().start.column == definition.range.start.character
+                })
             });
 
             let source_code_context = match symbol {

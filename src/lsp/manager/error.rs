@@ -38,3 +38,13 @@ impl fmt::Display for LspManagerError {
 }
 
 impl std::error::Error for LspManagerError {}
+
+impl LspManagerError {
+    pub fn is_ast_grep_missing(&self) -> bool {
+        matches!(
+            self,
+            LspManagerError::InternalError(message)
+                if message.contains("ast-grep binary not found")
+        )
+    }
+}

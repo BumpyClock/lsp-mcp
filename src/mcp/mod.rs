@@ -8,6 +8,7 @@ mod files;
 pub mod filter;
 mod hover;
 mod references;
+mod semantic_search;
 mod server;
 mod symbols;
 
@@ -18,12 +19,14 @@ use crate::config::{DebugConfig, InitialSetupMode, LspMcpConfig, OutputMode};
 use crate::lsp::registry::LanguageMetadata;
 use crate::api_types::SupportedLanguages;
 use crate::lsp::manager::Manager;
+use crate::semantic_search::SemanticSearchManager;
 use crate::service::{create_service, LspService};
 use crate::session::{new_request_id, request_id_header};
 use mcpkit::prelude::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 /// LSP MCP Server that exposes code navigation tools for a workspace.
@@ -36,6 +39,7 @@ pub struct LspMcpServer {
     project_config_present: bool,
     initial_setup_mode: InitialSetupMode,
     enabled_tools: HashSet<String>,
+    semantic_search_manager: Option<Arc<RwLock<SemanticSearchManager>>>,
 }
 
 impl LspMcpServer {
@@ -49,7 +53,14 @@ impl LspMcpServer {
             project_config_present: config.project_config_present,
             initial_setup_mode: config.tools.initial_setup,
             enabled_tools: config.enabled_tools(),
+            semantic_search_manager: None,
         }
+    }
+
+    /// Set the semantic search manager for this server.
+    pub fn with_semantic_search(mut self, manager: Arc<RwLock<SemanticSearchManager>>) -> Self {
+        self.semantic_search_manager = Some(manager);
+        self
     }
 
     /// Returns whether debug mode is enabled.
@@ -141,11 +152,12 @@ To keep it enabled, set `"tools": { "initial_setup": "enabled" }` in your config
     version = "0.4.4"
 )]
 impl LspMcpServer {
-    #[tool(name = "documentSymbol", description = "Symbols defined in a file (top-level only by default)")]
+    #[tool(name = "documentSymbol", description = "Symbols defined in a file (top-level only by default; set include_children for nesting)")]
     async fn definitions_in_file(
         &self,
         path: String,
         include_locals: Option<bool>,
+        include_children: Option<bool>,
         limit: Option<u32>,
         offset: Option<u32>,
         context_lines: Option<u32>,
@@ -163,6 +175,7 @@ impl LspMcpServer {
             self.output_mode,
             path,
             include_locals,
+            include_children,
             limit,
             offset,
             context_lines,
@@ -551,14 +564,45 @@ If `languages` is omitted, LSP-MCP will auto-detect on startup.
 }}
 ```
 
-## 3) Install language servers
+## 3) Configure semantic search (optional)
+Add this to `.lsp-mcp.json` to enable semantic search:
+```json
+{{
+  "tools": {{
+    "enable": ["semanticSearch"]
+  }},
+  "semantic_search": {{
+    "enabled": true,
+    "embedder": {{
+      "provider": "fastembed"
+    }}
+  }}
+}}
+```
+
+If you prefer OpenAI embeddings, use:
+```json
+{{
+  "semantic_search": {{
+    "enabled": true,
+    "embedder": {{
+      "provider": "openai",
+      "api_key_env": "OPENAI_API_KEY"
+    }}
+  }}
+}}
+```
+
+Restart the agent after updating the config. Indexing runs in the background; semanticSearch returns status until it is ready.
+
+## 4) Install language servers
 Ensure the default binaries above are on `PATH`, or set `binaries` per language with absolute paths.
 If you want install commands, tell the agent your OS/package manager and target languages.
 The agent should verify that each configured language server binary is available before continuing.
 Check `PATH` with `which` (macOS/Linux) or `where` (Windows).
 If a binary is missing, the agent should provide install steps for the user's OS/package manager.
 
-## 4) Disable this tool after setup
+## 5) Disable this tool after setup
 Add `initialSetup` to the disabled list and restart your agent:
 ```json
 {{
@@ -619,7 +663,7 @@ Each tool response includes a request ID header (`<!-- request: uuid -->`).
 Use request IDs to correlate tool output with log entries.
 
 ## Available Tools
-- `documentSymbol` - Get symbols defined in a file
+- `documentSymbol` - Get symbols defined in a file (use `include_children` for nesting)
 - `goToDefinition` - Jump to symbol definition
 - `findReferences` - Find all references to a symbol
 - `hover` - Get type/documentation info at a position
@@ -635,7 +679,7 @@ Use request IDs to correlate tool output with log entries.
 All line and character positions use **1-based indexing** (first line is 1, first character is 1). This matches what editors display to users.
 
 ## Available Tools
-- `documentSymbol` - Get symbols defined in a file
+- `documentSymbol` - Get symbols defined in a file (use `include_children` for nesting)
 - `goToDefinition` - Jump to symbol definition
 - `findReferences` - Find all references to a symbol
 - `hover` - Get type/documentation info at a position
@@ -655,7 +699,79 @@ Before using the LSP tools in this agent, run `initialSetup` to configure langua
             );
         }
 
+        if self.enabled_tools.contains("semanticSearch") {
+            instructions.push_str(
+                r#"
+
+## Semantic Search
+Use `semanticSearch` for natural language code queries.
+
+Inputs:
+- `query` (required) natural language query
+- `limit` (optional) max results
+- `path` (optional) workspace-relative prefix, e.g. `src/`
+- `exclude` (optional) list of glob patterns to exclude, e.g. `["**/node_modules/**"]`
+- `per_file` (optional) return only the best match per file (default: false)
+- `rerank` (optional) rerank results using keyword overlap (default: false)
+- `context_lines` (optional) max number of lines to include from each chunk
+
+If indexing is still running, the tool returns status text; retry once indexing completes."#,
+            );
+        }
+
         ToolOutput::text(instructions)
+    }
+
+    #[tool(
+        name = "semanticSearch",
+        description = "Search code semantically using natural language queries. Returns ranked code chunks based on embedding similarity."
+    )]
+    async fn semantic_search_tool(
+        &self,
+        query: String,
+        limit: Option<u32>,
+        path: Option<String>,
+        exclude: Option<Vec<String>>,
+        per_file: Option<bool>,
+        rerank: Option<bool>,
+        context_lines: Option<u32>,
+    ) -> ToolOutput {
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "semanticSearch",
+            query = %query,
+            "Processing tool request"
+        );
+
+        let output = match &self.semantic_search_manager {
+            Some(manager) => {
+                semantic_search::semantic_search(
+                    manager,
+                    query,
+                    limit,
+                    path,
+                    exclude,
+                    per_file,
+                    rerank,
+                    context_lines,
+                )
+                .await
+            }
+            None => {
+                ToolOutput::text(
+                    "Semantic search is disabled. Enable it in `.lsp-mcp.json`:\n\n```json\n{\n  \"tools\": {\n    \"enable\": [\"semanticSearch\"]\n  },\n  \"semantic_search\": {\n    \"enabled\": true,\n    \"embedder\": {\n      \"provider\": \"fastembed\"\n    }\n  }\n}\n```"
+                )
+            }
+        };
+
+        tracing::debug!(
+            request_id = %request_id,
+            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
+            "Tool request completed"
+        );
+
+        self.wrap_output(request_id, output)
     }
 }
 

@@ -13,7 +13,7 @@ use crate::lsp::client::LspClientConfig;
 use crate::lsp::{DiagnosticsStore, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler};
 
 use crate::utils::workspace_documents::{
-    DidOpenConfiguration, WorkspaceDocumentsHandler, DEFAULT_EXCLUDE_PATTERNS,
+    DidOpenConfiguration, WorkspaceDocuments, WorkspaceDocumentsHandler, DEFAULT_EXCLUDE_PATTERNS,
     TYPESCRIPT_AND_JAVASCRIPT_FILE_PATTERNS, TYPESCRIPT_AND_JAVASCRIPT_ROOT_FILES,
 };
 
@@ -74,6 +74,33 @@ impl LspClient for TypeScriptLanguageClient {
             })),
             ..Default::default()
         })
+    }
+
+    async fn setup_workspace(
+        &mut self,
+        root_path: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Ensure tsserver has an inferred/configured project by opening a seed file.
+        let preferred = Path::new(root_path).join("src/main.tsx");
+        if preferred.exists() {
+            if let Some(path_str) = preferred.to_str() {
+                self.ensure_document_open(path_str).await?;
+                return Ok(());
+            }
+        }
+
+        let candidates = self.get_workspace_documents().list_files().await;
+        if let Some(seed) = candidates.iter().find(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| matches!(ext, "ts" | "tsx"))
+        }) {
+            if let Some(path_str) = seed.to_str() {
+                self.ensure_document_open(path_str).await?;
+            }
+        }
+
+        Ok(())
     }
 }
 

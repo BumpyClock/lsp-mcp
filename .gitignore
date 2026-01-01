@@ -48,4 +48,5 @@ node_modules
 #coding againts
 .claude/
 .ai_agents/
-.lsp-mcp/logs/
+.lsp-mcp/
+.fastembed_cache/

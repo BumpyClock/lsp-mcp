@@ -3,14 +3,45 @@
 
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
+use std::path::PathBuf;
+use std::env;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::process::Command;
 use tokio::sync::RwLock;
 
-const SYMBOL_CONFIG_PATH: &str = "/usr/src/ast_grep/symbol/config.yml";
-const IDENTIFIER_CONFIG_PATH: &str = "/usr/src/ast_grep/identifier/config.yml";
-const REFERENCE_CONFIG_PATH: &str = "/usr/src/ast_grep/reference/config.yml";
+#[cfg(not(target_os = "macos"))]
+const DEFAULT_RULES_ROOT: &str = "/usr/src/ast_grep";
+const DEFAULT_MACOS_ROOT: &str = "/usr/local/share/ast_grep";
+const DEFAULT_MACOS_HOMEBREW_ROOT: &str = "/opt/homebrew/share/ast_grep";
+const AST_GREP_RULES_DIR_ENV: &str = "AST_GREP_RULES_DIR";
+
+fn rules_root() -> PathBuf {
+    if let Ok(value) = env::var(AST_GREP_RULES_DIR_ENV) {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let homebrew = PathBuf::from(DEFAULT_MACOS_HOMEBREW_ROOT);
+        if homebrew.exists() {
+            return homebrew;
+        }
+        return PathBuf::from(DEFAULT_MACOS_ROOT);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        PathBuf::from(DEFAULT_RULES_ROOT)
+    }
+}
+
+fn rules_config_path(relative: &str) -> String {
+    rules_root().join(relative).to_string_lossy().into_owned()
+}
 
 use super::types::{AstGrepMatch, AstGrepRange};
 
@@ -41,7 +72,9 @@ impl AstGrepClient {
         identifier_position: &lsp_types::Position,
     ) -> Result<AstGrepMatch, Box<dyn std::error::Error>> {
         // Get all symbols in the file
-        let file_symbols = self.scan_file(SYMBOL_CONFIG_PATH, file_name).await?;
+        let file_symbols = self
+            .scan_file(&rules_config_path("symbol/config.yml"), file_name)
+            .await?;
         // Select the best match by context containment or nearest fallback
         match select_symbol_match(file_symbols, identifier_position) {
             Some(matched_symbol) => Ok(matched_symbol),
@@ -56,14 +89,16 @@ impl AstGrepClient {
         &self,
         file_name: &str,
     ) -> Result<Vec<AstGrepMatch>, Box<dyn std::error::Error>> {
-        self.scan_file(SYMBOL_CONFIG_PATH, file_name).await
+        self.scan_file(&rules_config_path("symbol/config.yml"), file_name)
+            .await
     }
 
     pub async fn get_file_identifiers(
         &self,
         file_name: &str,
     ) -> Result<Vec<AstGrepMatch>, Box<dyn std::error::Error>> {
-        self.scan_file(IDENTIFIER_CONFIG_PATH, file_name).await
+        self.scan_file(&rules_config_path("identifier/config.yml"), file_name)
+            .await
     }
 
     pub async fn get_symbol_and_references(
@@ -88,7 +123,9 @@ impl AstGrepClient {
         full_scan: bool,
     ) -> Result<Vec<AstGrepMatch>, Box<dyn std::error::Error>> {
         // Get all references
-        let matches = self.scan_file(REFERENCE_CONFIG_PATH, file_name).await?;
+        let matches = self
+            .scan_file(&rules_config_path("reference/config.yml"), file_name)
+            .await?;
 
         // Filter matches to those within the symbol's range
         // And if not full_scan, exclude matches with rule_id "non-function"
@@ -136,7 +173,14 @@ impl AstGrepClient {
             .arg("--json")
             .arg(file_name)
             .output()
-            .await?;
+            .await
+            .map_err(|e| {
+                if e.kind() == ErrorKind::NotFound {
+                    Error::new(ErrorKind::NotFound, "ast-grep binary not found in PATH")
+                } else {
+                    Error::new(e.kind(), format!("Failed to run ast-grep: {}", e))
+                }
+            })?;
 
         if !command_result.status.success() {
             let error = String::from_utf8_lossy(&command_result.stderr);

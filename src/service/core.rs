@@ -58,6 +58,7 @@ impl LspService {
         &self,
         file_path: &str,
         include_locals: bool,
+        include_children: bool,
         limit: Option<u32>,
         offset: Option<u32>,
         context_lines: u32,
@@ -67,6 +68,7 @@ impl LspService {
             &self.manager,
             &file_path,
             include_locals,
+            include_children,
             limit,
             offset,
             context_lines,
@@ -864,7 +866,7 @@ mod tests {
         let service = create_service(Arc::new(manager));
 
         let response = service
-            .definitions_in_file("test.rs", false, None, None, 1)
+            .definitions_in_file("test.rs", false, false, None, None, 1)
             .await?;
 
         assert_eq!(response.path, "test.rs");
@@ -898,7 +900,7 @@ fn internal_helper() {
         let service = create_service(Arc::new(manager));
 
         let response = service
-            .definitions_in_file("test.rs", true, None, None, 1)
+            .definitions_in_file("test.rs", true, false, None, None, 1)
             .await?;
 
         let pub_fn = response.symbols.iter()

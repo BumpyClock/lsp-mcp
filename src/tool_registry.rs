@@ -21,7 +21,11 @@ pub const ALL_TOOLS: &[&str] = &[
     "getDiagnostics",
     "initialInstructions",
     "initialSetup",
+    "semanticSearch",
 ];
+
+/// Tools that require explicit opt-in, even in full preset.
+pub const OPT_IN_TOOLS: &[&str] = &["semanticSearch"];
 
 /// Core tools (Tier 1+2): Enabled by default in "standard" preset
 pub const CORE_TOOLS: &[&str] = &[
@@ -54,7 +58,7 @@ pub enum ToolPreset {
     /// Standard (default): Core tools for productive development (10 tools)
     #[default]
     Standard,
-    /// Full: All available tools (15 tools)
+    /// Full: All available tools except opt-in (15 tools)
     Full,
 }
 
@@ -63,7 +67,11 @@ pub fn get_preset_tools(preset: ToolPreset) -> HashSet<String> {
     match preset {
         ToolPreset::Minimal => MINIMAL_TOOLS.iter().map(|s| (*s).to_string()).collect(),
         ToolPreset::Standard => CORE_TOOLS.iter().map(|s| (*s).to_string()).collect(),
-        ToolPreset::Full => ALL_TOOLS.iter().map(|s| (*s).to_string()).collect(),
+        ToolPreset::Full => ALL_TOOLS
+            .iter()
+            .filter(|name| !OPT_IN_TOOLS.contains(name))
+            .map(|s| (*s).to_string())
+            .collect(),
     }
 }
 
@@ -78,7 +86,7 @@ mod tests {
 
     #[test]
     fn test_all_tools_count() {
-        assert_eq!(ALL_TOOLS.len(), 15, "Expected 15 total tools");
+        assert_eq!(ALL_TOOLS.len(), 16, "Expected 16 total tools");
     }
 
     #[test]
@@ -123,9 +131,16 @@ mod tests {
     fn test_get_preset_tools_full() {
         let tools = get_preset_tools(ToolPreset::Full);
         assert_eq!(tools.len(), 15);
-        // Should include all tools
         for tool in ALL_TOOLS {
-            assert!(tools.contains(*tool), "Missing tool: {}", tool);
+            if OPT_IN_TOOLS.contains(tool) {
+                assert!(
+                    !tools.contains(*tool),
+                    "Opt-in tool should not be in full preset: {}",
+                    tool
+                );
+            } else {
+                assert!(tools.contains(*tool), "Missing tool: {}", tool);
+            }
         }
     }
 

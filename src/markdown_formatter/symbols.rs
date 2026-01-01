@@ -12,7 +12,7 @@ impl ToMarkdown for McpSymbolsResponse {
         let symbol_count = count_symbols_recursive(&self.symbols);
 
         for symbol in &self.symbols {
-            format_symbol_recursive(symbol, 0, &mut output);
+            format_symbol_recursive(symbol, 0, &self.path, &mut output);
         }
 
         if self.truncated {
@@ -109,20 +109,37 @@ fn count_symbols_recursive(symbols: &[Symbol]) -> usize {
     count
 }
 
-fn format_symbol_recursive(symbol: &Symbol, depth: usize, output: &mut String) {
+fn format_symbol_recursive(symbol: &Symbol, depth: usize, root_path: &str, output: &mut String) {
     let indent = "  ".repeat(depth);
-    let line = symbol.identifier_position.position.line;
+    let start_line = symbol.file_range.range.start.line;
+    let end_line = symbol.file_range.range.end.line;
+    let path = if symbol.file_range.path.is_empty() {
+        root_path
+    } else {
+        &symbol.file_range.path
+    };
 
-    output.push_str(&format!(
-        "{}  {} ({}) - line {}\n",
-        indent,
-        symbol.name,
-        symbol.kind,
-        line
-    ));
+    if start_line == end_line {
+        output.push_str(&format!(
+            "{}  {} ({}) - {}:{}\n",
+            indent, symbol.name, symbol.kind, path, start_line
+        ));
+    } else {
+        output.push_str(&format!(
+            "{}  {} ({}) - {}:{}-{}\n",
+            indent, symbol.name, symbol.kind, path, start_line, end_line
+        ));
+    }
 
     if let Some(ref sig) = symbol.signature {
         output.push_str(&format!("{}  `{}`\n", indent, escape_inline_code(sig)));
+    }
+
+    if let Some(ref summary) = symbol.jsdoc_summary {
+        let line = summary.lines().next().unwrap_or("").trim();
+        if !line.is_empty() {
+            output.push_str(&format!("{}  {}\n", indent, line));
+        }
     }
 
     if let Some(ref snippet) = symbol.snippet {
@@ -131,7 +148,7 @@ fn format_symbol_recursive(symbol: &Symbol, depth: usize, output: &mut String) {
 
     if let Some(ref children) = symbol.children {
         for child in children {
-            format_symbol_recursive(child, depth + 1, output);
+            format_symbol_recursive(child, depth + 1, root_path, output);
         }
     }
 }
@@ -263,8 +280,8 @@ mod tests {
             "negative: symbol kind must be in parentheses"
         );
         assert!(
-            markdown.contains(&format!("line {}", line)),
-            "negative: line number must be shown"
+            markdown.contains(&format!("src/test.ts:{}-{}", line, line + 5)),
+            "negative: symbol range must be shown"
         );
     }
 

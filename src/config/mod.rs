@@ -2,11 +2,15 @@
 // ABOUTME: Re-exports configuration types and loaders from submodules.
 
 mod loaders;
+mod semantic_search_config;
 mod tools_config;
 mod types;
 
 use std::collections::HashMap;
 
+pub use semantic_search_config::{
+    EmbedderConfig, IndexConfig, SearchConfig, SemanticSearchConfig, VectorStoreConfig,
+};
 pub use tools_config::{InitialSetupMode, ToolsConfig};
 pub use types::{DebugConfig, DebugLogLevel, OutputConfig, OutputMode};
 
@@ -39,6 +43,7 @@ pub struct LspMcpConfig {
     pub tools: ToolsConfig,
     pub output: Option<OutputConfig>,
     pub debug: Option<DebugConfig>,
+    pub semantic_search: Option<SemanticSearchConfig>,
     pub project_config_present: bool,
 }
 
@@ -359,7 +364,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 14);
+        assert_eq!(tools.len(), 15); // Full preset (16) minus initialSetup
     }
 
     #[test]

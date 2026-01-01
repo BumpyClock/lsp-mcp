@@ -1,0 +1,289 @@
+// ABOUTME: Configuration types for semantic code search.
+// ABOUTME: Defines embedder, vector store, indexing, and search settings.
+
+use serde::Deserialize;
+
+/// Configuration for the embedding provider.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "provider", rename_all = "lowercase")]
+pub enum EmbedderConfig {
+    /// OpenAI-compatible embedding API
+    #[serde(rename = "openai")]
+    OpenAI {
+        /// Model name (default: text-embedding-3-small)
+        #[serde(default = "default_openai_model")]
+        model: String,
+        /// API base URL (default: https://api.openai.com/v1)
+        #[serde(default = "default_openai_base_url")]
+        base_url: String,
+        /// Environment variable name containing API key
+        #[serde(default = "default_openai_api_key_env")]
+        api_key_env: String,
+        /// Embedding dimension (default: 1536)
+        #[serde(default = "default_openai_dimension")]
+        dimension: usize,
+    },
+    /// Local FastEmbed model
+    #[serde(rename = "fastembed")]
+    FastEmbed {
+        /// Model name (default: BAAI/bge-small-en-v1.5)
+        #[serde(default = "default_fastembed_model")]
+        model: String,
+        /// Embedding dimension (default: 384)
+        #[serde(default = "default_fastembed_dimension")]
+        dimension: usize,
+        /// Cache directory for downloaded models (default: ~/.lsp-mcp/.fastembed-cache)
+        #[serde(default = "default_fastembed_cache_dir")]
+        cache_dir: String,
+    },
+}
+
+fn default_openai_model() -> String {
+    "text-embedding-3-small".to_string()
+}
+
+fn default_openai_base_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
+fn default_openai_api_key_env() -> String {
+    "OPENAI_API_KEY".to_string()
+}
+
+fn default_openai_dimension() -> usize {
+    1536
+}
+
+fn default_fastembed_model() -> String {
+    "BAAI/bge-small-en-v1.5".to_string()
+}
+
+fn default_fastembed_dimension() -> usize {
+    384
+}
+
+fn default_fastembed_cache_dir() -> String {
+    if let Ok(cache_dir) = std::env::var("FASTEMBED_CACHE_DIR") {
+        return cache_dir;
+    }
+
+    dirs::home_dir()
+        .map(|home| home.join(".lsp-mcp").join(".fastembed-cache"))
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| ".fastembed_cache".to_string())
+}
+
+impl Default for EmbedderConfig {
+    fn default() -> Self {
+        EmbedderConfig::FastEmbed {
+            model: default_fastembed_model(),
+            dimension: default_fastembed_dimension(),
+            cache_dir: default_fastembed_cache_dir(),
+        }
+    }
+}
+
+impl EmbedderConfig {
+    /// Get the embedding dimension for this provider.
+    pub fn dimension(&self) -> usize {
+        match self {
+            EmbedderConfig::OpenAI { dimension, .. } => *dimension,
+            EmbedderConfig::FastEmbed { dimension, .. } => *dimension,
+        }
+    }
+}
+
+/// Configuration for the vector store.
+#[derive(Debug, Clone, Deserialize)]
+pub struct VectorStoreConfig {
+    /// Storage path relative to workspace (default: .lsp-mcp/semanticSearch)
+    #[serde(default = "default_vector_store_path")]
+    pub path: String,
+}
+
+fn default_vector_store_path() -> String {
+    ".lsp-mcp/semanticSearch".to_string()
+}
+
+impl Default for VectorStoreConfig {
+    fn default() -> Self {
+        VectorStoreConfig {
+            path: default_vector_store_path(),
+        }
+    }
+}
+
+/// Configuration for indexing behavior.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IndexConfig {
+    /// File patterns to include (glob patterns)
+    #[serde(default = "default_include_patterns")]
+    pub include: Vec<String>,
+    /// File patterns to exclude (glob patterns)
+    #[serde(default = "default_exclude_patterns")]
+    pub exclude: Vec<String>,
+    /// Maximum file size to index in MB (default: 1)
+    #[serde(default = "default_max_file_size_mb")]
+    pub max_file_size_mb: f64,
+    /// Minimum chunk size in characters (default: 50)
+    #[serde(default = "default_min_chunk_chars")]
+    pub min_chunk_chars: usize,
+    /// Maximum chunk size in characters (default: 2000)
+    #[serde(default = "default_max_chunk_chars")]
+    pub max_chunk_chars: usize,
+    /// Maximum chunk size for functions in characters (default: 5000)
+    #[serde(default = "default_max_function_chunk_chars")]
+    pub max_function_chunk_chars: usize,
+    /// Overlap size between chunks in characters (default: 200)
+    #[serde(default = "default_chunk_overlap_chars")]
+    pub chunk_overlap_chars: usize,
+    /// Batch size for embedding requests (default: 60)
+    #[serde(default = "default_batch_size")]
+    pub batch_size: usize,
+}
+
+fn default_include_patterns() -> Vec<String> {
+    vec![
+        "**/*.rs".to_string(),
+        "**/*.ts".to_string(),
+        "**/*.tsx".to_string(),
+        "**/*.js".to_string(),
+        "**/*.jsx".to_string(),
+        "**/*.py".to_string(),
+        "**/*.go".to_string(),
+        "**/*.java".to_string(),
+        "**/*.c".to_string(),
+        "**/*.cpp".to_string(),
+        "**/*.h".to_string(),
+        "**/*.cs".to_string(),
+        "**/*.rb".to_string(),
+        "**/*.php".to_string(),
+        "**/*.md".to_string(),
+    ]
+}
+
+fn default_exclude_patterns() -> Vec<String> {
+    vec![
+        "**/node_modules/**".to_string(),
+        "**/target/**".to_string(),
+        "**/.git/**".to_string(),
+        "**/dist/**".to_string(),
+        "**/build/**".to_string(),
+        "**/__pycache__/**".to_string(),
+        "**/venv/**".to_string(),
+        "**/.venv/**".to_string(),
+    ]
+}
+
+fn default_max_file_size_mb() -> f64 {
+    1.0
+}
+
+fn default_min_chunk_chars() -> usize {
+    50
+}
+
+fn default_max_chunk_chars() -> usize {
+    2000
+}
+
+fn default_max_function_chunk_chars() -> usize {
+    5000
+}
+
+fn default_chunk_overlap_chars() -> usize {
+    200
+}
+
+fn default_batch_size() -> usize {
+    60
+}
+
+impl Default for IndexConfig {
+    fn default() -> Self {
+        IndexConfig {
+            include: default_include_patterns(),
+            exclude: default_exclude_patterns(),
+            max_file_size_mb: default_max_file_size_mb(),
+            min_chunk_chars: default_min_chunk_chars(),
+            max_chunk_chars: default_max_chunk_chars(),
+            max_function_chunk_chars: default_max_function_chunk_chars(),
+            chunk_overlap_chars: default_chunk_overlap_chars(),
+            batch_size: default_batch_size(),
+        }
+    }
+}
+
+/// Configuration for search behavior.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchConfig {
+    /// Minimum similarity score threshold (0.0 to 1.0, default: 0.25)
+    #[serde(default = "default_min_score")]
+    pub min_score: f32,
+    /// Maximum number of results to return (default: 20)
+    #[serde(default = "default_max_results")]
+    pub max_results: usize,
+}
+
+fn default_min_score() -> f32 {
+    0.25
+}
+
+fn default_max_results() -> usize {
+    20
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        SearchConfig {
+            min_score: default_min_score(),
+            max_results: default_max_results(),
+        }
+    }
+}
+
+/// Semantic search feature configuration.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SemanticSearchConfig {
+    /// Enable semantic search (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Embedding provider configuration
+    #[serde(default)]
+    pub embedder: EmbedderConfig,
+    /// Vector store configuration
+    #[serde(default)]
+    pub vector_store: VectorStoreConfig,
+    /// Indexing configuration
+    #[serde(default)]
+    pub index: IndexConfig,
+    /// Search configuration
+    #[serde(default)]
+    pub search: SearchConfig,
+}
+
+impl SemanticSearchConfig {
+    /// Check if the configuration is valid for starting semantic search.
+    pub fn is_valid(&self) -> Result<(), String> {
+        if !self.enabled {
+            return Err("Semantic search is disabled".to_string());
+        }
+
+        // Validate OpenAI config requires API key
+        if let EmbedderConfig::OpenAI { api_key_env, .. } = &self.embedder {
+            if std::env::var(api_key_env).is_err() {
+                return Err(format!(
+                    "OpenAI API key not found in environment variable: {}",
+                    api_key_env
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get the storage path for the vector index.
+    pub fn storage_path(&self) -> &str {
+        &self.vector_store.path
+    }
+}

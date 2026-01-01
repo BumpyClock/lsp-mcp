@@ -36,6 +36,33 @@ dirs = "6.0.0"
 chrono = "0.4"
 pulldown-cmark = "0.12"
 
+# Semantic search - tree-sitter for chunking
+tree-sitter = "0.23"
+tree-sitter-rust = "0.23"
+tree-sitter-typescript = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-c = "0.23"
+tree-sitter-cpp = "0.23"
+tree-sitter-c-sharp = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-php = "0.23"
+tree-sitter-ruby = "0.23"
+tree-sitter-md = "0.3"
+
+# Semantic search - embeddings
+fastembed = "4"
+reqwest = { version = "0.12", features = ["json"] }
+
+# Semantic search - vector store
+hnsw_rs = "0.3"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Semantic search - utilities
+blake3 = "1.5"
+parking_lot = "0.12"
+hex = "0.4"
+
 [dev-dependencies]
 tempfile = "3.8.1"
 

@@ -30,17 +30,26 @@ pub(crate) async fn find_references_impl(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<McpReferencesResponse, ServiceError> {
-    let file_identifiers = manager.get_file_identifiers(file_path).await?;
+    let file_identifiers = match manager.get_file_identifiers(file_path).await {
+        Ok(identifiers) => Some(identifiers),
+        Err(err) if err.is_ast_grep_missing() => None,
+        Err(err) => return Err(err.into()),
+    };
 
     // Try to find identifier at position first
-    let identifier_result = find_identifier_at_position(
-        file_identifiers,
-        &FilePosition {
-            path: file_path.to_string(),
-            position: position.clone(),
-        },
-    )
-    .await;
+    let identifier_result = match file_identifiers {
+        Some(identifiers) => {
+            find_identifier_at_position(
+                identifiers,
+                &FilePosition {
+                    path: file_path.to_string(),
+                    position: position.clone(),
+                },
+            )
+            .await
+        }
+        None => Err(PositionError::IdentifierNotFound { closest: Vec::new() }),
+    };
 
     // Always get references from LSP
     let all_references = find_and_filter_references(

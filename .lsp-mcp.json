@@ -1,7 +1,14 @@
 {
   "languages": ["rust"],
   "tools": {
-    "preset": "standard",
-    "disable": ["list_files"]
+    "preset": "full",
+    "enable": ["semanticSearch"],
+    "disable": ["listFiles","readSourceCode"]
+  },
+  "semantic_search": {
+    "enabled": true,
+    "embedder": {
+      "provider": "fastembed"
+    }
   }
 }
