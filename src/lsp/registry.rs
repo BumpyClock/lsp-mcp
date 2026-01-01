@@ -157,6 +157,8 @@ pub struct LanguageMetadata {
     pub name: &'static str,
     /// File extensions (without dots)
     pub extensions: &'static [&'static str],
+    /// Default language server binary name
+    pub default_binary: &'static str,
     /// Factory function for creating LSP client instances
     pub factory: LspClientFactory,
 }
@@ -167,54 +169,63 @@ pub static LANGUAGE_REGISTRY: &[LanguageMetadata] = &[
         id: SupportedLanguages::Python,
         name: "Python",
         extensions: PYTHON_EXTENSIONS,
+        default_binary: JediClient::DEFAULT_BINARY,
         factory: create_python_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::TypeScriptJavaScript,
         name: "TypeScript/JavaScript",
         extensions: TYPESCRIPT_AND_JAVASCRIPT_EXTENSIONS,
+        default_binary: TypeScriptLanguageClient::DEFAULT_BINARY,
         factory: create_typescript_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Rust,
         name: "Rust",
         extensions: RUST_EXTENSIONS,
+        default_binary: RustAnalyzerClient::DEFAULT_BINARY,
         factory: create_rust_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::CPP,
         name: "C/C++",
         extensions: C_AND_CPP_EXTENSIONS,
+        default_binary: ClangdClient::DEFAULT_BINARY,
         factory: create_cpp_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::CSharp,
         name: "C#",
         extensions: CSHARP_EXTENSIONS,
+        default_binary: CSharpClient::DEFAULT_BINARY,
         factory: create_csharp_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Java,
         name: "Java",
         extensions: JAVA_EXTENSIONS,
+        default_binary: JdtlsClient::DEFAULT_BINARY,
         factory: create_java_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Golang,
         name: "Go",
         extensions: GOLANG_EXTENSIONS,
+        default_binary: GoplsClient::DEFAULT_BINARY,
         factory: create_golang_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::PHP,
         name: "PHP",
         extensions: PHP_EXTENSIONS,
+        default_binary: PhpactorClient::DEFAULT_BINARY,
         factory: create_php_client,
     },
     LanguageMetadata {
         id: SupportedLanguages::Ruby,
         name: "Ruby",
         extensions: RUBY_EXTENSIONS,
+        default_binary: RubyClient::DEFAULT_BINARY,
         factory: create_ruby_client,
     },
 ];

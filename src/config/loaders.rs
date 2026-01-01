@@ -43,7 +43,11 @@ impl LspMcpConfig {
     /// Load project config from workspace root (.lsp-mcp.json)
     pub fn load_project(workspace_root: &Path) -> Option<Self> {
         let config_path = workspace_root.join(".lsp-mcp.json");
-        Self::load_from_path(&config_path).map(|f| f.into())
+        Self::load_from_path(&config_path).map(|f| {
+            let mut config: LspMcpConfig = f.into();
+            config.project_config_present = true;
+            config
+        })
     }
 
     /// Load config from workspace root (legacy method, prefer load_merged)
@@ -56,9 +60,15 @@ impl LspMcpConfig {
     /// Returns default config if neither global nor project config exists.
     pub fn load_merged(workspace_root: &Path) -> Self {
         let global = Self::load_global();
-        let project = Self::load_project(workspace_root);
+        let project_file = Self::load_from_path(&workspace_root.join(".lsp-mcp.json"));
+        let project_present = project_file.is_some();
+        let project = project_file.map(|f| {
+            let mut config: LspMcpConfig = f.into();
+            config.project_config_present = true;
+            config
+        });
 
-        match (global, project) {
+        let mut config = match (global, project) {
             (None, None) => {
                 info!("No config files found, using defaults");
                 Self::default()
@@ -75,7 +85,10 @@ impl LspMcpConfig {
                 info!("Merged global and project configs");
                 g.merge(p)
             }
-        }
+        };
+
+        config.project_config_present = project_present;
+        config
     }
 
     /// Merge project config over this (global) config
@@ -94,6 +107,7 @@ impl LspMcpConfig {
             tools: self.tools.merge(project.tools),
             output: project.output.or(self.output),
             debug: project.debug.or(self.debug),
+            project_config_present: self.project_config_present || project.project_config_present,
         }
     }
 
@@ -103,7 +117,7 @@ impl LspMcpConfig {
 
     /// Get the set of enabled tools based on config
     pub fn enabled_tools(&self) -> HashSet<String> {
-        self.tools.enabled_tools()
+        self.tools.enabled_tools(self.project_config_present)
     }
 
     /// Get the resolved output mode, defaulting when not configured
@@ -128,6 +142,7 @@ impl From<LspMcpConfigFile> for LspMcpConfig {
             tools: file.tools,
             output: file.output,
             debug: file.debug,
+            project_config_present: false,
         }
     }
 }

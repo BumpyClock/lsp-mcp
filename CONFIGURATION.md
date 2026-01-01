@@ -28,6 +28,10 @@ Tools:
 - `tools.preset`: `minimal`, `standard`, or `full`.
 - `tools.enable`: list of tool names to enable in addition to the preset.
 - `tools.disable`: list of tool names to disable (takes precedence).
+- `tools.initial_setup`: `auto` (default), `enabled`, or `disabled`.
+  - `auto`: enable `initialSetup` only when the preset is `standard` and no project config exists.
+  - `enabled`: always enable `initialSetup`.
+  - `disabled`: always disable `initialSetup`.
 
 Languages:
 - `languages`: list of language identifiers to start language servers for.
@@ -57,7 +61,8 @@ Full example:
   "tools": {
     "preset": "standard",
     "enable": ["findReferencedSymbols"],
-    "disable": ["incoming_calls"]
+    "disable": ["incoming_calls"],
+    "initial_setup": "auto"
   },
   "output": {
     "mode": "default"

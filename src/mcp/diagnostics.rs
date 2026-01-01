@@ -30,7 +30,9 @@ pub async fn health(
     debug_config: Option<&DebugConfig>,
     workspace_root: &Path,
 ) -> ToolOutput {
-    let session_id = if debug_config.is_some() {
+    let debug_enabled = debug_config.is_some();
+
+    let session_id = if debug_enabled {
         try_session_id().map(|id| id.to_string())
     } else {
         None
@@ -43,6 +45,7 @@ pub async fn health(
         status: "ok".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         languages: service.health().await,
+        debug_mode: if debug_enabled { Some(true) } else { None },
         session_id,
         log_file,
     };

@@ -34,6 +34,17 @@ impl ToMarkdown for HealthResponse {
     fn to_markdown(&self) -> String {
         let mut output = String::new();
 
+        if self.debug_mode == Some(true) {
+            output.push_str("## Debug Mode Active\n\n");
+            if let Some(log_file) = &self.log_file {
+                output.push_str(&format!("Log file: {}\n\n", log_file));
+            }
+            output.push_str("**Important**: If tool responses seem incomplete or low quality, inspect the log file\n");
+            output.push_str("to identify discrepancies between what the LSP returned and what was formatted.\n");
+            output.push_str("Report any issues to the user.\n\n");
+            output.push_str("---\n\n");
+        }
+
         output.push_str("LSP-MCP Health\n\n");
         output.push_str(&format!("Status: {}\n", self.status));
         output.push_str(&format!("Version: {}\n", self.version));
@@ -41,8 +52,10 @@ impl ToMarkdown for HealthResponse {
         if let Some(session_id) = &self.session_id {
             output.push_str(&format!("Session ID: {}\n", session_id));
         }
-        if let Some(log_file) = &self.log_file {
-            output.push_str(&format!("Log file: {}\n", log_file));
+        if self.debug_mode != Some(true) {
+            if let Some(log_file) = &self.log_file {
+                output.push_str(&format!("Log file: {}\n", log_file));
+            }
         }
 
         if !self.languages.is_empty() {
@@ -77,6 +90,7 @@ mod tests {
             status: status.to_string(),
             version: version.to_string(),
             languages: languages.into_iter().collect(),
+            debug_mode: None,
             session_id: None,
             log_file: None,
         }
@@ -449,6 +463,7 @@ mod tests {
             status: "ok".to_string(),
             version: "1.0.0".to_string(),
             languages: Default::default(),
+            debug_mode: None,
             session_id: Some("abc123-def456".to_string()),
             log_file: None,
         };
@@ -467,6 +482,7 @@ mod tests {
             status: "ok".to_string(),
             version: "1.0.0".to_string(),
             languages: Default::default(),
+            debug_mode: None,
             session_id: None,
             log_file: Some(".lsp-mcp/logs/sessions/abc.log".to_string()),
         };
@@ -492,6 +508,75 @@ mod tests {
         assert!(
             !result.contains("Log file:"),
             "negative: health response must not contain Log file when not set"
+        );
+    }
+
+    #[test]
+    fn health_response_includes_debug_guidance_when_debug_mode_enabled() {
+        let response = HealthResponse {
+            status: "ok".to_string(),
+            version: "1.0.0".to_string(),
+            languages: Default::default(),
+            debug_mode: Some(true),
+            session_id: Some("test-session".to_string()),
+            log_file: Some("/path/to/log.log".to_string()),
+        };
+
+        let result = response.to_markdown();
+
+        assert!(
+            result.contains("## Debug Mode Active"),
+            "negative: debug mode response must contain debug mode header"
+        );
+        assert!(
+            result.contains("Log file: /path/to/log.log"),
+            "negative: debug mode response must contain log file path"
+        );
+        assert!(
+            result.contains("inspect the log file"),
+            "negative: debug mode response must contain log inspection guidance"
+        );
+        assert!(
+            result.contains("Report any issues to the user"),
+            "negative: debug mode response must instruct to report issues"
+        );
+    }
+
+    #[test]
+    fn health_response_debug_section_appears_before_health_header() {
+        let response = HealthResponse {
+            status: "ok".to_string(),
+            version: "1.0.0".to_string(),
+            languages: Default::default(),
+            debug_mode: Some(true),
+            session_id: None,
+            log_file: Some("/path/to/log.log".to_string()),
+        };
+
+        let result = response.to_markdown();
+
+        let debug_pos = result.find("## Debug Mode Active").expect("debug header not found");
+        let health_pos = result.find("LSP-MCP Health").expect("health header not found");
+
+        assert!(
+            debug_pos < health_pos,
+            "negative: debug section must appear before health header"
+        );
+    }
+
+    #[test]
+    fn health_response_omits_debug_section_when_debug_mode_not_enabled() {
+        let response = create_health_response("ok", "1.0.0", vec![]);
+
+        let result = response.to_markdown();
+
+        assert!(
+            !result.contains("## Debug Mode Active"),
+            "negative: non-debug response must not contain debug mode header"
+        );
+        assert!(
+            !result.contains("inspect the log file"),
+            "negative: non-debug response must not contain log inspection guidance"
         );
     }
 }

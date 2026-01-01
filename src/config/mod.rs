@@ -7,7 +7,7 @@ mod types;
 
 use std::collections::HashMap;
 
-pub use tools_config::ToolsConfig;
+pub use tools_config::{InitialSetupMode, ToolsConfig};
 pub use types::{DebugConfig, DebugLogLevel, OutputConfig, OutputMode};
 
 /// Configuration for the lsp-mcp server loaded from .lsp-mcp.json.
@@ -39,6 +39,7 @@ pub struct LspMcpConfig {
     pub tools: ToolsConfig,
     pub output: Option<OutputConfig>,
     pub debug: Option<DebugConfig>,
+    pub project_config_present: bool,
 }
 
 #[cfg(test)]
@@ -239,7 +240,7 @@ mod tests {
         let config = LspMcpConfig::default();
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 10);
         assert!(tools.contains("goToDefinition"));
         assert!(tools.contains("findReferences"));
         assert!(tools.contains("hover"));
@@ -248,6 +249,8 @@ mod tests {
         assert!(tools.contains("documentSymbol"));
         assert!(tools.contains("callHierarchy"));
         assert!(tools.contains("findReferencedSymbols"));
+        assert!(tools.contains("initialInstructions"));
+        assert!(tools.contains("initialSetup"));
     }
 
     #[test]
@@ -257,12 +260,13 @@ mod tests {
                 preset: ToolPreset::Standard,
                 enable: vec!["findReferencedSymbols".to_string()],
                 disable: vec![],
+                ..Default::default()
             },
             ..Default::default()
         };
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 10);
         assert!(tools.contains("findReferencedSymbols"));
     }
 
@@ -273,12 +277,13 @@ mod tests {
                 preset: ToolPreset::Standard,
                 enable: vec![],
                 disable: vec!["callHierarchy".to_string()],
+                ..Default::default()
             },
             ..Default::default()
         };
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 9);
         assert!(!tools.contains("callHierarchy"));
     }
 
@@ -289,12 +294,72 @@ mod tests {
                 preset: ToolPreset::Minimal,
                 enable: vec!["listFiles".to_string()],
                 disable: vec!["listFiles".to_string()],
+                ..Default::default()
             },
             ..Default::default()
         };
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("listFiles"));
+    }
+
+    #[test]
+    fn test_initial_setup_auto_disabled_when_project_config_present() {
+        let config = LspMcpConfig {
+            project_config_present: true,
+            ..Default::default()
+        };
+        let tools = config.enabled_tools();
+
+        assert!(!tools.contains("initialSetup"));
+        assert_eq!(tools.len(), 9);
+    }
+
+    #[test]
+    fn test_initial_setup_enabled_overrides_auto() {
+        let config = LspMcpConfig {
+            project_config_present: true,
+            tools: ToolsConfig {
+                initial_setup: InitialSetupMode::Enabled,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let tools = config.enabled_tools();
+
+        assert!(tools.contains("initialSetup"));
+        assert_eq!(tools.len(), 10);
+    }
+
+    #[test]
+    fn test_initial_setup_disabled_when_no_project_config() {
+        let config = LspMcpConfig {
+            project_config_present: false,
+            tools: ToolsConfig {
+                initial_setup: InitialSetupMode::Disabled,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let tools = config.enabled_tools();
+
+        assert!(!tools.contains("initialSetup"));
+        assert_eq!(tools.len(), 9);
+    }
+
+    #[test]
+    fn test_initial_setup_auto_disabled_when_preset_not_standard() {
+        let config = LspMcpConfig {
+            tools: ToolsConfig {
+                preset: ToolPreset::Full,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let tools = config.enabled_tools();
+
+        assert!(!tools.contains("initialSetup"));
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]

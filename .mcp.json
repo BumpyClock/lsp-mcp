@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "lsp-mcp": {
+    "lspMcp": {
       "type": "stdio",
-      "command": "/home/bumpyclock/Projects/lsp-mcp/target/release/lsp-mcp"
+      "command": "lsp-mcp"
     }
   }
 }

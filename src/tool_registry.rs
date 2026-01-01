@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-/// All available MCP tool names (must match #[tool] method names in mcp.rs)
+/// All available MCP tool names (must match #[tool] names in mcp.rs)
 pub const ALL_TOOLS: &[&str] = &[
     "documentSymbol",
     "goToDefinition",
@@ -19,7 +19,8 @@ pub const ALL_TOOLS: &[&str] = &[
     "readSourceCode",
     "health",
     "getDiagnostics",
-    "initial_instructions",
+    "initialInstructions",
+    "initialSetup",
 ];
 
 /// Core tools (Tier 1+2): Enabled by default in "standard" preset
@@ -32,7 +33,8 @@ pub const CORE_TOOLS: &[&str] = &[
     "documentSymbol",
     "callHierarchy",
     "findReferencedSymbols",
-    "initial_instructions",
+    "initialInstructions",
+    "initialSetup",
 ];
 
 /// Minimal tools (Tier 1): Essential navigation only
@@ -49,10 +51,10 @@ pub const MINIMAL_TOOLS: &[&str] = &[
 pub enum ToolPreset {
     /// Minimal: Only essential navigation tools (4 tools)
     Minimal,
-    /// Standard (default): Core tools for productive development (7 tools)
+    /// Standard (default): Core tools for productive development (10 tools)
     #[default]
     Standard,
-    /// Full: All available tools (13 tools)
+    /// Full: All available tools (15 tools)
     Full,
 }
 
@@ -76,12 +78,12 @@ mod tests {
 
     #[test]
     fn test_all_tools_count() {
-        assert_eq!(ALL_TOOLS.len(), 14, "Expected 14 total tools");
+        assert_eq!(ALL_TOOLS.len(), 15, "Expected 15 total tools");
     }
 
     #[test]
     fn test_core_tools_count() {
-        assert_eq!(CORE_TOOLS.len(), 9, "Expected 9 core tools");
+        assert_eq!(CORE_TOOLS.len(), 10, "Expected 10 core tools");
     }
 
     #[test]
@@ -102,7 +104,7 @@ mod tests {
     #[test]
     fn test_get_preset_tools_standard() {
         let tools = get_preset_tools(ToolPreset::Standard);
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         // Should include all minimal tools
         assert!(tools.contains("goToDefinition"));
         assert!(tools.contains("findReferences"));
@@ -113,13 +115,14 @@ mod tests {
         assert!(tools.contains("documentSymbol"));
         assert!(tools.contains("callHierarchy"));
         assert!(tools.contains("findReferencedSymbols"));
-        assert!(tools.contains("initial_instructions"));
+        assert!(tools.contains("initialInstructions"));
+        assert!(tools.contains("initialSetup"));
     }
 
     #[test]
     fn test_get_preset_tools_full() {
         let tools = get_preset_tools(ToolPreset::Full);
-        assert_eq!(tools.len(), 14);
+        assert_eq!(tools.len(), 15);
         // Should include all tools
         for tool in ALL_TOOLS {
             assert!(tools.contains(*tool), "Missing tool: {}", tool);

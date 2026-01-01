@@ -1,12 +1,7 @@
 {
   "languages": ["rust"],
   "tools": {
-    "preset": "full",
+    "preset": "standard",
     "disable": ["list_files"]
-  },
-  "debug": {
-    "enabled": true,
-    "log_level": "debug",
-    "log_dir": ".lsp-mcp/logs"
   }
 }

@@ -14,11 +14,14 @@ mod symbols;
 pub use filter::FilteredToolHandler;
 pub use server::run_server;
 
-use crate::config::{DebugConfig, LspMcpConfig, OutputMode};
+use crate::config::{DebugConfig, InitialSetupMode, LspMcpConfig, OutputMode};
+use crate::lsp::registry::LanguageMetadata;
+use crate::api_types::SupportedLanguages;
 use crate::lsp::manager::Manager;
 use crate::service::{create_service, LspService};
 use crate::session::{new_request_id, request_id_header};
 use mcpkit::prelude::*;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -30,6 +33,9 @@ pub struct LspMcpServer {
     debug_enabled: bool,
     debug_config: Option<DebugConfig>,
     workspace_root: PathBuf,
+    project_config_present: bool,
+    initial_setup_mode: InitialSetupMode,
+    enabled_tools: HashSet<String>,
 }
 
 impl LspMcpServer {
@@ -40,6 +46,9 @@ impl LspMcpServer {
             debug_enabled: config.debug_config().is_some(),
             debug_config: config.debug.clone(),
             workspace_root: workspace_root.to_path_buf(),
+            project_config_present: config.project_config_present,
+            initial_setup_mode: config.tools.initial_setup,
+            enabled_tools: config.enabled_tools(),
         }
     }
 
@@ -71,24 +80,59 @@ impl LspMcpServer {
     pub fn get_instructions(&self) -> String {
         const BASE_INSTRUCTIONS: &str = "All line and character positions use 1-based indexing (first line is 1, first character is 1). This matches what editors display to users.";
 
-        if self.debug_enabled {
+        let mut instructions = if self.debug_enabled {
             format!(
                 r#"{}
 
-## Using LSP-MCP in Debug Mode
+## Debug Mode Active
 
-**CRITICAL**: After each task, evaluate the tools:
-- Did the lsp-mcp tools provide enough information to make coding decisions?
-- If you used a tool on a file and then immediately read that file, explain why the tool output was insufficient.
-- Surface any shortcomings and insights about what information was missing.
+**Log file**: Use the `health` tool to get the current log file path.
 
-When debug is enabled, logs are written to `.lsp-mcp/logs/sessions/{{session-id}}.log`.
-Use the `health` tool to get the current session ID and log file path for correlation."#,
+### When to Inspect Logs
+- If tool responses seem incomplete, missing data, or low quality
+- If you need to read a file immediately after using an LSP tool on it
+- If symbol resolution or navigation gives unexpected results
+
+### Log Inspection Workflow
+1. Call the `health` tool to get the log file path
+2. Read the log file to see raw LSP responses
+3. Identify discrepancies between raw data and formatted output
+4. Report issues to the user
+
+Logs are written to `.lsp-mcp/logs/sessions/{{session-id}}.log`.
+Each tool response includes a request ID header for correlation."#,
                 BASE_INSTRUCTIONS
             )
         } else {
             BASE_INSTRUCTIONS.to_string()
+        };
+
+        if self.project_config_present && self.initial_setup_mode == InitialSetupMode::Auto {
+            instructions.push_str(
+                r#"
+
+## Initial Setup Tool Disabled
+A project `.lsp-mcp.json` was detected, so the `initialSetup` tool is disabled by default.
+To keep it enabled, set `"tools": { "initial_setup": "enabled" }` in your config and restart the agent."#,
+            );
         }
+
+        instructions
+    }
+
+    fn format_initial_setup_language_list(&self) -> String {
+        let mut lines = Vec::new();
+        for metadata in LanguageMetadata::all() {
+            let id = match metadata.id {
+                SupportedLanguages::TypeScriptJavaScript => "typescript|javascript".to_string(),
+                _ => metadata.id.to_string(),
+            };
+            lines.push(format!(
+                "- `{}` ({}) — `{}`",
+                id, metadata.name, metadata.default_binary
+            ));
+        }
+        lines.join("\n")
     }
 }
 
@@ -475,11 +519,76 @@ impl LspMcpServer {
     }
 
     #[tool(
-        name = "initial_instructions",
+        name = "initialSetup",
+        description = "Guided setup for configuring languages, binaries, and tools."
+    )]
+    async fn initial_setup(&self) -> ToolOutput {
+        let language_list = self.format_initial_setup_language_list();
+        let instructions = format!(
+            r#"# LSP-MCP Initial Setup
+
+Use this tool to configure language servers and `.lsp-mcp.json` for the current project.
+It is enabled by default only in the standard tool preset.
+
+## 1) Auto-detect languages and confirm choices
+Ask the user to auto-detect languages by scanning the workspace (file extensions) and present the detected set.
+Then give them options: enable all detected languages, select a subset, or add additional languages manually.
+If `languages` is omitted, LSP-MCP will auto-detect on startup.
+
+**Supported languages + default server binaries:**
+{}
+
+## 2) Create `.lsp-mcp.json`
+```json
+{{
+  "languages": ["rust", "typescript"],
+  "binaries": {{
+    "rust": "/opt/rust-analyzer"
+  }},
+  "tools": {{
+    "preset": "standard"
+  }}
+}}
+```
+
+## 3) Install language servers
+Ensure the default binaries above are on `PATH`, or set `binaries` per language with absolute paths.
+If you want install commands, tell the agent your OS/package manager and target languages.
+The agent should verify that each configured language server binary is available before continuing.
+Check `PATH` with `which` (macOS/Linux) or `where` (Windows).
+If a binary is missing, the agent should provide install steps for the user's OS/package manager.
+
+## 4) Disable this tool after setup
+Add `initialSetup` to the disabled list and restart your agent:
+```json
+{{
+  "tools": {{
+    "disable": ["initialSetup"]
+  }}
+}}
+```
+
+If you need to keep this tool enabled after creating a project config, set:
+```json
+{{
+  "tools": {{
+    "initial_setup": "enabled"
+  }}
+}}
+```
+Restart your agent for new settings to take effect."#,
+            language_list
+        );
+
+        ToolOutput::text(instructions)
+    }
+
+    #[tool(
+        name = "initialInstructions",
         description = "Read this on startup to know how to use LSP-MCP properly."
     )]
     async fn initial_instructions(&self) -> ToolOutput {
-        let instructions = if self.debug_enabled {
+        let mut instructions = if self.debug_enabled {
             r#"# LSP-MCP Usage Instructions
 
 ## Positioning
@@ -487,15 +596,27 @@ All line and character positions use **1-based indexing** (first line is 1, firs
 
 ## Debug Mode Active
 
-**CRITICAL**: After each task, evaluate the tools:
-- Did the lsp-mcp tools provide enough information to make coding decisions?
-- If you used a tool on a file and then immediately read that file, explain why the tool output was insufficient.
-- Surface any shortcomings and insights about what information was missing.
+**Log file**: Use the `health` tool to get the current log file path.
+
+### When to Inspect Logs
+- If tool responses seem incomplete, missing data, or low quality
+- If you need to read a file immediately after using an LSP tool on it
+- If symbol resolution or navigation gives unexpected results
+
+### Log Inspection Workflow
+1. Call the `health` tool to get the log file path
+2. Read the log file to see raw LSP responses
+3. Identify discrepancies between raw data and formatted output
+4. Report issues to the user
+
+### After Each Task
+Evaluate whether the lsp-mcp tools provided sufficient information.
+If you used a tool and then immediately read that file, explain why.
 
 ## Log Correlation
-When debug is enabled, logs are written to `.lsp-mcp/logs/sessions/{session-id}.log`.
+Logs are written to `.lsp-mcp/logs/sessions/{session-id}.log`.
 Each tool response includes a request ID header (`<!-- request: uuid -->`).
-Use the `health` tool to get the current session ID and log file path for correlation.
+Use request IDs to correlate tool output with log entries.
 
 ## Available Tools
 - `documentSymbol` - Get symbols defined in a file
@@ -504,7 +625,9 @@ Use the `health` tool to get the current session ID and log file path for correl
 - `hover` - Get type/documentation info at a position
 - `workspaceSymbol` - Search for symbols by name
 - `callHierarchy` - Trace incoming/outgoing calls
-- `getDiagnostics` - Get compiler errors/warnings"#
+- `getDiagnostics` - Get compiler errors/warnings
+- `initialSetup` - Guided first-time setup for project configuration"#
+            .to_string()
         } else {
             r#"# LSP-MCP Usage Instructions
 
@@ -518,8 +641,19 @@ All line and character positions use **1-based indexing** (first line is 1, firs
 - `hover` - Get type/documentation info at a position
 - `workspaceSymbol` - Search for symbols by name
 - `callHierarchy` - Trace incoming/outgoing calls
-- `getDiagnostics` - Get compiler errors/warnings"#
+- `getDiagnostics` - Get compiler errors/warnings
+- `initialSetup` - Guided first-time setup for project configuration"#
+            .to_string()
         };
+
+        if self.enabled_tools.contains("initialSetup") {
+            instructions.push_str(
+                r#"
+
+## First-Time Setup
+Before using the LSP tools in this agent, run `initialSetup` to configure languages and binaries for this project."#,
+            );
+        }
 
         ToolOutput::text(instructions)
     }
@@ -751,12 +885,12 @@ mod tests {
         let instructions = server.get_instructions();
 
         assert!(
-            instructions.contains("CRITICAL"),
-            "Debug mode should include CRITICAL guidance"
+            instructions.contains("Debug Mode Active"),
+            "Debug mode should include Debug Mode Active header"
         );
         assert!(
-            instructions.contains("evaluate the tools"),
-            "Debug mode should ask to evaluate tools"
+            instructions.contains("When to Inspect Logs"),
+            "Debug mode should include log inspection guidance"
         );
         assert!(
             instructions.contains(".lsp-mcp/logs/sessions"),
@@ -783,12 +917,49 @@ mod tests {
             "Should contain base instructions"
         );
         assert!(
-            !instructions.contains("CRITICAL"),
-            "Should NOT contain debug guidance when disabled"
+            !instructions.contains("Debug Mode Active"),
+            "Should NOT contain debug mode header when disabled"
         );
         assert!(
-            !instructions.contains("evaluate the tools"),
-            "Should NOT mention tool evaluation when disabled"
+            !instructions.contains("When to Inspect Logs"),
+            "Should NOT mention log inspection when disabled"
         );
+    }
+
+    #[tokio::test]
+    async fn test_instructions_warn_when_project_config_present() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let workspace_root = temp_dir.path();
+
+        let manager = Manager::new(workspace_root.to_str().unwrap())
+            .await
+            .expect("Failed to create manager");
+
+        let config = LspMcpConfig {
+            project_config_present: true,
+            ..Default::default()
+        };
+        let server = LspMcpServer::new(Arc::new(manager), &config, workspace_root);
+
+        let instructions = server.get_instructions();
+
+        assert!(
+            instructions.contains("Initial Setup Tool Disabled"),
+            "Should warn when project config disables initialSetup by default"
+        );
+        assert!(
+            instructions.contains("\"initial_setup\": \"enabled\""),
+            "Should mention how to keep initialSetup enabled"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_initial_instructions_prompt_initial_setup_when_enabled() {
+        let (server, _temp) = create_test_server().await;
+        let output = server.initial_instructions().await;
+        let text = extract_text_content(&output);
+
+        assert!(text.contains("First-Time Setup"));
+        assert!(text.contains("initialSetup"));
     }
 }

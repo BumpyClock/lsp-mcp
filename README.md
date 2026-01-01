@@ -130,6 +130,12 @@ args = ["--workspace-root", "/path/to/project"]
 You can customize `lsp-mcp` behavior with a `.lsp-mcp.json` file in your workspace root.
 See `CONFIGURATION.md` for the full schema and examples.
 
+### First-time setup
+
+On first launch (no project config), the `initialSetup` tool is enabled in the standard preset to help configure languages and binaries.
+If a project `.lsp-mcp.json` exists, `initialSetup` is auto-disabled unless you set `"tools": { "initial_setup": "enabled" }`.
+After setup, add `initialSetup` to `"tools": { "disable": ["initialSetup"] }` and restart your agent.
+
 ### Output Mode
 
 Control the verbosity of tool outputs:

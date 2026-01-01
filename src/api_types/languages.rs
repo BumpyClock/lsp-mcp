@@ -33,6 +33,9 @@ pub struct HealthResponse {
     pub version: String,
     /// Map of supported languages and their availability status
     pub languages: HashMap<SupportedLanguages, LspStatus>,
+    /// Whether debug mode is enabled
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debug_mode: Option<bool>,
     /// Session ID when debug mode is enabled
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
