@@ -121,7 +121,6 @@ impl FilteredLspMcpServer {
             "documentSymbol" => "Symbols defined in a file; use to outline structure",
             "semanticSearch" => "Semantic code search; use natural language queries",
             "findReferencedSymbols" => "Symbols referenced by definition; use to see deps",
-            "initialInstructions" => "Usage instructions; use on startup",
             "workspaceSymbol" => "Search symbols by name; use to locate definitions",
             "hover" => "Type/doc info at position; use for quick context",
             "listFiles" => "List workspace files; use to discover paths",

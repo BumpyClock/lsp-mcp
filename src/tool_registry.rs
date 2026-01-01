@@ -19,7 +19,6 @@ pub const ALL_TOOLS: &[&str] = &[
     "readSourceCode",
     "health",
     "getDiagnostics",
-    "initialInstructions",
     "initialSetup",
     "semanticSearch",
 ];
@@ -37,7 +36,6 @@ pub const CORE_TOOLS: &[&str] = &[
     "documentSymbol",
     "callHierarchy",
     "findReferencedSymbols",
-    "initialInstructions",
     "initialSetup",
 ];
 
@@ -55,10 +53,10 @@ pub const MINIMAL_TOOLS: &[&str] = &[
 pub enum ToolPreset {
     /// Minimal: Only essential navigation tools (4 tools)
     Minimal,
-    /// Standard (default): Core tools for productive development (10 tools)
+    /// Standard (default): Core tools for productive development (9 tools)
     #[default]
     Standard,
-    /// Full: All available tools except opt-in (15 tools)
+    /// Full: All available tools except opt-in (14 tools)
     Full,
 }
 
@@ -86,12 +84,12 @@ mod tests {
 
     #[test]
     fn test_all_tools_count() {
-        assert_eq!(ALL_TOOLS.len(), 16, "Expected 16 total tools");
+        assert_eq!(ALL_TOOLS.len(), 15, "Expected 15 total tools");
     }
 
     #[test]
     fn test_core_tools_count() {
-        assert_eq!(CORE_TOOLS.len(), 10, "Expected 10 core tools");
+        assert_eq!(CORE_TOOLS.len(), 9, "Expected 9 core tools");
     }
 
     #[test]
@@ -112,7 +110,7 @@ mod tests {
     #[test]
     fn test_get_preset_tools_standard() {
         let tools = get_preset_tools(ToolPreset::Standard);
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 9);
         // Should include all minimal tools
         assert!(tools.contains("goToDefinition"));
         assert!(tools.contains("findReferences"));
@@ -123,14 +121,13 @@ mod tests {
         assert!(tools.contains("documentSymbol"));
         assert!(tools.contains("callHierarchy"));
         assert!(tools.contains("findReferencedSymbols"));
-        assert!(tools.contains("initialInstructions"));
         assert!(tools.contains("initialSetup"));
     }
 
     #[test]
     fn test_get_preset_tools_full() {
         let tools = get_preset_tools(ToolPreset::Full);
-        assert_eq!(tools.len(), 15);
+        assert_eq!(tools.len(), 14);
         for tool in ALL_TOOLS {
             if OPT_IN_TOOLS.contains(tool) {
                 assert!(

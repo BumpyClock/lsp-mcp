@@ -246,7 +246,7 @@ mod tests {
         let config = LspMcpConfig::default();
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 9);
         assert!(tools.contains("goToDefinition"));
         assert!(tools.contains("findReferences"));
         assert!(tools.contains("hover"));
@@ -255,7 +255,6 @@ mod tests {
         assert!(tools.contains("documentSymbol"));
         assert!(tools.contains("callHierarchy"));
         assert!(tools.contains("findReferencedSymbols"));
-        assert!(tools.contains("initialInstructions"));
         assert!(tools.contains("initialSetup"));
     }
 
@@ -272,7 +271,7 @@ mod tests {
         };
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 9);
         assert!(tools.contains("findReferencedSymbols"));
     }
 
@@ -289,7 +288,7 @@ mod tests {
         };
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 8);
         assert!(!tools.contains("callHierarchy"));
     }
 
@@ -318,7 +317,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 8);
     }
 
     #[test]
@@ -334,7 +333,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 9);
     }
 
     #[test]
@@ -350,7 +349,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 8);
     }
 
     #[test]
@@ -365,8 +364,8 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        // Full preset is 15 tools (16 ALL_TOOLS - 1 opt-in semanticSearch), minus initialSetup = 14
-        assert_eq!(tools.len(), 14);
+        // Full preset is 14 tools (15 ALL_TOOLS - 1 opt-in semanticSearch), minus initialSetup = 13
+        assert_eq!(tools.len(), 13);
     }
 
     #[test]

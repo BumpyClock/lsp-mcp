@@ -16,7 +16,7 @@ pub mod tool_params;
 pub use filter::FilteredLspMcpServer;
 pub use server::run_server;
 
-use crate::config::{DebugConfig, InitialSetupMode, LspMcpConfig, OutputMode};
+use crate::config::{DebugConfig, LspMcpConfig, OutputMode};
 use crate::lsp::registry::LanguageMetadata;
 use crate::api_types::SupportedLanguages;
 use crate::lsp::manager::Manager;
@@ -41,121 +41,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-struct ToolArgSpec {
-    name: &'static str,
-    description: &'static str,
-    required: &'static [&'static str],
-    optional: &'static [&'static str],
-}
-
-const TOOL_ARG_SPECS: &[ToolArgSpec] = &[
-    ToolArgSpec {
-        name: "documentSymbol",
-        description: "Symbols defined in a file",
-        required: &["path"],
-        optional: &["include_locals", "include_children", "limit", "offset", "context_lines"],
-    },
-    ToolArgSpec {
-        name: "goToDefinition",
-        description: "Go to definition at position",
-        required: &["path", "line", "character"],
-        optional: &["limit", "offset"],
-    },
-    ToolArgSpec {
-        name: "findReferences",
-        description: "Find references at position",
-        required: &["path", "line", "character"],
-        optional: &["context_lines", "limit", "offset"],
-    },
-    ToolArgSpec {
-        name: "hover",
-        description: "Hover info at position",
-        required: &[],
-        optional: &["path", "line", "character", "include_definition", "requests"],
-    },
-    ToolArgSpec {
-        name: "workspaceSymbol",
-        description: "Search symbols by name",
-        required: &["query"],
-        optional: &["exact", "limit", "offset", "context_lines"],
-    },
-    ToolArgSpec {
-        name: "goToImplementation",
-        description: "Go to implementation at position",
-        required: &["path", "line", "character"],
-        optional: &[],
-    },
-    ToolArgSpec {
-        name: "callHierarchy",
-        description: "Call hierarchy for symbol at position",
-        required: &["path", "line", "character", "direction"],
-        optional: &["externals", "context_lines"],
-    },
-    ToolArgSpec {
-        name: "findReferencedSymbols",
-        description: "Symbols referenced by definition",
-        required: &["path", "line", "character"],
-        optional: &["full_scan", "externals"],
-    },
-    ToolArgSpec {
-        name: "findIdentifier",
-        description: "Find identifier occurrences in a file",
-        required: &["path", "name"],
-        optional: &["line", "character", "limit", "offset"],
-    },
-    ToolArgSpec {
-        name: "listFiles",
-        description: "List workspace files",
-        required: &[],
-        optional: &["limit", "offset"],
-    },
-    ToolArgSpec {
-        name: "readSourceCode",
-        description: "Read source code from file",
-        required: &["path"],
-        optional: &["start_line", "start_character", "end_line", "end_character"],
-    },
-    ToolArgSpec {
-        name: "health",
-        description: "Service status",
-        required: &[],
-        optional: &[],
-    },
-    ToolArgSpec {
-        name: "getDiagnostics",
-        description: "Diagnostics for file or workspace",
-        required: &[],
-        optional: &["file_path"],
-    },
-    ToolArgSpec {
-        name: "initialInstructions",
-        description: "LSP-MCP usage instructions",
-        required: &[],
-        optional: &[],
-    },
-    ToolArgSpec {
-        name: "initialSetup",
-        description: "Guided project setup",
-        required: &[],
-        optional: &[],
-    },
-    ToolArgSpec {
-        name: "semanticSearch",
-        description: "Semantic code search",
-        required: &["query"],
-        optional: &[
-            "limit",
-            "path",
-            "file_pattern",
-            "exclude",
-            "min_score",
-            "per_file",
-            "rerank",
-            "context_lines",
-        ],
-    },
-];
-
 /// LSP MCP Server that exposes code navigation tools for a workspace.
 pub struct LspMcpServer {
     service: LspService,
@@ -163,8 +48,6 @@ pub struct LspMcpServer {
     debug_enabled: bool,
     debug_config: Option<DebugConfig>,
     workspace_root: PathBuf,
-    project_config_present: bool,
-    initial_setup_mode: InitialSetupMode,
     enabled_tools: HashSet<String>,
     semantic_search_manager: Option<Arc<RwLock<SemanticSearchManager>>>,
     tool_router: ToolRouter<Self>,
@@ -178,8 +61,6 @@ impl LspMcpServer {
             debug_enabled: config.debug_config().is_some(),
             debug_config: config.debug.clone(),
             workspace_root: workspace_root.to_path_buf(),
-            project_config_present: config.project_config_present,
-            initial_setup_mode: config.tools.initial_setup,
             enabled_tools: config.enabled_tools(),
             semantic_search_manager: None,
             tool_router: Self::tool_router(),
@@ -214,11 +95,13 @@ impl LspMcpServer {
 
     /// Get server instructions, with debug guidance when debug mode is enabled.
     pub fn get_instructions(&self) -> String {
-        const BASE_INSTRUCTIONS: &str = "All line and character positions use 1-based indexing (first line is 1, first character is 1). This matches what editors display to users.";
-
         let mut instructions = if self.debug_enabled {
-            format!(
-                r#"{}
+            r#"# LSP-MCP Usage Instructions
+
+## Positioning
+All line and character positions use **1-based indexing** (first line is 1, first character is 1).
+
+After edits, use `getDiagnostics` to fetch the latest LSP diagnostics.
 
 ## Debug Mode Active
 
@@ -235,47 +118,45 @@ impl LspMcpServer {
 3. Identify discrepancies between raw data and formatted output
 4. Report issues to the user
 
-Logs are written to `.lsp-mcp/logs/sessions/{{session-id}}.log`.
-Each tool response includes a request ID header for correlation."#,
-                BASE_INSTRUCTIONS
-            )
+### After Each Task
+Evaluate whether the lsp-mcp tools provided sufficient information.
+If you used a tool and then immediately read that file, explain why.
+
+## Log Correlation
+Logs are written to `.lsp-mcp/logs/sessions/{session-id}.log`.
+Each tool response includes a request ID header (`<!-- request: uuid -->`).
+Use request IDs to correlate tool output with log entries."#
+                .to_string()
         } else {
-            BASE_INSTRUCTIONS.to_string()
+            r#"# LSP-MCP Usage Instructions
+
+## Positioning
+All line and character positions use **1-based indexing** (first line is 1, first character is 1).
+
+After edits, use `getDiagnostics` to fetch the latest LSP diagnostics."#
+                .to_string()
         };
 
-        if self.project_config_present && self.initial_setup_mode == InitialSetupMode::Auto {
+        if self.enabled_tools.contains("initialSetup") {
             instructions.push_str(
                 r#"
 
-## Initial Setup Tool Disabled
-A project `.lsp-mcp.json` was detected, so the `initialSetup` tool is disabled by default.
-To keep it enabled, set `"tools": { "initial_setup": "enabled" }` in your config and restart the agent."#,
+## First-Time Setup
+Before using the LSP tools in this agent, run `initialSetup` to configure languages and binaries for this project."#,
+            );
+        }
+
+        if self.enabled_tools.contains("semanticSearch") {
+            instructions.push_str(
+                r#"
+
+## Semantic Search
+Use `semanticSearch` for natural language code queries.
+Optional params: `limit`, `path`, `file_pattern`, `exclude`, `min_score`, `per_file`, `rerank`, `context_lines`."#,
             );
         }
 
         instructions
-    }
-
-    fn tool_quick_reference(&self) -> String {
-        let mut lines = Vec::new();
-        for spec in TOOL_ARG_SPECS {
-            if !self.enabled_tools.contains(spec.name) {
-                continue;
-            }
-            let mut args = Vec::new();
-            for required in spec.required {
-                args.push((*required).to_string());
-            }
-            for optional in spec.optional {
-                args.push(format!("{}?", optional));
-            }
-            let args = args.join(", ");
-            lines.push(format!(
-                "- `{}`({}) — {}",
-                spec.name, args, spec.description
-            ));
-        }
-        lines.join("\n")
     }
 
     fn format_initial_setup_language_list(&self) -> String {
@@ -732,96 +613,6 @@ Restart your agent for new settings to take effect."#,
     }
 
     #[tool(
-        name = "initialInstructions",
-        description = "Read this on startup to know how to use LSP-MCP properly."
-    )]
-    async fn initial_instructions(&self) -> Result<CallToolResult, McpError> {
-        let mut instructions = if self.debug_enabled {
-            r#"# LSP-MCP Usage Instructions
-
-## Positioning
-All line and character positions use **1-based indexing** (first line is 1, first character is 1). This matches what editors display to users.
-
-## Debug Mode Active
-
-**Log file**: Use the `health` tool to get the current log file path.
-
-### When to Inspect Logs
-- If tool responses seem incomplete, missing data, or low quality
-- If you need to read a file immediately after using an LSP tool on it
-- If symbol resolution or navigation gives unexpected results
-
-### Log Inspection Workflow
-1. Call the `health` tool to get the log file path
-2. Read the log file to see raw LSP responses
-3. Identify discrepancies between raw data and formatted output
-4. Report issues to the user
-
-### After Each Task
-Evaluate whether the lsp-mcp tools provided sufficient information.
-If you used a tool and then immediately read that file, explain why.
-
-## Log Correlation
-Logs are written to `.lsp-mcp/logs/sessions/{session-id}.log`.
-Each tool response includes a request ID header (`<!-- request: uuid -->`).
-Use request IDs to correlate tool output with log entries.
-"#
-            .to_string()
-        } else {
-            r#"# LSP-MCP Usage Instructions
-
-## Positioning
-All line and character positions use **1-based indexing** (first line is 1, first character is 1). This matches what editors display to users.
-"#
-            .to_string()
-        };
-
-        let tool_reference = self.tool_quick_reference();
-        if !tool_reference.is_empty() {
-            instructions.push_str(
-                r#"
-
-## Tool Quick Reference
-"#,
-            );
-            instructions.push_str(&tool_reference);
-        }
-
-        if self.enabled_tools.contains("initialSetup") {
-            instructions.push_str(
-                r#"
-
-## First-Time Setup
-Before using the LSP tools in this agent, run `initialSetup` to configure languages and binaries for this project."#,
-            );
-        }
-
-        if self.enabled_tools.contains("semanticSearch") {
-            instructions.push_str(
-                r#"
-
-## Semantic Search
-Use `semanticSearch` for natural language code queries.
-
-Inputs:
-- `query` (required) natural language query
-- `limit` (optional) max results
-- `path` (optional) workspace-relative prefix, e.g. `src/`
-- `file_pattern` (optional) list of glob patterns to include, e.g. `["**/*.test.ts"]`
-- `exclude` (optional) list of glob patterns to exclude, e.g. `["**/node_modules/**"]`
-- `min_score` (optional) minimum similarity score threshold (0.0-1.0), e.g. `0.5`
-- `per_file` (optional) return only the best match per file (default: true)
-- `rerank` (optional) rerank results using keyword overlap (default: false)
-- `context_lines` (optional) max number of lines to include from each chunk
-
-If indexing is still running, the tool returns status text; retry once indexing completes."#,
-            );
-        }
-
-        Ok(tool_result_success(instructions))
-    }
-
-    #[tool(
         name = "semanticSearch",
         description = "Search code semantically using natural language queries. Returns ranked code chunks based on embedding similarity."
     )]
@@ -1147,7 +938,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_instructions_warn_when_project_config_present() {
+    async fn test_instructions_do_not_warn_when_project_config_present() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let workspace_root = temp_dir.path();
 
@@ -1164,22 +955,8 @@ mod tests {
         let instructions = server.get_instructions();
 
         assert!(
-            instructions.contains("Initial Setup Tool Disabled"),
-            "Should warn when project config disables initialSetup by default"
+            !instructions.contains("Initial Setup Tool Disabled"),
+            "Should not warn about initialSetup being disabled"
         );
-        assert!(
-            instructions.contains("\"initial_setup\": \"enabled\""),
-            "Should mention how to keep initialSetup enabled"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_initial_instructions_prompt_initial_setup_when_enabled() {
-        let (server, _temp) = create_test_server().await;
-        let result = server.initial_instructions().await.unwrap();
-        let text = extract_text_content(&result);
-
-        assert!(text.contains("First-Time Setup"));
-        assert!(text.contains("initialSetup"));
     }
 }
