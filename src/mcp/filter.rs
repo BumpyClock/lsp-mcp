@@ -119,7 +119,7 @@ impl FilteredLspMcpServer {
             "getDiagnostics" => "Diagnostics for file/workspace; use for errors and warnings",
             "goToImplementation" => "Implementation at position; use for interface/trait impls",
             "documentSymbol" => "Symbols defined in a file; use to outline structure",
-            "semanticSearch" => "Semantic code search; use natural language queries",
+            "semanticSearch" => "Semantic code search; use descriptive natural language queries (not keywords)",
             "findReferencedSymbols" => "Symbols referenced by definition; use to see deps",
             "workspaceSymbol" => "Search symbols by name; use to locate definitions",
             "hover" => "Type/doc info at position; use for quick context",

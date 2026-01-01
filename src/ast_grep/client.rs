@@ -550,7 +550,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_file_symbols_parses_rust_file() {
         let client = AstGrepClient::new();
-        let test_file = "/Users/adityasharma/Projects/lsp-mcp/src/ast_grep/client.rs";
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_file = manifest_dir.join("src/ast_grep/client.rs");
+        let test_file = test_file.to_str().expect("Invalid path");
 
         let result = client.get_file_symbols(test_file).await;
 
@@ -569,7 +571,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_file_identifiers_parses_rust_file() {
         let client = AstGrepClient::new();
-        let test_file = "/Users/adityasharma/Projects/lsp-mcp/src/ast_grep/client.rs";
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_file = manifest_dir.join("src/ast_grep/client.rs");
+        let test_file = test_file.to_str().expect("Invalid path");
 
         let result = client.get_file_identifiers(test_file).await;
 
@@ -588,7 +592,9 @@ mod tests {
     #[tokio::test]
     async fn test_cache_returns_same_results_on_second_call() {
         let client = AstGrepClient::new();
-        let test_file = "/Users/adityasharma/Projects/lsp-mcp/src/ast_grep/client.rs";
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_file = manifest_dir.join("src/ast_grep/client.rs");
+        let test_file = test_file.to_str().expect("Invalid path");
 
         let first = client.get_file_symbols(test_file).await.unwrap();
         let second = client.get_file_symbols(test_file).await.unwrap();
@@ -615,7 +621,9 @@ mod tests {
     #[tokio::test]
     async fn test_invalidate_file_clears_cache() {
         let client = AstGrepClient::new();
-        let test_file = "/Users/adityasharma/Projects/lsp-mcp/src/ast_grep/client.rs";
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_file = manifest_dir.join("src/ast_grep/client.rs");
+        let test_file = test_file.to_str().expect("Invalid path");
 
         client.get_file_symbols(test_file).await.unwrap();
         client.invalidate_file(test_file).await;
@@ -630,7 +638,9 @@ mod tests {
     #[tokio::test]
     async fn test_clear_cache_removes_all_entries() {
         let client = AstGrepClient::new();
-        let test_file = "/Users/adityasharma/Projects/lsp-mcp/src/ast_grep/client.rs";
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_file = manifest_dir.join("src/ast_grep/client.rs");
+        let test_file = test_file.to_str().expect("Invalid path");
 
         client.get_file_symbols(test_file).await.unwrap();
         client.clear_cache().await;

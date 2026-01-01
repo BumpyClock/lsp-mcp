@@ -46,11 +46,18 @@ const CPP_IDENTIFIER: &str = include_str!("queries/identifier/cpp.scm");
 const PHP_IDENTIFIER: &str = include_str!("queries/identifier/php.scm");
 const RUBY_IDENTIFIER: &str = include_str!("queries/identifier/ruby.scm");
 
-// Reference queries (only for languages that have them)
-const PYTHON_REFERENCE: &str = include_str!("queries/reference/python.scm");
+// Reference queries
+const RUST_REFERENCE: &str = include_str!("queries/reference/rust.scm");
+const TYPESCRIPT_REFERENCE: &str = include_str!("queries/reference/typescript.scm");
 const TSX_REFERENCE: &str = include_str!("queries/reference/tsx.scm");
+const JAVASCRIPT_REFERENCE: &str = include_str!("queries/reference/javascript.scm");
+const PYTHON_REFERENCE: &str = include_str!("queries/reference/python.scm");
+const GO_REFERENCE: &str = include_str!("queries/reference/go.scm");
+const JAVA_REFERENCE: &str = include_str!("queries/reference/java.scm");
 const CSHARP_REFERENCE: &str = include_str!("queries/reference/csharp.scm");
+const CPP_REFERENCE: &str = include_str!("queries/reference/cpp.scm");
 const PHP_REFERENCE: &str = include_str!("queries/reference/php.scm");
+const RUBY_REFERENCE: &str = include_str!("queries/reference/ruby.scm");
 
 static REGISTRY: OnceLock<QueryRegistry> = OnceLock::new();
 
@@ -162,22 +169,49 @@ impl QueryRegistry {
             RUBY_IDENTIFIER,
         )?;
 
-        // Reference queries (only supported languages)
+        // Reference queries
+        add_query(
+            ProgrammingLanguage::Rust,
+            QueryType::Reference,
+            RUST_REFERENCE,
+        )?;
+        add_query(
+            ProgrammingLanguage::TypeScript,
+            QueryType::Reference,
+            TYPESCRIPT_REFERENCE,
+        )?;
+        add_query(ProgrammingLanguage::Tsx, QueryType::Reference, TSX_REFERENCE)?;
+        add_query(
+            ProgrammingLanguage::JavaScript,
+            QueryType::Reference,
+            JAVASCRIPT_REFERENCE,
+        )?;
         add_query(
             ProgrammingLanguage::Python,
             QueryType::Reference,
             PYTHON_REFERENCE,
         )?;
-        add_query(ProgrammingLanguage::Tsx, QueryType::Reference, TSX_REFERENCE)?;
+        add_query(ProgrammingLanguage::Go, QueryType::Reference, GO_REFERENCE)?;
+        add_query(
+            ProgrammingLanguage::Java,
+            QueryType::Reference,
+            JAVA_REFERENCE,
+        )?;
         add_query(
             ProgrammingLanguage::CSharp,
             QueryType::Reference,
             CSHARP_REFERENCE,
         )?;
+        add_query(ProgrammingLanguage::Cpp, QueryType::Reference, CPP_REFERENCE)?;
         add_query(
             ProgrammingLanguage::Php,
             QueryType::Reference,
             PHP_REFERENCE,
+        )?;
+        add_query(
+            ProgrammingLanguage::Ruby,
+            QueryType::Reference,
+            RUBY_REFERENCE,
         )?;
 
         Ok(Self { queries })
@@ -258,16 +292,25 @@ mod tests {
     #[test]
     fn test_reference_queries_available() {
         let registry = QueryRegistry::global();
-        // Reference queries only exist for python, tsx, csharp, php
-        assert!(registry.has_query("python", QueryType::Reference));
-        assert!(registry.has_query("tsx", QueryType::Reference));
-        assert!(registry.has_query("csharp", QueryType::Reference));
-        assert!(registry.has_query("php", QueryType::Reference));
-
-        // These don't have reference queries
-        assert!(!registry.has_query("rust", QueryType::Reference));
-        assert!(!registry.has_query("typescript", QueryType::Reference));
-        assert!(!registry.has_query("go", QueryType::Reference));
+        for lang in &[
+            "rust",
+            "typescript",
+            "tsx",
+            "javascript",
+            "python",
+            "go",
+            "java",
+            "csharp",
+            "cpp",
+            "php",
+            "ruby",
+        ] {
+            assert!(
+                registry.has_query(lang, QueryType::Reference),
+                "Missing reference query for {}",
+                lang
+            );
+        }
     }
 
     #[test]
