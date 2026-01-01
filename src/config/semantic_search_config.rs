@@ -26,10 +26,10 @@ pub enum EmbedderConfig {
     /// Local FastEmbed model
     #[serde(rename = "fastembed")]
     FastEmbed {
-        /// Model name (default: BAAI/bge-base-en-v1.5)
+        /// Model name (default: BAAI/bge-small-en-v1.5)
         #[serde(default = "default_fastembed_model")]
         model: String,
-        /// Embedding dimension (default: 768)
+        /// Embedding dimension (default: 384)
         #[serde(default = "default_fastembed_dimension")]
         dimension: usize,
         /// Cache directory for downloaded models (default: ~/.lsp-mcp/.fastembed-cache)
@@ -55,11 +55,11 @@ fn default_openai_dimension() -> usize {
 }
 
 fn default_fastembed_model() -> String {
-    "BAAI/bge-base-en-v1.5".to_string()
+    "BAAI/bge-small-en-v1.5".to_string()
 }
 
 fn default_fastembed_dimension() -> usize {
-    768
+    384
 }
 
 fn default_fastembed_cache_dir() -> String {

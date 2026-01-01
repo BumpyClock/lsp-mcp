@@ -3,9 +3,9 @@
 
 use crate::api_types::Position;
 use crate::config::OutputMode;
-use crate::mcp_response::{format_response, tool_output_from_error};
+use crate::mcp_response::{format_response, tool_result_from_error, tool_result_success};
 use crate::service::LspService;
-use mcpkit::prelude::*;
+use rmcp::model::CallToolResult;
 
 pub async fn workspace_symbol(
     service: &LspService,
@@ -15,7 +15,7 @@ pub async fn workspace_symbol(
     limit: Option<u32>,
     offset: Option<u32>,
     context_lines: Option<u32>,
-) -> ToolOutput {
+) -> CallToolResult {
     let exact = resolve_exact(exact);
     let context_lines = resolve_context_lines(context_lines);
     match service
@@ -31,9 +31,9 @@ pub async fn workspace_symbol(
     {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => tool_output_from_error(e),
+        Err(e) => tool_result_from_error(e),
     }
 }
 
@@ -46,7 +46,7 @@ pub async fn find_identifier(
     character: Option<u32>,
     limit: Option<u32>,
     offset: Option<u32>,
-) -> ToolOutput {
+) -> CallToolResult {
     let position = match (line, character) {
         (Some(l), Some(c)) => Some(Position {
             line: l,
@@ -60,9 +60,9 @@ pub async fn find_identifier(
     {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => tool_output_from_error(e),
+        Err(e) => tool_result_from_error(e),
     }
 }
 

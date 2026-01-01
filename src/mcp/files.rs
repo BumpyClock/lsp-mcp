@@ -4,22 +4,22 @@
 use crate::api_types::{Position, Range};
 use crate::config::OutputMode;
 use crate::markdown_formatter::SourceCodeResponse;
-use crate::mcp_response::{format_error, format_response};
+use crate::mcp_response::{format_error, format_response, tool_result_error, tool_result_success};
 use crate::service::LspService;
-use mcpkit::prelude::*;
+use rmcp::model::CallToolResult;
 
 pub async fn list_files(
     service: &LspService,
     output_mode: OutputMode,
     limit: Option<u32>,
     offset: Option<u32>,
-) -> ToolOutput {
+) -> CallToolResult {
     match service.list_files(limit, offset).await {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => ToolOutput::error(format_error(&e)),
+        Err(e) => tool_result_error(format_error(&e)),
     }
 }
 
@@ -31,7 +31,7 @@ pub async fn read_source_code(
     start_character: Option<u32>,
     end_line: Option<u32>,
     end_character: Option<u32>,
-) -> ToolOutput {
+) -> CallToolResult {
     let range = match (start_line, start_character, end_line, end_character) {
         (Some(sl), Some(sc), Some(el), Some(ec)) => Some(Range {
             start: Position {
@@ -62,8 +62,8 @@ pub async fn read_source_code(
                 total_lines: total,
             };
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => ToolOutput::error(format_error(&e)),
+        Err(e) => tool_result_error(format_error(&e)),
     }
 }

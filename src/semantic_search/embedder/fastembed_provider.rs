@@ -4,6 +4,15 @@
 use super::{EmbedderError, EmbeddingProvider};
 use async_trait::async_trait;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+#[cfg(feature = "ort-coreml")]
+use ort::execution_providers::CoreMLExecutionProvider;
+use ort::execution_providers::{CPUExecutionProvider, ExecutionProviderDispatch};
+#[cfg(feature = "ort-cuda")]
+use ort::execution_providers::CUDAExecutionProvider;
+#[cfg(feature = "ort-directml")]
+use ort::execution_providers::DirectMLExecutionProvider;
+#[cfg(feature = "ort-rocm")]
+use ort::execution_providers::ROCmExecutionProvider;
 use parking_lot::RwLock;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -51,7 +60,9 @@ impl FastEmbedProvider {
         // Initialize model in blocking context
         let model_name_owned = model_name.to_string();
         let model = tokio::task::spawn_blocking(move || {
-            let mut options = InitOptions::new(model_enum).with_show_download_progress(true);
+            let mut options = InitOptions::new(model_enum)
+                .with_show_download_progress(true)
+                .with_execution_providers(default_execution_providers());
             if let Some(cache_dir) = cache_dir {
                 options = options.with_cache_dir(cache_dir);
             }
@@ -69,10 +80,37 @@ impl FastEmbedProvider {
         })
     }
 
-    /// Create with default model (BAAI/bge-base-en-v1.5).
+    /// Create with default model (BAAI/bge-small-en-v1.5).
     pub async fn default_model() -> Result<Self, EmbedderError> {
-        Self::new("BAAI/bge-base-en-v1.5", 768, None).await
+        Self::new("BAAI/bge-small-en-v1.5", 384, None).await
     }
+}
+
+fn default_execution_providers() -> Vec<ExecutionProviderDispatch> {
+    let mut providers = Vec::new();
+
+    #[cfg(all(target_os = "windows", feature = "ort-cuda"))]
+    {
+        providers.push(CUDAExecutionProvider::default().build());
+    }
+
+    #[cfg(all(target_os = "windows", feature = "ort-directml"))]
+    {
+        providers.push(DirectMLExecutionProvider::default().build());
+    }
+
+    #[cfg(all(target_os = "macos", feature = "ort-coreml"))]
+    {
+        providers.push(CoreMLExecutionProvider::default().build());
+    }
+
+    #[cfg(all(target_os = "linux", feature = "ort-rocm"))]
+    {
+        providers.push(ROCmExecutionProvider::default().build());
+    }
+
+    providers.push(CPUExecutionProvider::default().build());
+    providers
 }
 
 #[async_trait]
@@ -120,6 +158,6 @@ mod tests {
         let embeddings = provider.embed_batch(&texts).await.unwrap();
 
         assert_eq!(embeddings.len(), 1);
-        assert_eq!(embeddings[0].len(), 768);
+        assert_eq!(embeddings[0].len(), 384);
     }
 }

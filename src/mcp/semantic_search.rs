@@ -2,11 +2,12 @@
 // ABOUTME: Provides natural language search over indexed code chunks.
 
 use crate::markdown_formatter::ToMarkdown;
+use crate::mcp_response::{tool_result_error, tool_result_success};
 use crate::semantic_search::{
     IndexStats, SearchResult, SemanticSearchError, SemanticSearchManager, SemanticSearchState,
 };
 use glob::Pattern;
-use mcpkit::prelude::*;
+use rmcp::model::CallToolResult;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -368,7 +369,7 @@ pub async fn semantic_search(
     per_file: Option<bool>,
     rerank: Option<bool>,
     context_lines: Option<u32>,
-) -> ToolOutput {
+) -> CallToolResult {
     let manager = manager.read().await;
     let state = manager.state().await;
     let resolved_context_lines = context_lines.or_else(|| manager.default_context_lines());
@@ -376,13 +377,13 @@ pub async fn semantic_search(
     // Handle non-ready states gracefully
     match &state {
         SemanticSearchState::Disabled => {
-            return ToolOutput::text(
-                "Semantic search is disabled. Enable it in `.lsp-mcp.json`:\n\n```json\n{\n  \"tools\": {\n    \"enable\": [\"semanticSearch\"]\n  },\n  \"semantic_search\": {\n    \"enabled\": true,\n    \"embedder\": {\n      \"provider\": \"fastembed\"\n    }\n  }\n}\n```"
+            return tool_result_success(
+                "Semantic search is disabled. Enable it in `.lsp-mcp.json`:\n\n```json\n{\n  \"tools\": {\n    \"enable\": [\"semanticSearch\"]\n  },\n  \"semantic_search\": {\n    \"enabled\": true,\n    \"embedder\": {\n      \"provider\": \"fastembed\"\n    }\n  }\n}\n```".to_string()
             );
         }
         SemanticSearchState::Initializing => {
-            return ToolOutput::text(
-                "# Semantic Search\n\n**Status**: Initializing...\n\nSemantic search is starting up. Please try again in a moment."
+            return tool_result_success(
+                "# Semantic Search\n\n**Status**: Initializing...\n\nSemantic search is starting up. Please try again in a moment.".to_string()
             );
         }
         SemanticSearchState::Indexing {
@@ -395,7 +396,7 @@ pub async fn semantic_search(
                 0.0
             };
 
-            return ToolOutput::text(format!(
+            return tool_result_success(format!(
                 "# Indexing in Progress\n\n\
                 **Progress**: {}/{} files ({:.1}%)\n\n\
                 Semantic search will be available once indexing completes.\n\
@@ -404,7 +405,7 @@ pub async fn semantic_search(
             ));
         }
         SemanticSearchState::Error { message } => {
-            return ToolOutput::text(format!(
+            return tool_result_success(format!(
                 "# Semantic Search Error\n\n**Error**: {}\n\n\
                 This error may be recoverable. Try restarting the server.",
                 message
@@ -418,19 +419,19 @@ pub async fn semantic_search(
     let exclude_patterns = match exclude.as_ref() {
         Some(patterns) => match compile_exclude_patterns(patterns) {
             Ok(compiled) => compiled,
-            Err(message) => return ToolOutput::error(message),
+            Err(message) => return tool_result_error(message),
         },
         None => Vec::new(),
     };
     let include_patterns = match file_pattern.as_ref() {
         Some(patterns) => match compile_exclude_patterns(patterns) {
             Ok(compiled) => compiled,
-            Err(message) => return ToolOutput::error(message),
+            Err(message) => return tool_result_error(message),
         },
         None => Vec::new(),
     };
     let rerank = rerank.unwrap_or(false);
-    let per_file = per_file.unwrap_or(false);
+    let per_file = per_file.unwrap_or(true);
 
     match manager
         .search(&query, limit.map(|l| l as usize), path.clone())
@@ -537,19 +538,19 @@ pub async fn semantic_search(
                 },
             };
 
-            ToolOutput::text(response.to_markdown())
+            tool_result_success(response.to_markdown())
         }
         Err(e) => match e {
-            SemanticSearchError::Disabled => ToolOutput::text(
-                "Semantic search is disabled. Enable it in `.lsp-mcp.json`.",
+            SemanticSearchError::Disabled => tool_result_success(
+                "Semantic search is disabled. Enable it in `.lsp-mcp.json`.".to_string(),
             ),
             SemanticSearchError::IndexingInProgress { indexed, total } => {
-                ToolOutput::text(format!(
+                tool_result_success(format!(
                     "Indexing in progress: {}/{} files. Please wait.",
                     indexed, total
                 ))
             }
-            _ => ToolOutput::text(format!("Search failed: {}", e)),
+            _ => tool_result_success(format!("Search failed: {}", e)),
         },
     }
 }

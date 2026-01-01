@@ -4,7 +4,7 @@
 use crate::config::OutputMode;
 use crate::markdown_formatter::ToMarkdown;
 use crate::service::ServiceError;
-use mcpkit::prelude::ToolOutput;
+use rmcp::model::{CallToolResult, Content};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -101,19 +101,29 @@ pub fn format_error(error: &ServiceError) -> String {
     result
 }
 
-/// Convert a ServiceError to a ToolOutput.
+/// Convert a ServiceError to a CallToolResult.
 ///
 /// IdentifierSelection and CallHierarchy errors are returned as text messages
 /// (not MCP errors) because they are informational - providing suggestions for
-/// nearby identifiers or callables. All other errors are returned as MCP errors.
-pub fn tool_output_from_error(error: ServiceError) -> ToolOutput {
+/// nearby identifiers or callables. All other errors are returned with is_error: true.
+pub fn tool_result_from_error(error: ServiceError) -> CallToolResult {
     let message = format_error(&error);
     match error {
         ServiceError::IdentifierSelection(_) | ServiceError::CallHierarchy(_) => {
-            ToolOutput::text(message)
+            CallToolResult::success(vec![Content::text(message)])
         }
-        _ => ToolOutput::error(message),
+        _ => CallToolResult::error(vec![Content::text(message)]),
     }
+}
+
+/// Create a success CallToolResult with text content.
+pub fn tool_result_success(text: String) -> CallToolResult {
+    CallToolResult::success(vec![Content::text(text)])
+}
+
+/// Create an error CallToolResult with text content.
+pub fn tool_result_error(message: String) -> CallToolResult {
+    CallToolResult::error(vec![Content::text(message)])
 }
 
 /// Format a tool disabled message for MCP protocol-level error response
@@ -438,12 +448,12 @@ mod tests {
         );
     }
 
-    fn is_error_output(tool_output: &ToolOutput) -> bool {
-        matches!(tool_output, ToolOutput::RecoverableError { .. })
+    fn is_error_result(result: &CallToolResult) -> bool {
+        result.is_error == Some(true)
     }
 
     #[test]
-    fn tool_output_from_error_returns_text_for_identifier_selection() {
+    fn tool_result_from_error_returns_success_for_identifier_selection() {
         use crate::api_types::{FileRange, Identifier, Position, Range};
         use crate::service::PositionError;
 
@@ -462,26 +472,26 @@ mod tests {
             closest: vec![identifier],
         });
 
-        let output = tool_output_from_error(error);
+        let result = tool_result_from_error(error);
         assert!(
-            !is_error_output(&output),
-            "negative: identifier selection should not be an error output"
+            !is_error_result(&result),
+            "negative: identifier selection should not be an error result"
         );
     }
 
     #[test]
-    fn tool_output_from_error_returns_error_for_other_errors() {
+    fn tool_result_from_error_returns_error_for_other_errors() {
         let error = ServiceError::Serialization("test error".to_string());
 
-        let output = tool_output_from_error(error);
+        let result = tool_result_from_error(error);
         assert!(
-            is_error_output(&output),
-            "negative: non-identifier-selection errors should be error output"
+            is_error_result(&result),
+            "negative: non-identifier-selection errors should be error result"
         );
     }
 
     #[test]
-    fn tool_output_from_error_returns_text_for_call_hierarchy() {
+    fn tool_result_from_error_returns_success_for_call_hierarchy() {
         use crate::api_types::{FilePosition, FileRange, Position, Range, Symbol};
         use crate::service::CallHierarchyError;
 
@@ -506,9 +516,9 @@ mod tests {
             nearby_callables: nearby,
         });
 
-        let output = tool_output_from_error(error);
+        let result = tool_result_from_error(error);
         assert!(
-            !is_error_output(&output),
+            !is_error_result(&result),
             "negative: call hierarchy errors should not be MCP errors"
         );
     }

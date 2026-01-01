@@ -3,9 +3,9 @@
 
 use crate::api_types::Position;
 use crate::config::OutputMode;
-use crate::mcp_response::{format_response, tool_output_from_error};
+use crate::mcp_response::{format_response, tool_result_from_error, tool_result_success};
 use crate::service::LspService;
-use mcpkit::prelude::*;
+use rmcp::model::CallToolResult;
 
 pub async fn find_references(
     service: &LspService,
@@ -16,7 +16,7 @@ pub async fn find_references(
     context_lines: Option<u32>,
     limit: Option<u32>,
     offset: Option<u32>,
-) -> ToolOutput {
+) -> CallToolResult {
     let pos = Position { line, character };
     let context_lines = resolve_context_lines(context_lines);
     match service
@@ -32,9 +32,9 @@ pub async fn find_references(
     {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => tool_output_from_error(e),
+        Err(e) => tool_result_from_error(e),
     }
 }
 
@@ -46,7 +46,7 @@ pub async fn find_referenced_symbols(
     character: u32,
     full_scan: Option<bool>,
     externals: Option<bool>,
-) -> ToolOutput {
+) -> CallToolResult {
     let pos = Position { line, character };
     let include_externals = resolve_include_externals(externals);
     match service
@@ -60,9 +60,9 @@ pub async fn find_referenced_symbols(
     {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => tool_output_from_error(e),
+        Err(e) => tool_result_from_error(e),
     }
 }
 

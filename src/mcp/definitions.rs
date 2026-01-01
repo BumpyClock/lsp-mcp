@@ -3,9 +3,9 @@
 
 use crate::api_types::Position;
 use crate::config::OutputMode;
-use crate::mcp_response::{format_response, tool_output_from_error};
+use crate::mcp_response::{format_response, tool_result_from_error, tool_result_success};
 use crate::service::{filter_sibling_exports, LspService};
-use mcpkit::prelude::*;
+use rmcp::model::CallToolResult;
 
 pub async fn definitions_in_file(
     service: &LspService,
@@ -16,7 +16,7 @@ pub async fn definitions_in_file(
     limit: Option<u32>,
     offset: Option<u32>,
     context_lines: Option<u32>,
-) -> ToolOutput {
+) -> CallToolResult {
     let include_locals = include_locals.unwrap_or(false);
     let include_children = include_children.unwrap_or(false);
     let context_lines = resolve_context_lines(context_lines);
@@ -33,9 +33,9 @@ pub async fn definitions_in_file(
     {
         Ok(response) => {
             let markdown = format_response(&response, output_mode);
-            ToolOutput::text(markdown)
+            tool_result_success(markdown)
         }
-        Err(e) => tool_output_from_error(e),
+        Err(e) => tool_result_from_error(e),
     }
 }
 
@@ -47,7 +47,7 @@ pub async fn find_definition(
     character: u32,
     limit: Option<u32>,
     offset: Option<u32>,
-) -> ToolOutput {
+) -> CallToolResult {
     let pos = Position { line, character };
     match service
         .find_definition(
@@ -70,9 +70,9 @@ pub async fn find_definition(
             }
 
             let markdown = format_response(&response, output_mode);
-            ToolOutput::text(markdown)
+            tool_result_success(markdown)
         }
-        Err(e) => tool_output_from_error(e),
+        Err(e) => tool_result_from_error(e),
     }
 }
 

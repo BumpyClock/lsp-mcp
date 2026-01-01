@@ -4,11 +4,11 @@
 use crate::api_types::{HealthResponse, SemanticSearchHealth};
 use crate::config::{DebugConfig, OutputMode};
 use crate::logging::session_log_path;
-use crate::mcp_response::{format_error, format_response};
+use crate::mcp_response::{format_error, format_response, tool_result_error, tool_result_success};
 use crate::service::LspService;
 use crate::semantic_search::{SemanticSearchHealthSnapshot, SemanticSearchManager, SemanticSearchState};
 use crate::session::try_session_id;
-use mcpkit::prelude::*;
+use rmcp::model::CallToolResult;
 use std::sync::Arc;
 use std::path::Path;
 use tokio::sync::RwLock;
@@ -17,13 +17,13 @@ pub async fn get_diagnostics(
     service: &LspService,
     output_mode: OutputMode,
     file_path: Option<String>,
-) -> ToolOutput {
+) -> CallToolResult {
     match service.get_diagnostics(file_path.as_deref()).await {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => ToolOutput::error(format_error(&e)),
+        Err(e) => tool_result_error(format_error(&e)),
     }
 }
 
@@ -33,7 +33,7 @@ pub async fn health(
     debug_config: Option<&DebugConfig>,
     workspace_root: &Path,
     semantic_search_manager: Option<Arc<RwLock<SemanticSearchManager>>>,
-) -> ToolOutput {
+) -> CallToolResult {
     let debug_enabled = debug_config.is_some();
 
     let session_id = if debug_enabled {
@@ -63,7 +63,7 @@ pub async fn health(
         semantic_search,
     };
     let resp = format_response(&response, output_mode);
-    ToolOutput::text(resp)
+    tool_result_success(resp)
 }
 
 fn to_semantic_search_health(snapshot: SemanticSearchHealthSnapshot) -> SemanticSearchHealth {

@@ -31,6 +31,32 @@ bash scripts/install-ast-grep-rules.sh
 
 Configure your MCP client to launch the server with the project root as the working directory. The server communicates over stdio.
 
+## GPU Acceleration (FastEmbed)
+
+FastEmbed uses ONNX Runtime execution providers. GPU acceleration is enabled at build time via cargo features and used
+automatically at runtime (highest-priority available provider is selected, then CPU fallback).
+
+Build flags:
+
+```bash
+# macOS Apple Silicon (CoreML / ANE where available)
+cargo build --features ort-coreml
+
+# Windows NVIDIA (CUDA) + DirectML fallback
+cargo build --features ort-cuda,ort-directml
+
+# Windows DirectML only (AMD/Intel/NVIDIA DX12 GPUs)
+cargo build --features ort-directml
+
+# Linux AMD ROCm (optional)
+cargo build --features ort-rocm
+```
+
+Notes:
+- CUDA requires a CUDA-enabled ONNX Runtime build and compatible NVIDIA drivers/runtime on the target machine.
+- DirectML requires Windows 10+ and a DX12-capable GPU (AMD/Intel/NVIDIA).
+- CoreML is supported on macOS and will use ANE when available.
+
 ### MCP client configuration
 
 Use a stdio MCP client configuration that launches one server per workspace. The key pieces are the `command` and `args`; if your client supports `cwd`, set it to the workspace root.

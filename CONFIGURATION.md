@@ -56,8 +56,8 @@ Semantic search:
 - `semantic_search.embedder`:
   - `provider`: `fastembed` (default) or `openai`.
   - `fastembed` options:
-    - `model` (default: `BAAI/bge-base-en-v1.5`)
-    - `dimension` (default: `768`, must match the selected model; validated at startup; mismatches are rejected; index rebuilds on dimension changes)
+    - `model` (default: `BAAI/bge-small-en-v1.5`)
+    - `dimension` (default: `384`, must match the selected model; validated at startup; mismatches are rejected; index rebuilds on dimension changes)
     - `cache_dir` (default: `~/.lsp-mcp/.fastembed-cache`, or `FASTEMBED_CACHE_DIR` if set)
   - `openai` options:
     - `model` (default: `text-embedding-3-small`)

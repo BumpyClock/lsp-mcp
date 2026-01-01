@@ -11,18 +11,30 @@ mod references;
 mod semantic_search;
 mod server;
 mod symbols;
+pub mod tool_params;
 
-pub use filter::FilteredToolHandler;
+pub use filter::FilteredLspMcpServer;
 pub use server::run_server;
 
 use crate::config::{DebugConfig, InitialSetupMode, LspMcpConfig, OutputMode};
 use crate::lsp::registry::LanguageMetadata;
 use crate::api_types::SupportedLanguages;
 use crate::lsp::manager::Manager;
+use crate::mcp::tool_params::*;
+use crate::mcp_response::tool_result_success;
 use crate::semantic_search::SemanticSearchManager;
 use crate::service::{create_service, LspService};
 use crate::session::{new_request_id, request_id_header};
-use mcpkit::prelude::*;
+use rmcp::{
+    ServerHandler, tool, tool_router, tool_handler,
+    handler::server::tool::ToolRouter,
+    handler::server::wrapper::Parameters,
+    model::{
+        CallToolResult, RawContent, ServerInfo, Implementation,
+        ServerCapabilities, ProtocolVersion,
+    },
+    ErrorData as McpError,
+};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -40,6 +52,7 @@ pub struct LspMcpServer {
     initial_setup_mode: InitialSetupMode,
     enabled_tools: HashSet<String>,
     semantic_search_manager: Option<Arc<RwLock<SemanticSearchManager>>>,
+    tool_router: ToolRouter<Self>,
 }
 
 impl LspMcpServer {
@@ -54,6 +67,7 @@ impl LspMcpServer {
             initial_setup_mode: config.tools.initial_setup,
             enabled_tools: config.enabled_tools(),
             semantic_search_manager: None,
+            tool_router: Self::tool_router(),
         }
     }
 
@@ -69,22 +83,18 @@ impl LspMcpServer {
     }
 
     /// Wrap tool output with request ID header when debug is enabled.
-    fn wrap_output(&self, request_id: Uuid, output: ToolOutput) -> ToolOutput {
+    fn wrap_output(&self, request_id: Uuid, result: CallToolResult) -> CallToolResult {
         if !self.debug_enabled {
-            return output;
+            return result;
         }
 
-        match output {
-            ToolOutput::Success(mut result) => {
-                for content in &mut result.content {
-                    if let mcpkit::types::Content::Text(text) = content {
-                        text.text = format!("{}{}", request_id_header(request_id), text.text);
-                    }
-                }
-                ToolOutput::Success(result)
+        let mut result = result;
+        for content in &mut result.content {
+            if let RawContent::Text(ref mut text) = content.raw {
+                text.text = format!("{}{}", request_id_header(request_id), text.text);
             }
-            other => other,
         }
+        result
     }
 
     /// Get server instructions, with debug guidance when debug mode is enabled.
@@ -147,139 +157,115 @@ To keep it enabled, set `"tools": { "initial_setup": "enabled" }` in your config
     }
 }
 
-#[mcp_server(
-    name = "lsp-mcp",
-    version = "0.4.4"
-)]
+#[tool_router]
 impl LspMcpServer {
     #[tool(name = "documentSymbol", description = "Symbols defined in a file (top-level only by default; set include_children for nesting)")]
     async fn definitions_in_file(
         &self,
-        path: String,
-        include_locals: Option<bool>,
-        include_children: Option<bool>,
-        limit: Option<u32>,
-        offset: Option<u32>,
-        context_lines: Option<u32>,
-    ) -> ToolOutput {
+        Parameters(params): Parameters<DocumentSymbolParams>,
+    ) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
             tool = "documentSymbol",
-            path = %path,
+            path = %params.path,
             "Processing tool request"
         );
 
         let output = definitions::definitions_in_file(
             &self.service,
             self.output_mode,
-            path,
-            include_locals,
-            include_children,
-            limit,
-            offset,
-            context_lines,
+            params.path,
+            params.include_locals,
+            params.include_children,
+            params.limit,
+            params.offset,
+            params.context_lines,
         )
         .await;
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
     }
 
     #[tool(name = "goToDefinition", description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5).")]
     async fn find_definition(
         &self,
-        path: String,
-        line: u32,
-        character: u32,
-        limit: Option<u32>,
-        offset: Option<u32>,
-    ) -> ToolOutput {
+        Parameters(params): Parameters<GoToDefinitionParams>,
+    ) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
             tool = "goToDefinition",
-            path = %path,
-            line = line,
-            character = character,
+            path = %params.path,
+            line = params.line,
+            character = params.character,
             "Processing tool request"
         );
 
         let output = definitions::find_definition(
             &self.service,
             self.output_mode,
-            path,
-            line,
-            character,
-            limit,
-            offset,
+            params.path,
+            params.line,
+            params.character,
+            params.limit,
+            params.offset,
         )
         .await;
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
     }
 
     #[tool(name = "findReferences", description = "References to symbol at position")]
     async fn find_references(
         &self,
-        path: String,
-        line: u32,
-        character: u32,
-        context_lines: Option<u32>,
-        limit: Option<u32>,
-        offset: Option<u32>,
-    ) -> ToolOutput {
+        Parameters(params): Parameters<FindReferencesParams>,
+    ) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
             tool = "findReferences",
-            path = %path,
-            line = line,
-            character = character,
+            path = %params.path,
+            line = params.line,
+            character = params.character,
             "Processing tool request"
         );
 
         let output = references::find_references(
             &self.service,
             self.output_mode,
-            path,
-            line,
-            character,
-            context_lines,
-            limit,
-            offset,
+            params.path,
+            params.line,
+            params.character,
+            params.context_lines,
+            params.limit,
+            params.offset,
         )
         .await;
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
     }
 
     #[tool(name = "hover", description = "Hover info at position. Use include_definition to also get definition location. Use 'requests' for batch mode with array of {path, line, character}")]
     async fn hover(
         &self,
-        path: Option<String>,
-        line: Option<u32>,
-        character: Option<u32>,
-        include_definition: Option<bool>,
-        requests: Option<String>,
-    ) -> ToolOutput {
+        Parameters(params): Parameters<HoverParams>,
+    ) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
@@ -290,203 +276,182 @@ impl LspMcpServer {
         let output = hover::hover(
             &self.service,
             self.output_mode,
-            path,
-            line,
-            character,
-            include_definition,
-            requests,
+            params.path,
+            params.line,
+            params.character,
+            params.include_definition,
+            params.requests,
         )
         .await;
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
     }
 
     #[tool(name = "workspaceSymbol", description = "Search symbols by name")]
     async fn workspace_symbol(
         &self,
-        query: String,
-        exact: Option<bool>,
-        limit: Option<u32>,
-        offset: Option<u32>,
-        context_lines: Option<u32>,
-    ) -> ToolOutput {
+        Parameters(params): Parameters<WorkspaceSymbolParams>,
+    ) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
             tool = "workspaceSymbol",
-            query = %query,
+            query = %params.query,
             "Processing tool request"
         );
 
         let output = symbols::workspace_symbol(
             &self.service,
             self.output_mode,
-            query,
-            exact,
-            limit,
-            offset,
-            context_lines,
+            params.query,
+            params.exact,
+            params.limit,
+            params.offset,
+            params.context_lines,
         )
         .await;
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
     }
 
     #[tool(name = "goToImplementation", description = "Implementations of interface/trait")]
     async fn go_to_implementation(
         &self,
-        path: String,
-        line: u32,
-        character: u32,
-    ) -> ToolOutput {
+        Parameters(params): Parameters<GoToImplementationParams>,
+    ) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
             tool = "goToImplementation",
-            path = %path,
-            line = line,
-            character = character,
+            path = %params.path,
+            line = params.line,
+            character = params.character,
             "Processing tool request"
         );
 
-        let output = call_hierarchy::go_to_implementation(&self.service, self.output_mode, path, line, character)
+        let output = call_hierarchy::go_to_implementation(&self.service, self.output_mode, params.path, params.line, params.character)
             .await;
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
     }
 
     #[tool(name = "callHierarchy", description = "Incoming or outgoing calls at position. External deps included by default. Set externals=false to exclude.")]
     async fn call_hierarchy(
         &self,
-        path: String,
-        line: u32,
-        character: u32,
-        direction: String,
-        externals: Option<bool>,
-        context_lines: Option<u32>,
-    ) -> ToolOutput {
+        Parameters(params): Parameters<CallHierarchyParams>,
+    ) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
             tool = "callHierarchy",
-            path = %path,
-            line = line,
-            character = character,
-            direction = %direction,
+            path = %params.path,
+            line = params.line,
+            character = params.character,
+            direction = %params.direction,
             "Processing tool request"
         );
 
         let output = call_hierarchy::call_hierarchy(
             &self.service,
             self.output_mode,
-            path,
-            line,
-            character,
-            direction,
-            externals,
-            context_lines,
+            params.path,
+            params.line,
+            params.character,
+            params.direction,
+            params.externals,
+            params.context_lines,
         )
         .await;
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
     }
 
     #[tool(name = "findReferencedSymbols", description = "Symbols referenced by definition. External deps included by default. Set externals=false to exclude.")]
     async fn find_referenced_symbols(
         &self,
-        path: String,
-        line: u32,
-        character: u32,
-        full_scan: Option<bool>,
-        externals: Option<bool>,
-    ) -> ToolOutput {
-        references::find_referenced_symbols(
+        Parameters(params): Parameters<FindReferencedSymbolsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let output = references::find_referenced_symbols(
             &self.service,
             self.output_mode,
-            path,
-            line,
-            character,
-            full_scan,
-            externals,
+            params.path,
+            params.line,
+            params.character,
+            params.full_scan,
+            params.externals,
         )
-        .await
+        .await;
+        Ok(output)
     }
 
     #[tool(name = "findIdentifier", description = "Identifiers by name in file")]
     async fn find_identifier(
         &self,
-        path: String,
-        name: String,
-        line: Option<u32>,
-        character: Option<u32>,
-        limit: Option<u32>,
-        offset: Option<u32>,
-    ) -> ToolOutput {
-        symbols::find_identifier(
+        Parameters(params): Parameters<FindIdentifierParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let output = symbols::find_identifier(
             &self.service,
             self.output_mode,
-            path,
-            name,
-            line,
-            character,
-            limit,
-            offset,
+            params.path,
+            params.name,
+            params.line,
+            params.character,
+            params.limit,
+            params.offset,
         )
-        .await
+        .await;
+        Ok(output)
     }
 
     #[tool(name = "listFiles", description = "List workspace files")]
-    async fn list_files(&self, limit: Option<u32>, offset: Option<u32>) -> ToolOutput {
-        files::list_files(&self.service, self.output_mode, limit, offset).await
+    async fn list_files(
+        &self,
+        Parameters(params): Parameters<ListFilesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let output = files::list_files(&self.service, self.output_mode, params.limit, params.offset).await;
+        Ok(output)
     }
 
     #[tool(name = "readSourceCode", description = "Read source code from file")]
     async fn read_source_code(
         &self,
-        path: String,
-        start_line: Option<u32>,
-        start_character: Option<u32>,
-        end_line: Option<u32>,
-        end_character: Option<u32>,
-    ) -> ToolOutput {
-        files::read_source_code(
+        Parameters(params): Parameters<ReadSourceCodeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let output = files::read_source_code(
             &self.service,
             self.output_mode,
-            path,
-            start_line,
-            start_character,
-            end_line,
-            end_character,
+            params.path,
+            params.start_line,
+            params.start_character,
+            params.end_line,
+            params.end_character,
         )
-        .await
+        .await;
+        Ok(output)
     }
 
     #[tool(name = "health", description = "Service status")]
-    async fn health(&self) -> ToolOutput {
+    async fn health(&self) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
@@ -505,15 +470,17 @@ impl LspMcpServer {
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
     }
 
     #[tool(name = "getDiagnostics", description = "Diagnostics for file or workspace")]
-    async fn get_diagnostics(&self, file_path: Option<String>) -> ToolOutput {
+    async fn get_diagnostics(
+        &self,
+        Parameters(params): Parameters<GetDiagnosticsParams>,
+    ) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
@@ -521,22 +488,21 @@ impl LspMcpServer {
             "Processing tool request"
         );
 
-        let output = diagnostics::get_diagnostics(&self.service, self.output_mode, file_path).await;
+        let output = diagnostics::get_diagnostics(&self.service, self.output_mode, params.file_path).await;
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
     }
 
     #[tool(
         name = "initialSetup",
         description = "Guided setup for configuring languages, binaries, and tools."
     )]
-    async fn initial_setup(&self) -> ToolOutput {
+    async fn initial_setup(&self) -> Result<CallToolResult, McpError> {
         let language_list = self.format_initial_setup_language_list();
         let instructions = format!(
             r#"# LSP-MCP Initial Setup
@@ -625,14 +591,14 @@ Restart your agent for new settings to take effect."#,
             language_list
         );
 
-        ToolOutput::text(instructions)
+        Ok(tool_result_success(instructions))
     }
 
     #[tool(
         name = "initialInstructions",
         description = "Read this on startup to know how to use LSP-MCP properly."
     )]
-    async fn initial_instructions(&self) -> ToolOutput {
+    async fn initial_instructions(&self) -> Result<CallToolResult, McpError> {
         let mut instructions = if self.debug_enabled {
             r#"# LSP-MCP Usage Instructions
 
@@ -714,7 +680,7 @@ Inputs:
 - `file_pattern` (optional) list of glob patterns to include, e.g. `["**/*.test.ts"]`
 - `exclude` (optional) list of glob patterns to exclude, e.g. `["**/node_modules/**"]`
 - `min_score` (optional) minimum similarity score threshold (0.0-1.0), e.g. `0.5`
-- `per_file` (optional) return only the best match per file (default: false)
+- `per_file` (optional) return only the best match per file (default: true)
 - `rerank` (optional) rerank results using keyword overlap (default: false)
 - `context_lines` (optional) max number of lines to include from each chunk
 
@@ -722,7 +688,7 @@ If indexing is still running, the tool returns status text; retry once indexing 
             );
         }
 
-        ToolOutput::text(instructions)
+        Ok(tool_result_success(instructions))
     }
 
     #[tool(
@@ -731,21 +697,13 @@ If indexing is still running, the tool returns status text; retry once indexing 
     )]
     async fn semantic_search_tool(
         &self,
-        query: String,
-        limit: Option<u32>,
-        path: Option<String>,
-        file_pattern: Option<Vec<String>>,
-        exclude: Option<Vec<String>>,
-        min_score: Option<f32>,
-        per_file: Option<bool>,
-        rerank: Option<bool>,
-        context_lines: Option<u32>,
-    ) -> ToolOutput {
+        Parameters(params): Parameters<SemanticSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
             tool = "semanticSearch",
-            query = %query,
+            query = %params.query,
             "Processing tool request"
         );
 
@@ -753,32 +711,50 @@ If indexing is still running, the tool returns status text; retry once indexing 
             Some(manager) => {
                 semantic_search::semantic_search(
                     manager,
-                    query,
-                    limit,
-                    path,
-                    file_pattern,
-                    exclude,
-                    min_score,
-                    per_file,
-                    rerank,
-                    context_lines,
+                    params.query,
+                    params.limit,
+                    params.path,
+                    params.file_pattern,
+                    params.exclude,
+                    params.min_score,
+                    params.per_file,
+                    params.rerank,
+                    params.context_lines,
                 )
                 .await
             }
             None => {
-                ToolOutput::text(
-                    "Semantic search is disabled. Enable it in `.lsp-mcp.json`:\n\n```json\n{\n  \"tools\": {\n    \"enable\": [\"semanticSearch\"]\n  },\n  \"semantic_search\": {\n    \"enabled\": true,\n    \"embedder\": {\n      \"provider\": \"fastembed\"\n    }\n  }\n}\n```"
+                tool_result_success(
+                    "Semantic search is disabled. Enable it in `.lsp-mcp.json`:\n\n```json\n{\n  \"tools\": {\n    \"enable\": [\"semanticSearch\"]\n  },\n  \"semantic_search\": {\n    \"enabled\": true,\n    \"embedder\": {\n      \"provider\": \"fastembed\"\n    }\n  }\n}\n```".to_string()
                 )
             }
         };
 
         tracing::debug!(
             request_id = %request_id,
-            success = !matches!(&output, ToolOutput::RecoverableError { .. }),
             "Tool request completed"
         );
 
-        self.wrap_output(request_id, output)
+        Ok(self.wrap_output(request_id, output))
+    }
+}
+
+#[tool_handler]
+impl ServerHandler for LspMcpServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            protocol_version: ProtocolVersion::V_2024_11_05,
+            server_info: Implementation {
+                name: "lsp-mcp".into(),
+                version: "0.4.4".into(),
+                ..Default::default()
+            },
+            capabilities: ServerCapabilities::builder()
+                .enable_tools()
+                .build(),
+            instructions: Some(self.get_instructions()),
+            ..Default::default()
+        }
     }
 }
 
@@ -812,49 +788,38 @@ mod tests {
         (server, temp_dir)
     }
 
-    fn extract_text_content(tool_output: &ToolOutput) -> String {
-        use mcpkit::types::Content;
-
-        let content = match tool_output {
-            ToolOutput::Success(result) => &result.content,
-            ToolOutput::RecoverableError { message, .. } => return message.clone(),
-        };
-
-        for item in content {
-            if let Content::Text(text_content) = item {
+    fn extract_text_content(result: &CallToolResult) -> String {
+        for content in &result.content {
+            if let RawContent::Text(text_content) = &content.raw {
                 return text_content.text.clone();
             }
         }
-
         String::new()
     }
 
-    fn is_error_output(tool_output: &ToolOutput) -> bool {
-        matches!(tool_output, ToolOutput::RecoverableError { .. })
+    fn is_error_result(result: &CallToolResult) -> bool {
+        result.is_error == Some(true)
     }
 
     #[tokio::test]
     async fn test_find_identifier_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
-        let output = server
-            .find_identifier(
-                "test.rs".to_string(),
-                "main".to_string(),
-                None,
-                None,
-                None,
-                None,
-            )
-            .await;
+        let params = Parameters(FindIdentifierParams {
+            path: "test.rs".to_string(),
+            name: "main".to_string(),
+            line: None,
+            character: None,
+            limit: None,
+            offset: None,
+        });
+        let result = server.find_identifier(params).await.unwrap();
 
-        if is_error_output(&output) {
-            let error_msg = extract_text_content(&output);
-            // Error messages should be plain text, not JSON
+        if is_error_result(&result) {
+            let error_msg = extract_text_content(&result);
             assert!(!error_msg.contains("\"ok\""));
             assert!(!error_msg.starts_with('{'));
         } else {
-            let text = extract_text_content(&output);
-            // Markdown output expectations
+            let text = extract_text_content(&result);
             assert!(!text.contains("\"ok\""));
             assert!(text.contains("Identifiers ("), "Expected markdown header");
             assert!(text.contains("main ("), "negative: identifier name missing");
@@ -865,51 +830,49 @@ mod tests {
     #[tokio::test]
     async fn test_list_files_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
-        let output = server.list_files(None, None).await;
-        let text = extract_text_content(&output);
+        let params = Parameters(ListFilesParams { limit: None, offset: None });
+        let result = server.list_files(params).await.unwrap();
+        let text = extract_text_content(&result);
 
-        // Markdown output expectations
         assert!(!text.contains("\"ok\""));
         assert!(text.contains("Workspace Files"), "Expected markdown header");
-        // Note: Files may not be indexed in test environment, so we just check format
         assert!(text.contains("total)"), "Expected total count in header");
         assert!(!text.contains("\"meta\""));
     }
 
     #[tokio::test]
     async fn test_list_files_verbose_returns_markdown() {
-        // Verbose mode now returns markdown, same as default mode
-        // (format_response always produces markdown)
         let (server, _temp) = create_test_server_with_mode(OutputMode::Verbose).await;
-        let output = server.list_files(None, None).await;
-        let text = extract_text_content(&output);
+        let params = Parameters(ListFilesParams { limit: None, offset: None });
+        let result = server.list_files(params).await.unwrap();
+        let text = extract_text_content(&result);
 
-        // Should be markdown, not JSON
         assert!(
             text.contains("Workspace Files"),
             "Expected markdown header even in verbose mode"
         );
-        // Note: Files may not be indexed in test environment, so we just check format
         assert!(text.contains("total)"), "Expected total count in header");
-        // Markdown output has newlines
         assert!(text.contains('\n'));
     }
 
     #[tokio::test]
     async fn test_read_source_code_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
-        let output = server
-            .read_source_code("test.rs".to_string(), None, None, None, None)
-            .await;
+        let params = Parameters(ReadSourceCodeParams {
+            path: "test.rs".to_string(),
+            start_line: None,
+            start_character: None,
+            end_line: None,
+            end_character: None,
+        });
+        let result = server.read_source_code(params).await.unwrap();
 
-        if is_error_output(&output) {
-            let error_msg = extract_text_content(&output);
-            // Error messages should be plain text, not JSON
+        if is_error_result(&result) {
+            let error_msg = extract_text_content(&result);
             assert!(!error_msg.contains("\"ok\""));
             assert!(!error_msg.starts_with('{'));
         } else {
-            let text = extract_text_content(&output);
-            // Markdown output expectations
+            let text = extract_text_content(&result);
             assert!(!text.contains("\"ok\""));
             assert!(text.contains("Source: test.rs"), "Expected markdown source header");
             assert!(text.contains("```rust"), "Expected rust code fence");
@@ -921,10 +884,9 @@ mod tests {
     #[tokio::test]
     async fn test_health_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
-        let output = server.health().await;
-        let text = extract_text_content(&output);
+        let result = server.health().await.unwrap();
+        let text = extract_text_content(&result);
 
-        // Markdown output expectations
         assert!(!text.contains("\"ok\":true"));
         assert!(text.contains("LSP-MCP Health"), "Expected markdown health header");
         assert!(text.contains("Status:"), "Expected markdown status field");
@@ -935,10 +897,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_diagnostics_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
-        let output = server.get_diagnostics(None).await;
-        let text = extract_text_content(&output);
+        let params = Parameters(GetDiagnosticsParams { file_path: None });
+        let result = server.get_diagnostics(params).await.unwrap();
+        let text = extract_text_content(&result);
 
-        // Markdown output expectations
         assert!(!text.contains("\"ok\""));
         assert!(text.contains("Diagnostics ("), "Expected markdown diagnostics header");
         assert!(!text.contains("\"meta\""));
@@ -947,12 +909,17 @@ mod tests {
     #[tokio::test]
     async fn test_error_uses_mcp_protocol_error() {
         let (server, _temp) = create_test_server().await;
-        let output = server
-            .read_source_code("nonexistent.rs".to_string(), None, None, None, None)
-            .await;
+        let params = Parameters(ReadSourceCodeParams {
+            path: "nonexistent.rs".to_string(),
+            start_line: None,
+            start_character: None,
+            end_line: None,
+            end_character: None,
+        });
+        let result = server.read_source_code(params).await.unwrap();
 
-        assert!(is_error_output(&output));
-        let error_message = extract_text_content(&output);
+        assert!(is_error_result(&result));
+        let error_message = extract_text_content(&result);
         assert!(!error_message.starts_with('{'));
     }
 
@@ -979,8 +946,8 @@ mod tests {
         };
         let server = LspMcpServer::new(Arc::new(manager), &config, workspace_root);
 
-        let output = server.health().await;
-        let text = extract_text_content(&output);
+        let result = server.health().await.unwrap();
+        let text = extract_text_content(&result);
 
         assert!(text.contains("<!-- request:"), "Debug mode should add request ID header");
     }
@@ -1030,7 +997,7 @@ mod tests {
             .await
             .expect("Failed to create manager");
 
-        let config = LspMcpConfig::default(); // No debug config
+        let config = LspMcpConfig::default();
         let server = LspMcpServer::new(Arc::new(manager), &config, workspace_root);
 
         let instructions = server.get_instructions();
@@ -1079,8 +1046,8 @@ mod tests {
     #[tokio::test]
     async fn test_initial_instructions_prompt_initial_setup_when_enabled() {
         let (server, _temp) = create_test_server().await;
-        let output = server.initial_instructions().await;
-        let text = extract_text_content(&output);
+        let result = server.initial_instructions().await.unwrap();
+        let text = extract_text_content(&result);
 
         assert!(text.contains("First-Time Setup"));
         assert!(text.contains("initialSetup"));

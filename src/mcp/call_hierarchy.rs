@@ -3,9 +3,9 @@
 
 use crate::api_types::{CallHierarchyDirection, Position};
 use crate::config::OutputMode;
-use crate::mcp_response::{format_response, tool_output_from_error};
+use crate::mcp_response::{format_response, tool_result_error, tool_result_from_error, tool_result_success};
 use crate::service::LspService;
-use mcpkit::prelude::*;
+use rmcp::model::CallToolResult;
 
 pub async fn call_hierarchy(
     service: &LspService,
@@ -16,12 +16,12 @@ pub async fn call_hierarchy(
     direction: String,
     externals: Option<bool>,
     context_lines: Option<u32>,
-) -> ToolOutput {
+) -> CallToolResult {
     let dir = match direction.to_lowercase().as_str() {
         "incoming" => CallHierarchyDirection::Incoming,
         "outgoing" => CallHierarchyDirection::Outgoing,
         _ => {
-            return ToolOutput::error(format!(
+            return tool_result_error(format!(
                 "Invalid direction '{}': must be 'incoming' or 'outgoing'",
                 direction
             ));
@@ -36,9 +36,9 @@ pub async fn call_hierarchy(
     {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => tool_output_from_error(e),
+        Err(e) => tool_result_from_error(e),
     }
 }
 
@@ -56,7 +56,7 @@ pub async fn go_to_implementation(
     path: String,
     line: u32,
     character: u32,
-) -> ToolOutput {
+) -> CallToolResult {
     let pos = Position { line, character };
     match service
         .find_implementation(&path, pos, output_mode == OutputMode::Verbose)
@@ -64,9 +64,9 @@ pub async fn go_to_implementation(
     {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => tool_output_from_error(e),
+        Err(e) => tool_result_from_error(e),
     }
 }
 

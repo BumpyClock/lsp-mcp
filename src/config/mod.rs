@@ -364,7 +364,8 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 15); // Full preset (16) minus initialSetup
+        // Full preset is 15 tools (16 ALL_TOOLS - 1 opt-in semanticSearch), minus initialSetup = 14
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]

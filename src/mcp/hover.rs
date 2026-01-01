@@ -4,9 +4,9 @@
 use crate::api_types::{HoverBatchItem, HoverRequest, Position};
 use crate::config::OutputMode;
 use crate::markdown_formatter::HoverBatchResponse;
-use crate::mcp_response::{format_error, format_response, tool_output_from_error};
+use crate::mcp_response::{format_error, format_response, tool_result_error, tool_result_from_error, tool_result_success};
 use crate::service::LspService;
-use mcpkit::prelude::*;
+use rmcp::model::CallToolResult;
 
 pub async fn hover(
     service: &LspService,
@@ -16,12 +16,12 @@ pub async fn hover(
     character: Option<u32>,
     include_definition: Option<bool>,
     requests: Option<String>,
-) -> ToolOutput {
+) -> CallToolResult {
     let include_def = include_definition.unwrap_or(false);
     if let Some(requests_json) = requests {
         let batch_requests: Vec<HoverRequest> = match serde_json::from_str(&requests_json) {
             Ok(r) => r,
-            Err(e) => return ToolOutput::error(format!("Invalid requests JSON: {}", e)),
+            Err(e) => return tool_result_error(format!("Invalid requests JSON: {}", e)),
         };
         let mut results: Vec<HoverBatchItem> = Vec::with_capacity(batch_requests.len());
         for req in batch_requests {
@@ -41,11 +41,11 @@ pub async fn hover(
         }
         let batch_response = HoverBatchResponse { results };
         let resp = format_response(&batch_response, output_mode);
-        return ToolOutput::text(resp);
+        return tool_result_success(resp);
     }
     let (path, line, character) = match (path, line, character) {
         (Some(p), Some(l), Some(c)) => (p, l, c),
-        _ => return ToolOutput::error("Single mode requires path, line, and character"),
+        _ => return tool_result_error("Single mode requires path, line, and character".to_string()),
     };
     let pos = Position { line, character };
     match service
@@ -54,8 +54,8 @@ pub async fn hover(
     {
         Ok(response) => {
             let resp = format_response(&response, output_mode);
-            ToolOutput::text(resp)
+            tool_result_success(resp)
         }
-        Err(e) => tool_output_from_error(e),
+        Err(e) => tool_result_from_error(e),
     }
 }
