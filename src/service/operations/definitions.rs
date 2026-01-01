@@ -8,7 +8,10 @@ use crate::api_types::{
 use crate::lsp::manager::Manager;
 use crate::utils::external_file::{is_external_path, read_file_range};
 use crate::utils::file_utils::uri_to_relative_path_string;
-use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Location, Position as LspPosition, Range as LspRange, SymbolKind};
+use lsp_types::{
+    DocumentSymbol, DocumentSymbolResponse, GotoDefinitionResponse, Location,
+    Position as LspPosition, Range as LspRange, SelectionRange, SymbolKind,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -46,6 +49,106 @@ fn is_overload_scan_skip_line(line: &str) -> bool {
         || trimmed.starts_with("*/")
 }
 
+fn position_in_range(position: &LspPosition, range: &LspRange) -> bool {
+    if position.line < range.start.line || position.line > range.end.line {
+        return false;
+    }
+    if position.line == range.start.line && position.character < range.start.character {
+        return false;
+    }
+    if position.line == range.end.line && position.character > range.end.character {
+        return false;
+    }
+    true
+}
+
+fn selection_position_from_symbol(
+    symbol: &DocumentSymbol,
+    position: &LspPosition,
+) -> Option<LspPosition> {
+    if !position_in_range(position, &symbol.range) {
+        return None;
+    }
+    if let Some(children) = &symbol.children {
+        for child in children {
+            if let Some(child_pos) = selection_position_from_symbol(child, position) {
+                return Some(child_pos);
+            }
+        }
+    }
+    Some(symbol.selection_range.start)
+}
+
+fn selection_position_from_document_symbols(
+    response: &DocumentSymbolResponse,
+    position: &LspPosition,
+) -> Option<LspPosition> {
+    match response {
+        DocumentSymbolResponse::Nested(symbols) => {
+            for symbol in symbols {
+                if let Some(pos) = selection_position_from_symbol(symbol, position) {
+                    return Some(pos);
+                }
+            }
+            None
+        }
+        DocumentSymbolResponse::Flat(symbols) => {
+            for symbol in symbols {
+                #[allow(deprecated)]
+                let range = &symbol.location.range;
+                if position_in_range(position, range) {
+                    return Some(range.start);
+                }
+            }
+            None
+        }
+    }
+}
+
+fn last_position_in_range(range: &LspRange) -> Option<LspPosition> {
+    if range.end.line == range.start.line {
+        if range.end.character > range.start.character {
+            return Some(LspPosition {
+                line: range.end.line,
+                character: range.end.character.saturating_sub(1),
+            });
+        }
+        return None;
+    }
+
+    if range.end.character > 0 {
+        Some(LspPosition {
+            line: range.end.line,
+            character: range.end.character - 1,
+        })
+    } else {
+        Some(LspPosition {
+            line: range.end.line.saturating_sub(1),
+            character: 0,
+        })
+    }
+}
+
+fn selection_range_positions(range: &SelectionRange) -> Vec<LspPosition> {
+    let mut positions = Vec::new();
+    let mut current = Some(range);
+
+    while let Some(active) = current {
+        let start = active.range.start;
+        if !positions.contains(&start) {
+            positions.push(start);
+        }
+        if let Some(end_pos) = last_position_in_range(&active.range) {
+            if !positions.contains(&end_pos) {
+                positions.push(end_pos);
+            }
+        }
+        current = active.parent.as_deref();
+    }
+
+    positions
+}
+
 fn normalize_symbol_detail(detail: &Option<String>) -> Option<String> {
     detail
         .as_ref()
@@ -59,6 +162,63 @@ async fn read_source_line(manager: &Arc<Manager>, path: &str, line: u32) -> Opti
         end: LspPosition { line: line + 1, character: 0 },
     };
     manager.read_source_code(path, Some(range)).await.ok()
+}
+
+async fn retry_definition_with_selection_range(
+    manager: &Arc<Manager>,
+    file_path: &str,
+    lsp_position: LspPosition,
+) -> Option<(GotoDefinitionResponse, LspPosition)> {
+    let Ok(selection_ranges) = manager.selection_range(file_path, vec![lsp_position]).await else {
+        return None;
+    };
+    let Some(mut ranges) = selection_ranges else {
+        return None;
+    };
+    let Some(range) = ranges.pop() else {
+        return None;
+    };
+    let candidates = selection_range_positions(&range);
+    for candidate in candidates {
+        if candidate == lsp_position {
+            continue;
+        }
+        let Ok(definitions) = manager.find_definition(file_path, candidate).await else {
+            continue;
+        };
+        if !definition_locations_lsp(&definitions).is_empty() {
+            return Some((definitions, candidate));
+        }
+    }
+    None
+}
+
+async fn retry_definition_with_symbol_selection(
+    manager: &Arc<Manager>,
+    file_path: &str,
+    lsp_position: LspPosition,
+) -> Option<(GotoDefinitionResponse, LspPosition)> {
+    let Ok(Some(doc_symbols)) = manager.document_symbol(file_path).await else {
+        return None;
+    };
+    let Some(selection_position) =
+        selection_position_from_document_symbols(&doc_symbols, &lsp_position)
+    else {
+        return None;
+    };
+    if selection_position == lsp_position {
+        return None;
+    }
+    let Ok(definitions) = manager
+        .find_definition(file_path, selection_position)
+        .await
+    else {
+        return None;
+    };
+    if definition_locations_lsp(&definitions).is_empty() {
+        return None;
+    }
+    Some((definitions, selection_position))
 }
 
 /// Searches for the implementation of an overloaded function by scanning lines after the signature.
@@ -566,12 +726,27 @@ pub(crate) async fn find_definition_impl(
     };
 
     // Try to get definitions from LSP regardless of identifier result
-    let lsp_position = LspPosition {
+    let mut lsp_position = LspPosition {
         line: position.line.saturating_sub(1),
         character: position.character.saturating_sub(1),
     };
-    let definitions = manager.find_definition(file_path, lsp_position).await?;
-    let raw_definition_locations = definition_locations_lsp(&definitions);
+    let mut definitions = manager.find_definition(file_path, lsp_position).await?;
+    let mut raw_definition_locations = definition_locations_lsp(&definitions);
+    if raw_definition_locations.is_empty() {
+        if let Some((retry_definitions, retry_position)) =
+            retry_definition_with_selection_range(manager, file_path, lsp_position).await
+        {
+            definitions = retry_definitions;
+            raw_definition_locations = definition_locations_lsp(&definitions);
+            lsp_position = retry_position;
+        } else if let Some((retry_definitions, retry_position)) =
+            retry_definition_with_symbol_selection(manager, file_path, lsp_position).await
+        {
+            definitions = retry_definitions;
+            raw_definition_locations = definition_locations_lsp(&definitions);
+            lsp_position = retry_position;
+        }
+    }
 
     // Filter overload signatures, preferring implementations
     let all_definition_locations =

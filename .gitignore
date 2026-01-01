@@ -50,3 +50,5 @@ node_modules
 .ai_agents/
 .lsp-mcp/
 .fastembed_cache/
+
+.venv/

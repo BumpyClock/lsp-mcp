@@ -15,8 +15,9 @@ use lsp_types::{
     DidOpenTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse,
     GotoDefinitionParams, GotoDefinitionResponse, InitializeParams, InitializeResult, Location,
     PartialResultParams, Position, PublishDiagnosticsParams, Range, ReferenceContext,
-    ReferenceParams, SignatureHelp, SignatureHelpParams, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
+    ReferenceParams, SelectionRange, SelectionRangeParams, SignatureHelp, SignatureHelpParams,
+    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
+    WorkDoneProgressParams, WorkspaceFolder,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -396,6 +397,44 @@ pub trait LspClient: Send {
             })
         );
         Ok(symbols)
+    }
+
+    async fn text_document_selection_range(
+        &mut self,
+        file_path: &str,
+        positions: Vec<Position>,
+    ) -> Result<Option<Vec<SelectionRange>>, Box<dyn Error + Send + Sync>> {
+        debug!("Requesting selection ranges for {}", file_path);
+
+        self.ensure_document_open(file_path).await?;
+
+        let params = SelectionRangeParams {
+            text_document: TextDocumentIdentifier {
+                uri: Url::from_file_path(file_path).map_err(|_| "Invalid file path")?,
+            },
+            positions,
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+
+        let result = self
+            .send_request(
+                "textDocument/selectionRange",
+                Some(serde_json::to_value(params)?),
+            )
+            .await?;
+
+        let ranges: Option<Vec<SelectionRange>> = if result.is_null() {
+            None
+        } else {
+            serde_json::from_value(result)?
+        };
+
+        debug!(
+            "Received selection range response: {:?} ranges",
+            ranges.as_ref().map(|r| r.len())
+        );
+        Ok(ranges)
     }
 
     async fn text_document_code_action(

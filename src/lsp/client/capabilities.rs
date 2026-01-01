@@ -5,7 +5,8 @@ use lsp_types::{
     ClientCapabilities, CodeActionClientCapabilities, CodeActionKindLiteralSupport,
     CodeActionLiteralSupport, DiagnosticTag, DocumentSymbolClientCapabilities, MarkupKind,
     PublishDiagnosticsClientCapabilities, SignatureHelpClientCapabilities,
-    SignatureInformationSettings, TagSupport, TextDocumentClientCapabilities,
+    SelectionRangeClientCapabilities, SignatureInformationSettings, TagSupport,
+    TextDocumentClientCapabilities,
 };
 
 /// Creates default client capabilities for LSP initialization
@@ -51,6 +52,9 @@ pub fn create_default_capabilities() -> ClientCapabilities {
                 ..Default::default()
             }),
             context_support: Some(true),
+        }),
+        selection_range: Some(SelectionRangeClientCapabilities {
+            dynamic_registration: Some(false),
         }),
         ..Default::default()
     });
