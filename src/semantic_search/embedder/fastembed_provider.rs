@@ -33,6 +33,20 @@ impl FastEmbedProvider {
                 )))
             }
         };
+        let expected_dim = TextEmbedding::get_model_info(&model_enum)
+            .map(|info| info.dim)
+            .map_err(|e| {
+                EmbedderError::ConfigError(format!(
+                    "Failed to read fastembed model info: {}",
+                    e
+                ))
+            })?;
+        if dimension != expected_dim {
+            return Err(EmbedderError::ConfigError(format!(
+                "Fastembed dimension must be {} for model {}",
+                expected_dim, model_name
+            )));
+        }
 
         // Initialize model in blocking context
         let model_name_owned = model_name.to_string();
@@ -50,14 +64,14 @@ impl FastEmbedProvider {
 
         Ok(Self {
             model: Arc::new(RwLock::new(model)),
-            dimension,
+            dimension: expected_dim,
             model_name: model_name_owned,
         })
     }
 
-    /// Create with default model (BAAI/bge-small-en-v1.5).
+    /// Create with default model (BAAI/bge-base-en-v1.5).
     pub async fn default_model() -> Result<Self, EmbedderError> {
-        Self::new("BAAI/bge-small-en-v1.5", 384, None).await
+        Self::new("BAAI/bge-base-en-v1.5", 768, None).await
     }
 }
 
@@ -106,6 +120,6 @@ mod tests {
         let embeddings = provider.embed_batch(&texts).await.unwrap();
 
         assert_eq!(embeddings.len(), 1);
-        assert_eq!(embeddings[0].len(), 384);
+        assert_eq!(embeddings[0].len(), 768);
     }
 }

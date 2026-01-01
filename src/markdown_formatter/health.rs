@@ -73,6 +73,29 @@ impl ToMarkdown for HealthResponse {
             }
         }
 
+        if let Some(semantic) = &self.semantic_search {
+            output.push_str("\nSemantic Search\n");
+            output.push_str(&format!("  enabled: {}\n", semantic.enabled));
+            if let Some(state) = &semantic.state {
+                output.push_str(&format!("  state: {}\n", state));
+            }
+            if let Some(provider) = &semantic.embedder_provider {
+                output.push_str(&format!("  embedder: {}\n", provider));
+            }
+            if let Some(model) = &semantic.embedder_model {
+                output.push_str(&format!("  model: {}\n", model));
+            }
+            if let Some(dimension) = semantic.embedder_dimension {
+                output.push_str(&format!("  dimension: {}\n", dimension));
+            }
+            if let Some(stored_dimension) = semantic.stored_dimension {
+                output.push_str(&format!("  stored dimension: {}\n", stored_dimension));
+            }
+            if let Some(mismatch) = semantic.dimension_mismatch {
+                output.push_str(&format!("  dimension mismatch: {}\n", mismatch));
+            }
+        }
+
         output
     }
 }
@@ -93,6 +116,7 @@ mod tests {
             debug_mode: None,
             session_id: None,
             log_file: None,
+            semantic_search: None,
         }
     }
 
@@ -466,6 +490,7 @@ mod tests {
             debug_mode: None,
             session_id: Some("abc123-def456".to_string()),
             log_file: None,
+            semantic_search: None,
         };
 
         let result = response.to_markdown();
@@ -485,6 +510,7 @@ mod tests {
             debug_mode: None,
             session_id: None,
             log_file: Some(".lsp-mcp/logs/sessions/abc.log".to_string()),
+            semantic_search: None,
         };
 
         let result = response.to_markdown();
@@ -520,6 +546,7 @@ mod tests {
             debug_mode: Some(true),
             session_id: Some("test-session".to_string()),
             log_file: Some("/path/to/log.log".to_string()),
+            semantic_search: None,
         };
 
         let result = response.to_markdown();
@@ -551,6 +578,7 @@ mod tests {
             debug_mode: Some(true),
             session_id: None,
             log_file: Some("/path/to/log.log".to_string()),
+            semantic_search: None,
         };
 
         let result = response.to_markdown();

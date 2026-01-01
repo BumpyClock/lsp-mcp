@@ -194,6 +194,40 @@ impl MetadataStore {
         .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
     }
 
+    /// Get distinct file paths whose HNSW IDs are at or above the provided minimum.
+    pub async fn get_files_with_hnsw_id_at_or_above(
+        &self,
+        min_id: usize,
+    ) -> Result<Vec<String>, VectorStoreError> {
+        let min_id = min_id as i64;
+        let conn = Arc::clone(&self.conn);
+
+        task::spawn_blocking(move || {
+            let conn = conn.lock();
+            let mut stmt = conn
+                .prepare(
+                    r#"
+                    SELECT DISTINCT e.file_path
+                    FROM entries e
+                    JOIN hnsw_ids h ON e.segment_hash = h.segment_hash
+                    WHERE h.hnsw_id >= ?1
+                    ORDER BY e.file_path ASC
+                    "#,
+                )
+                .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
+
+            let files: Vec<String> = stmt
+                .query_map(params![min_id], |row| row.get(0))
+                .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            Ok(files)
+        })
+        .await
+        .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
+    }
+
     /// Get an entry by its numeric ID.
     pub async fn get_by_numeric_id(&self, id: usize) -> Result<Option<IndexEntry>, VectorStoreError> {
         let conn = Arc::clone(&self.conn);
@@ -606,6 +640,42 @@ impl MetadataStore {
     #[allow(dead_code)]
     pub async fn get_index_completed_at(&self) -> Result<Option<i64>, VectorStoreError> {
         self.get_index_timestamp("index_completed_at").await
+    }
+
+    /// Record the index embedding dimension.
+    pub async fn set_index_dimension(&self, dimension: usize) -> Result<(), VectorStoreError> {
+        self.set_index_value("dimension", Some(dimension.to_string()))
+            .await
+    }
+
+    /// Get the stored index embedding dimension.
+    pub async fn get_index_dimension(&self) -> Result<Option<usize>, VectorStoreError> {
+        match self.get_index_value("dimension").await? {
+            Some(value) => value.parse::<usize>().map(Some).map_err(|_| {
+                VectorStoreError::DatabaseError("Invalid index dimension value".to_string())
+            }),
+            None => Ok(None),
+        }
+    }
+
+    /// Remove all index data and metadata state.
+    pub async fn clear_index_data(&self) -> Result<(), VectorStoreError> {
+        let conn = Arc::clone(&self.conn);
+        task::spawn_blocking(move || {
+            let conn = conn.lock();
+            conn.execute_batch(
+                r#"
+                DELETE FROM entries;
+                DELETE FROM hnsw_ids;
+                DELETE FROM file_hashes;
+                DELETE FROM index_state;
+                "#,
+            )
+            .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
     }
 
     async fn set_index_value(

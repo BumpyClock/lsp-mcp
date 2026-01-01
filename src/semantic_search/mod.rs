@@ -8,5 +8,10 @@ pub mod manager;
 pub mod vector_store;
 mod watcher;
 
-pub use manager::{SemanticSearchError, SemanticSearchManager, SemanticSearchState};
+pub use manager::{
+    SemanticSearchError,
+    SemanticSearchHealthSnapshot,
+    SemanticSearchManager,
+    SemanticSearchState,
+};
 pub use vector_store::{IndexStats, SearchResult};

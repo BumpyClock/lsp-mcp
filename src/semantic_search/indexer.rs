@@ -168,6 +168,9 @@ impl Indexer {
                     self.update_file_hashes(&store, &pending_file_hashes)
                         .await?;
                     pending_file_hashes.clear();
+                    if let Err(e) = store.flush().await {
+                        warn!(error = %e, "Failed to flush semantic index");
+                    }
                 }
             }
 
@@ -187,6 +190,9 @@ impl Indexer {
                 self.update_file_hashes(&store, &pending_file_hashes)
                     .await?;
                 pending_file_hashes.clear();
+                if let Err(e) = store.flush().await {
+                    warn!(error = %e, "Failed to flush semantic index");
+                }
             }
         }
 
@@ -219,7 +225,7 @@ impl Indexer {
         let walker = WalkBuilder::new(&self.workspace_root)
             .standard_filters(true)
             .hidden(true)
-            .git_ignore(true)
+            .git_ignore(self.config.index.respect_gitignore)
             .build();
 
         for entry in walker {
@@ -322,6 +328,27 @@ impl Indexer {
         store: &Arc<HnswVectorStore>,
         processor: &Arc<BatchProcessor>,
     ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        self.index_file_internal(path, store, processor, false)
+            .await
+    }
+
+    /// Index a single file and ignore stored hashes.
+    pub async fn index_file_force(
+        &self,
+        path: &Path,
+        store: &Arc<HnswVectorStore>,
+        processor: &Arc<BatchProcessor>,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        self.index_file_internal(path, store, processor, true).await
+    }
+
+    async fn index_file_internal(
+        &self,
+        path: &Path,
+        store: &Arc<HnswVectorStore>,
+        processor: &Arc<BatchProcessor>,
+        force: bool,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
         let relative_path = path
             .strip_prefix(&self.workspace_root)
             .unwrap_or(path)
@@ -339,9 +366,11 @@ impl Indexer {
         let content = tokio::fs::read_to_string(path).await?;
         let content_hash = compute_file_hash(&content);
 
-        let existing_hash = store.get_file_hash(&relative_path).await?;
-        if existing_hash.as_deref() == Some(&content_hash) {
-            return Ok(0);
+        if !force {
+            let existing_hash = store.get_file_hash(&relative_path).await?;
+            if existing_hash.as_deref() == Some(&content_hash) {
+                return Ok(0);
+            }
         }
 
         store.delete_file(&relative_path).await?;

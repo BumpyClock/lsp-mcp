@@ -42,6 +42,27 @@ pub struct HealthResponse {
     /// Log file path when debug mode is enabled
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_file: Option<String>,
+    /// Semantic search status when available
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_search: Option<SemanticSearchHealth>,
+}
+
+/// Status returned for semantic search when available
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemanticSearchHealth {
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedder_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedder_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedder_dimension: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stored_dimension: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimension_mismatch: Option<bool>,
 }
 
 #[derive(Debug, EnumString, Display, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

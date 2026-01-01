@@ -2,7 +2,12 @@
   "mcpServers": {
     "lspMcp": {
       "type": "stdio",
-      "command": "lsp-mcp"
+      "command": "lsp-mcp",
+      "args": []
+    },
+    "ptolemy": {
+      "type": "http",
+      "url": "http://localhost:8051/mcp"
     }
   }
 }

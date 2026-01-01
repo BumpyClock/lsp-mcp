@@ -26,10 +26,10 @@ pub enum EmbedderConfig {
     /// Local FastEmbed model
     #[serde(rename = "fastembed")]
     FastEmbed {
-        /// Model name (default: BAAI/bge-small-en-v1.5)
+        /// Model name (default: BAAI/bge-base-en-v1.5)
         #[serde(default = "default_fastembed_model")]
         model: String,
-        /// Embedding dimension (default: 384)
+        /// Embedding dimension (default: 768)
         #[serde(default = "default_fastembed_dimension")]
         dimension: usize,
         /// Cache directory for downloaded models (default: ~/.lsp-mcp/.fastembed-cache)
@@ -55,11 +55,11 @@ fn default_openai_dimension() -> usize {
 }
 
 fn default_fastembed_model() -> String {
-    "BAAI/bge-small-en-v1.5".to_string()
+    "BAAI/bge-base-en-v1.5".to_string()
 }
 
 fn default_fastembed_dimension() -> usize {
-    384
+    768
 }
 
 fn default_fastembed_cache_dir() -> String {
@@ -140,6 +140,9 @@ pub struct IndexConfig {
     /// Batch size for embedding requests (default: 60)
     #[serde(default = "default_batch_size")]
     pub batch_size: usize,
+    /// Whether to respect .gitignore files when indexing (default: true)
+    #[serde(default = "default_respect_gitignore")]
+    pub respect_gitignore: bool,
 }
 
 fn default_include_patterns() -> Vec<String> {
@@ -199,6 +202,10 @@ fn default_batch_size() -> usize {
     60
 }
 
+fn default_respect_gitignore() -> bool {
+    true
+}
+
 impl Default for IndexConfig {
     fn default() -> Self {
         IndexConfig {
@@ -210,6 +217,7 @@ impl Default for IndexConfig {
             max_function_chunk_chars: default_max_function_chunk_chars(),
             chunk_overlap_chars: default_chunk_overlap_chars(),
             batch_size: default_batch_size(),
+            respect_gitignore: default_respect_gitignore(),
         }
     }
 }
@@ -223,6 +231,9 @@ pub struct SearchConfig {
     /// Maximum number of results to return (default: 20)
     #[serde(default = "default_max_results")]
     pub max_results: usize,
+    /// Default context lines per result chunk (default: 15, None = full chunk)
+    #[serde(default = "default_context_lines")]
+    pub default_context_lines: Option<u32>,
 }
 
 fn default_min_score() -> f32 {
@@ -233,11 +244,16 @@ fn default_max_results() -> usize {
     20
 }
 
+fn default_context_lines() -> Option<u32> {
+    Some(15)
+}
+
 impl Default for SearchConfig {
     fn default() -> Self {
         SearchConfig {
             min_score: default_min_score(),
             max_results: default_max_results(),
+            default_context_lines: default_context_lines(),
         }
     }
 }

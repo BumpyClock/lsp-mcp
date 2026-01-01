@@ -17,7 +17,9 @@ pub use call_hierarchy::{
 pub use diagnostics::{
     Diagnostic, DiagnosticSeverity, DiagnosticsResponse, FileDiagnostics, SeverityCounts,
 };
-pub use languages::{ErrorResponse, HealthResponse, LspStatus, SupportedLanguages};
+pub use languages::{
+    ErrorResponse, HealthResponse, LspStatus, SemanticSearchHealth, SupportedLanguages,
+};
 pub use mount_dir::{
     get_mount_dir, set_global_mount_dir, set_thread_local_mount_dir, unset_thread_local_mount_dir,
 };

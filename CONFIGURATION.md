@@ -56,8 +56,8 @@ Semantic search:
 - `semantic_search.embedder`:
   - `provider`: `fastembed` (default) or `openai`.
   - `fastembed` options:
-    - `model` (default: `BAAI/bge-small-en-v1.5`)
-    - `dimension` (default: `384`)
+    - `model` (default: `BAAI/bge-base-en-v1.5`)
+    - `dimension` (default: `768`, must match the selected model; validated at startup; mismatches are rejected; index rebuilds on dimension changes)
     - `cache_dir` (default: `~/.lsp-mcp/.fastembed-cache`, or `FASTEMBED_CACHE_DIR` if set)
   - `openai` options:
     - `model` (default: `text-embedding-3-small`)
@@ -73,9 +73,11 @@ Semantic search:
   - `min_chunk_chars`: minimum chunk size (default: `50`)
   - `max_chunk_chars`: maximum chunk size (default: `2000`)
   - `batch_size`: embedding batch size (default: `60`)
+  - `respect_gitignore`: whether to skip files in .gitignore (default: `true`)
 - `semantic_search.search`:
   - `min_score`: minimum similarity (default: `0.25`)
   - `max_results`: maximum results (default: `20`)
+  - `default_context_lines`: max lines per result chunk (default: `15`, `null` = full chunk)
 
 Note: Semantic search requires both `semantic_search.enabled: true` and `tools.enable` to include `semanticSearch`.
 
@@ -113,6 +115,12 @@ Full example:
     "enabled": true,
     "embedder": {
       "provider": "fastembed"
+    },
+    "index": {
+      "respect_gitignore": false
+    },
+    "search": {
+      "default_context_lines": 15
     }
   },
   "output": {

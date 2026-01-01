@@ -197,6 +197,70 @@ impl HnswVectorStore {
         self.metadata.clear_index_completed_at().await
     }
 
+    pub async fn get_index_started_at(&self) -> Result<Option<i64>, VectorStoreError> {
+        self.metadata.get_index_started_at().await
+    }
+
+    pub async fn get_index_completed_at(&self) -> Result<Option<i64>, VectorStoreError> {
+        self.metadata.get_index_completed_at().await
+    }
+
+    pub async fn set_index_dimension(&self, dimension: usize) -> Result<(), VectorStoreError> {
+        self.metadata.set_index_dimension(dimension).await
+    }
+
+    pub async fn get_index_dimension(&self) -> Result<Option<usize>, VectorStoreError> {
+        self.metadata.get_index_dimension().await
+    }
+
+    pub async fn files_missing_vectors(&self) -> Result<Vec<String>, VectorStoreError> {
+        let nb_points = {
+            let index = self.index.read();
+            index.get_nb_point()
+        };
+        self.metadata
+            .get_files_with_hnsw_id_at_or_above(nb_points)
+            .await
+    }
+
+    pub async fn reset_index(&self) -> Result<(), VectorStoreError> {
+        let basename = self.index_basename.read().clone();
+        let index_dir = self.index_dir.clone();
+        let default_basename = INDEX_BASENAME.to_string();
+
+        let _ = tokio::fs::remove_file(graph_path(&index_dir, &basename)).await;
+        let _ = tokio::fs::remove_file(data_path(&index_dir, &basename)).await;
+        if basename != INDEX_BASENAME {
+            let _ = tokio::fs::remove_file(graph_path(&index_dir, INDEX_BASENAME)).await;
+            let _ = tokio::fs::remove_file(data_path(&index_dir, INDEX_BASENAME)).await;
+        }
+
+        {
+            let mut index = self.index.write();
+            *index = Hnsw::<f32, DistCosine>::new(16, 50000, 16, 200, DistCosine {});
+        }
+
+        {
+            let mut hash_to_id = self.hash_to_id.write();
+            hash_to_id.clear();
+        }
+
+        {
+            let mut next_id = self.next_id.write();
+            *next_id = 0;
+        }
+
+        {
+            let mut current = self.index_basename.write();
+            *current = default_basename.clone();
+        }
+
+        self.metadata.clear_index_data().await?;
+        self.metadata.set_index_basename(&default_basename).await?;
+
+        Ok(())
+    }
+
     async fn get_hnsw_ids_for_prefix(
         &self,
         prefix: &str,

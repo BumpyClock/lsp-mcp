@@ -499,6 +499,7 @@ impl LspMcpServer {
             self.output_mode,
             self.debug_config.as_ref(),
             &self.workspace_root,
+            self.semantic_search_manager.clone(),
         )
         .await;
 
@@ -710,8 +711,10 @@ Inputs:
 - `query` (required) natural language query
 - `limit` (optional) max results
 - `path` (optional) workspace-relative prefix, e.g. `src/`
+- `file_pattern` (optional) list of glob patterns to include, e.g. `["**/*.test.ts"]`
 - `exclude` (optional) list of glob patterns to exclude, e.g. `["**/node_modules/**"]`
-- `per_file` (optional) return only the best match per file (default: false)
+- `min_score` (optional) minimum similarity score threshold (0.0-1.0), e.g. `0.5`
+- `per_file` (optional) return only the best match per file (default: true)
 - `rerank` (optional) rerank results using keyword overlap (default: false)
 - `context_lines` (optional) max number of lines to include from each chunk
 
@@ -731,7 +734,9 @@ If indexing is still running, the tool returns status text; retry once indexing 
         query: String,
         limit: Option<u32>,
         path: Option<String>,
+        file_pattern: Option<Vec<String>>,
         exclude: Option<Vec<String>>,
+        min_score: Option<f32>,
         per_file: Option<bool>,
         rerank: Option<bool>,
         context_lines: Option<u32>,
@@ -751,7 +756,9 @@ If indexing is still running, the tool returns status text; retry once indexing 
                     query,
                     limit,
                     path,
+                    file_pattern,
                     exclude,
+                    min_score,
                     per_file,
                     rerank,
                     context_lines,

@@ -9,7 +9,7 @@ use super::vector_store::{
     VectorStoreError,
 };
 use super::watcher::SemanticWatcher;
-use crate::config::SemanticSearchConfig;
+use crate::config::{EmbedderConfig, SemanticSearchConfig};
 use chrono::Utc;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -101,6 +101,18 @@ pub struct SemanticSearchManager {
     workspace_root: PathBuf,
     /// Shutdown signal sender
     shutdown_tx: Option<broadcast::Sender<()>>,
+    last_dimension_mismatch: Option<(usize, usize)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticSearchHealthSnapshot {
+    pub enabled: bool,
+    pub state: SemanticSearchState,
+    pub embedder_provider: String,
+    pub embedder_model: Option<String>,
+    pub embedder_dimension: usize,
+    pub stored_dimension: Option<usize>,
+    pub dimension_mismatch: Option<bool>,
 }
 
 impl SemanticSearchManager {
@@ -120,6 +132,7 @@ impl SemanticSearchManager {
             indexer: None,
             workspace_root,
             shutdown_tx: None,
+            last_dimension_mismatch: None,
         }
     }
 
@@ -141,9 +154,18 @@ impl SemanticSearchManager {
         let (shutdown_tx, _) = broadcast::channel(1);
         self.shutdown_tx = Some(shutdown_tx.clone());
 
+        let provider = match super::embedder::create_provider(&self.config.embedder).await {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = format!("Failed to create embedding provider: {}", e);
+                *self.state.write().await = SemanticSearchState::Error { message: msg.clone() };
+                return Err(SemanticSearchError::EmbeddingError(msg));
+            }
+        };
+
         // Initialize vector store
         let index_dir = self.workspace_root.join(self.config.storage_path());
-        let dimension = self.config.embedder.dimension();
+        let dimension = provider.dimension();
 
         let store = match create_store(&index_dir, dimension).await {
             Ok(s) => Arc::new(s),
@@ -155,34 +177,50 @@ impl SemanticSearchManager {
         };
         self.store = Some(Arc::clone(&store));
 
-        let provider = match super::embedder::create_provider(&self.config.embedder).await {
-            Ok(p) => p,
-            Err(e) => {
-                let msg = format!("Failed to create embedding provider: {}", e);
-                *self.state.write().await = SemanticSearchState::Error { message: msg.clone() };
-                return Err(SemanticSearchError::EmbeddingError(msg));
+        let stored_dimension = store.get_index_dimension().await?;
+        self.last_dimension_mismatch = None;
+        if let Some(stored) = stored_dimension {
+            if stored != dimension {
+                error!(
+                    stored_dimension = stored,
+                    expected_dimension = dimension,
+                    "Semantic index dimension mismatch, rebuild required"
+                );
+                self.last_dimension_mismatch = Some((stored, dimension));
+                if let Err(e) = store.reset_index().await {
+                    let msg = format!("Failed to reset semantic index: {}", e);
+                    *self.state.write().await = SemanticSearchState::Error { message: msg.clone() };
+                    return Err(SemanticSearchError::IndexError(msg));
+                }
             }
-        };
+        }
+        if stored_dimension != Some(dimension) {
+            if let Err(e) = store.set_index_dimension(dimension).await {
+                warn!(error = %e, "Failed to record semantic index dimension");
+            }
+        }
 
         let batch_config = BatchConfig::with_batch_size(self.config.index.batch_size);
         let processor = Arc::new(BatchProcessor::new(provider, batch_config));
         self.processor = Some(Arc::clone(&processor));
 
-        // Check if index is already ready
         let index_state = store.get_state().await?;
-        if index_state == IndexState::Ready {
-            let stats = store.stats().await?;
-            *self.state.write().await = SemanticSearchState::Ready {
-                total_chunks: stats.chunk_count,
-            };
-            info!(chunks = stats.chunk_count, "Loaded existing semantic index");
+        let completed_at = store.get_index_completed_at().await?;
+        let mut requires_rebuild = index_state != IndexState::Ready || completed_at.is_none();
+        if index_state == IndexState::Ready && completed_at.is_some() {
+            let missing_files = store.files_missing_vectors().await?;
+            if missing_files.is_empty() {
+                let stats = store.stats().await?;
+                *self.state.write().await = SemanticSearchState::Ready {
+                    total_chunks: stats.chunk_count,
+                };
+                info!(chunks = stats.chunk_count, "Loaded existing semantic index");
 
-            // Start watcher for incremental updates
-            self.start_watcher(shutdown_tx.subscribe()).await?;
-            return Ok(());
+                self.start_watcher(shutdown_tx.subscribe()).await?;
+                return Ok(());
+            }
         }
 
-        // Create indexer
         let chunk_config = ChunkConfig::from_index_config(
             self.config.index.min_chunk_chars,
             self.config.index.max_chunk_chars,
@@ -196,6 +234,73 @@ impl SemanticSearchManager {
             chunk_config,
         ));
         self.indexer = Some(Arc::clone(&indexer));
+
+        let mut repair_files = Vec::new();
+        if index_state == IndexState::Ready || index_state == IndexState::Building {
+            repair_files = store.files_missing_vectors().await?;
+        }
+
+        if !repair_files.is_empty() {
+            if let Err(e) = store.clear_index_completed_at().await {
+                warn!(error = %e, "Failed to clear index completion timestamp");
+            }
+            store.set_state(IndexState::Building).await?;
+            *self.state.write().await = SemanticSearchState::Updating {
+                pending_files: repair_files.len(),
+            };
+
+            let mut repair_failed = false;
+            for file_path in repair_files {
+                let full_path = self.workspace_root.join(&file_path);
+                let result = if full_path.exists() {
+                    indexer
+                        .index_file_force(&full_path, &store, &processor)
+                        .await
+                } else {
+                    indexer.remove_file(&full_path, &store).await
+                };
+                if let Err(e) = result {
+                    warn!(file = %file_path, error = %e, "Failed to repair semantic index entry");
+                    repair_failed = true;
+                }
+            }
+
+            if let Err(e) = store.flush().await {
+                warn!(error = %e, "Failed to flush semantic index");
+                repair_failed = true;
+            }
+
+            let remaining = store.files_missing_vectors().await?;
+            if !repair_failed && remaining.is_empty() {
+                if let Err(e) = store.set_state(IndexState::Ready).await {
+                    warn!(error = %e, "Failed to set index state to ready");
+                } else {
+                    let now = Utc::now().timestamp();
+                    if let Err(e) = store.set_index_completed_at(now).await {
+                        warn!(error = %e, "Failed to record index completion timestamp");
+                    }
+                }
+
+                if let Ok(stats) = store.stats().await {
+                    *self.state.write().await = SemanticSearchState::Ready {
+                        total_chunks: stats.chunk_count,
+                    };
+                }
+
+                self.start_watcher(shutdown_tx.subscribe()).await?;
+                return Ok(());
+            }
+
+            requires_rebuild = true;
+        }
+
+        if requires_rebuild {
+            if let Err(e) = store.reset_index().await {
+                let msg = format!("Failed to reset semantic index: {}", e);
+                *self.state.write().await = SemanticSearchState::Error { message: msg.clone() };
+                return Err(SemanticSearchError::IndexError(msg));
+            }
+        }
 
         let now = Utc::now().timestamp();
         if let Err(e) = store.set_index_started_at(now).await {
@@ -221,21 +326,30 @@ impl SemanticSearchManager {
                 .await
             {
                 Ok(chunk_count) => {
-                    if let Err(e) = store_clone.set_state(IndexState::Ready).await {
-                        error!(error = %e, "Failed to set index state to ready");
-                    }
-                    let now = Utc::now().timestamp();
-                    if let Err(e) = store_clone.set_index_completed_at(now).await {
-                        warn!(error = %e, "Failed to record index completion timestamp");
+                    let flush_ok = match store_clone.flush().await {
+                        Ok(()) => true,
+                        Err(e) => {
+                            warn!(error = %e, "Failed to flush semantic index");
+                            false
+                        }
+                    };
+
+                    if flush_ok {
+                        if let Err(e) = store_clone.set_state(IndexState::Ready).await {
+                            error!(error = %e, "Failed to set index state to ready");
+                        } else {
+                            let now = Utc::now().timestamp();
+                            if let Err(e) = store_clone.set_index_completed_at(now).await {
+                                warn!(error = %e, "Failed to record index completion timestamp");
+                            }
+                        }
+                    } else if let Err(e) = store_clone.set_state(IndexState::Building).await {
+                        warn!(error = %e, "Failed to set index state to building");
                     }
 
                     *state.write().await = SemanticSearchState::Ready {
                         total_chunks: chunk_count,
                     };
-
-                    if let Err(e) = store_clone.flush().await {
-                        warn!(error = %e, "Failed to flush index");
-                    }
 
                     info!(chunks = chunk_count, "Semantic indexing complete");
                 }
@@ -300,6 +414,11 @@ impl SemanticSearchManager {
     /// Get current state.
     pub async fn state(&self) -> SemanticSearchState {
         self.state.read().await.clone()
+    }
+
+    /// Get default context lines from config.
+    pub fn default_context_lines(&self) -> Option<u32> {
+        self.config.search.default_context_lines
     }
 
     /// Perform semantic search.
@@ -370,6 +489,39 @@ impl SemanticSearchManager {
             .ok_or_else(|| SemanticSearchError::IndexError("Store not initialized".to_string()))?;
 
         Ok(store.stats().await?)
+    }
+
+    pub async fn health_snapshot(&self) -> SemanticSearchHealthSnapshot {
+        let (embedder_provider, embedder_model, embedder_dimension) = match &self.config.embedder {
+            EmbedderConfig::OpenAI { model, dimension, .. } => {
+                ("openai".to_string(), Some(model.clone()), *dimension)
+            }
+            EmbedderConfig::FastEmbed { model, dimension, .. } => {
+                ("fastembed".to_string(), Some(model.clone()), *dimension)
+            }
+        };
+
+        let stored_dimension = match &self.store {
+            Some(store) => store.get_index_dimension().await.ok().flatten(),
+            None => None,
+        };
+        let dimension_mismatch = if self.last_dimension_mismatch.is_some() {
+            Some(true)
+        } else if stored_dimension.is_some() {
+            Some(false)
+        } else {
+            None
+        };
+
+        SemanticSearchHealthSnapshot {
+            enabled: self.config.enabled,
+            state: self.state.read().await.clone(),
+            embedder_provider,
+            embedder_model,
+            embedder_dimension,
+            stored_dimension,
+            dimension_mismatch,
+        }
     }
 
     /// Graceful shutdown.

@@ -23,7 +23,9 @@ pub struct SemanticSearchResponse {
 
 pub struct SemanticSearchFilters {
     pub path: Option<String>,
+    pub file_pattern: Vec<String>,
     pub exclude: Vec<String>,
+    pub min_score: Option<f32>,
     pub per_file: bool,
     pub rerank: bool,
     pub context_lines: Option<u32>,
@@ -79,8 +81,17 @@ impl ToMarkdown for SemanticSearchResponse {
         if let Some(ref path) = self.filters.path {
             filter_parts.push(format!("path: `{}`", path));
         }
+        if !self.filters.file_pattern.is_empty() {
+            filter_parts.push(format!(
+                "file_pattern: `{}`",
+                self.filters.file_pattern.join("`, `")
+            ));
+        }
         if !self.filters.exclude.is_empty() {
             filter_parts.push(format!("exclude: `{}`", self.filters.exclude.join("`, `")));
+        }
+        if let Some(min) = self.filters.min_score {
+            filter_parts.push(format!("min_score: {:.2}", min));
         }
         if self.filters.per_file {
             filter_parts.push("per_file: true".to_string());
@@ -202,7 +213,7 @@ fn format_indexed_timestamp(timestamp: i64) -> Option<String> {
     }
 
     chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0)
-        .map(|dt| dt.to_rfc3339())
+        .map(|dt| dt.with_timezone(&chrono::Local).to_rfc3339())
 }
 
 fn tokenize_query(query: &str) -> Vec<String> {
@@ -329,19 +340,38 @@ fn dedupe_by_file(
     values
 }
 
+fn dedupe_by_segment(
+    results: Vec<SemanticSearchDisplayResult>,
+) -> Vec<SemanticSearchDisplayResult> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut deduped = Vec::new();
+
+    for result in results {
+        let segment_hash = result.result.entry.id.clone();
+        if seen.insert(segment_hash) {
+            deduped.push(result);
+        }
+    }
+
+    deduped
+}
+
 /// Execute semantic search tool.
 pub async fn semantic_search(
     manager: &Arc<RwLock<SemanticSearchManager>>,
     query: String,
     limit: Option<u32>,
     path: Option<String>,
+    file_pattern: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
+    min_score: Option<f32>,
     per_file: Option<bool>,
     rerank: Option<bool>,
     context_lines: Option<u32>,
 ) -> ToolOutput {
     let manager = manager.read().await;
     let state = manager.state().await;
+    let resolved_context_lines = context_lines.or_else(|| manager.default_context_lines());
 
     // Handle non-ready states gracefully
     match &state {
@@ -392,8 +422,15 @@ pub async fn semantic_search(
         },
         None => Vec::new(),
     };
+    let include_patterns = match file_pattern.as_ref() {
+        Some(patterns) => match compile_exclude_patterns(patterns) {
+            Ok(compiled) => compiled,
+            Err(message) => return ToolOutput::error(message),
+        },
+        None => Vec::new(),
+    };
     let rerank = rerank.unwrap_or(false);
-    let per_file = per_file.unwrap_or(false);
+    let per_file = per_file.unwrap_or(true);
 
     match manager
         .search(&query, limit.map(|l| l as usize), path.clone())
@@ -404,12 +441,29 @@ pub async fn semantic_search(
             let mut display_results = Vec::new();
 
             for result in results {
+                // Apply exclude patterns
                 if !exclude_patterns.is_empty()
                     && exclude_patterns
                         .iter()
                         .any(|pattern| pattern.matches(&result.entry.file_path))
                 {
                     continue;
+                }
+
+                // Apply include patterns (file_pattern)
+                if !include_patterns.is_empty()
+                    && !include_patterns
+                        .iter()
+                        .any(|pattern| pattern.matches(&result.entry.file_path))
+                {
+                    continue;
+                }
+
+                // Apply min_score filter
+                if let Some(min) = min_score {
+                    if result.score < min {
+                        continue;
+                    }
                 }
 
                 let matched = matched_terms(
@@ -425,7 +479,7 @@ pub async fn semantic_search(
                     embed_score
                 };
 
-                let snippet_info = truncate_code_lines(&result.entry.code, context_lines);
+                let snippet_info = truncate_code_lines(&result.entry.code, resolved_context_lines);
                 let mut result = result;
                 if let Some(snippet) = snippet_info.text {
                     result.entry.code = snippet;
@@ -447,6 +501,8 @@ pub async fn semantic_search(
                     indexed_at,
                 });
             }
+
+            let display_results = dedupe_by_segment(display_results);
 
             let mut display_results = if per_file {
                 dedupe_by_file(display_results)
@@ -472,10 +528,12 @@ pub async fn semantic_search(
                 index_stats: manager.stats().await.ok(),
                 filters: SemanticSearchFilters {
                     path,
+                    file_pattern: file_pattern.unwrap_or_default(),
                     exclude: exclude.unwrap_or_default(),
+                    min_score,
                     per_file,
                     rerank,
-                    context_lines,
+                    context_lines: resolved_context_lines,
                 },
             };
 
