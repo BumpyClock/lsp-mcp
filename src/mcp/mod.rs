@@ -41,23 +41,119 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-const TOOL_QUICK_REFERENCE: &[(&str, &str)] = &[
-    ("documentSymbol", "Symbols defined in a file"),
-    ("goToDefinition", "Go to definition at position"),
-    ("findReferences", "Find references at position"),
-    ("hover", "Hover info at position"),
-    ("workspaceSymbol", "Search symbols by name"),
-    ("goToImplementation", "Go to implementation at position"),
-    ("callHierarchy", "Call hierarchy for symbol at position"),
-    ("findReferencedSymbols", "Symbols referenced by definition"),
-    ("findIdentifier", "Find identifier occurrences in a file"),
-    ("listFiles", "List workspace files"),
-    ("readSourceCode", "Read source code from file"),
-    ("health", "Service status"),
-    ("getDiagnostics", "Diagnostics for file or workspace"),
-    ("initialInstructions", "LSP-MCP usage instructions"),
-    ("initialSetup", "Guided project setup"),
-    ("semanticSearch", "Semantic code search"),
+struct ToolArgSpec {
+    name: &'static str,
+    description: &'static str,
+    required: &'static [&'static str],
+    optional: &'static [&'static str],
+}
+
+const TOOL_ARG_SPECS: &[ToolArgSpec] = &[
+    ToolArgSpec {
+        name: "documentSymbol",
+        description: "Symbols defined in a file",
+        required: &["path"],
+        optional: &["include_locals", "include_children", "limit", "offset", "context_lines"],
+    },
+    ToolArgSpec {
+        name: "goToDefinition",
+        description: "Go to definition at position",
+        required: &["path", "line", "character"],
+        optional: &["limit", "offset"],
+    },
+    ToolArgSpec {
+        name: "findReferences",
+        description: "Find references at position",
+        required: &["path", "line", "character"],
+        optional: &["context_lines", "limit", "offset"],
+    },
+    ToolArgSpec {
+        name: "hover",
+        description: "Hover info at position",
+        required: &[],
+        optional: &["path", "line", "character", "include_definition", "requests"],
+    },
+    ToolArgSpec {
+        name: "workspaceSymbol",
+        description: "Search symbols by name",
+        required: &["query"],
+        optional: &["exact", "limit", "offset", "context_lines"],
+    },
+    ToolArgSpec {
+        name: "goToImplementation",
+        description: "Go to implementation at position",
+        required: &["path", "line", "character"],
+        optional: &[],
+    },
+    ToolArgSpec {
+        name: "callHierarchy",
+        description: "Call hierarchy for symbol at position",
+        required: &["path", "line", "character", "direction"],
+        optional: &["externals", "context_lines"],
+    },
+    ToolArgSpec {
+        name: "findReferencedSymbols",
+        description: "Symbols referenced by definition",
+        required: &["path", "line", "character"],
+        optional: &["full_scan", "externals"],
+    },
+    ToolArgSpec {
+        name: "findIdentifier",
+        description: "Find identifier occurrences in a file",
+        required: &["path", "name"],
+        optional: &["line", "character", "limit", "offset"],
+    },
+    ToolArgSpec {
+        name: "listFiles",
+        description: "List workspace files",
+        required: &[],
+        optional: &["limit", "offset"],
+    },
+    ToolArgSpec {
+        name: "readSourceCode",
+        description: "Read source code from file",
+        required: &["path"],
+        optional: &["start_line", "start_character", "end_line", "end_character"],
+    },
+    ToolArgSpec {
+        name: "health",
+        description: "Service status",
+        required: &[],
+        optional: &[],
+    },
+    ToolArgSpec {
+        name: "getDiagnostics",
+        description: "Diagnostics for file or workspace",
+        required: &[],
+        optional: &["file_path"],
+    },
+    ToolArgSpec {
+        name: "initialInstructions",
+        description: "LSP-MCP usage instructions",
+        required: &[],
+        optional: &[],
+    },
+    ToolArgSpec {
+        name: "initialSetup",
+        description: "Guided project setup",
+        required: &[],
+        optional: &[],
+    },
+    ToolArgSpec {
+        name: "semanticSearch",
+        description: "Semantic code search",
+        required: &["query"],
+        optional: &[
+            "limit",
+            "path",
+            "file_pattern",
+            "exclude",
+            "min_score",
+            "per_file",
+            "rerank",
+            "context_lines",
+        ],
+    },
 ];
 
 /// LSP MCP Server that exposes code navigation tools for a workspace.
@@ -162,10 +258,22 @@ To keep it enabled, set `"tools": { "initial_setup": "enabled" }` in your config
 
     fn tool_quick_reference(&self) -> String {
         let mut lines = Vec::new();
-        for (name, description) in TOOL_QUICK_REFERENCE {
-            if self.enabled_tools.contains(*name) {
-                lines.push(format!("- `{}`: {}", name, description));
+        for spec in TOOL_ARG_SPECS {
+            if !self.enabled_tools.contains(spec.name) {
+                continue;
             }
+            let mut args = Vec::new();
+            for required in spec.required {
+                args.push((*required).to_string());
+            }
+            for optional in spec.optional {
+                args.push(format!("{}?", optional));
+            }
+            let args = args.join(", ");
+            lines.push(format!(
+                "- `{}`({}) — {}",
+                spec.name, args, spec.description
+            ));
         }
         lines.join("\n")
     }

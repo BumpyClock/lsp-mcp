@@ -82,6 +82,7 @@ impl TreeSitterChunker {
             // Extract symbol name if available
             let symbol_name = self.extract_symbol_name(&node, content);
             let symbol_kind = boundary.as_str().to_string();
+            let doc_comment = extract_leading_doc(lines, start_line);
 
             let ctx_start = start_line.saturating_sub(config.context_lines).max(1);
             let ctx_end = (end_line + config.context_lines).min(lines.len() as u32);
@@ -126,6 +127,7 @@ impl TreeSitterChunker {
                 chunks.push(CodeChunk {
                     file_path: file_path.to_string(),
                     code,
+                    doc_comment,
                     start_line,
                     end_line,
                     segment_hash,
@@ -160,6 +162,86 @@ impl TreeSitterChunker {
         }
         None
     }
+}
+
+fn extract_leading_doc(lines: &[&str], start_line: u32) -> Option<String> {
+    if start_line <= 1 || lines.is_empty() {
+        return None;
+    }
+
+    let mut idx = start_line.saturating_sub(2) as i32;
+    if idx < 0 {
+        return None;
+    }
+
+    let mut collected: Vec<&str> = Vec::new();
+    let mut saw_marker = false;
+    let mut in_block = false;
+
+    while idx >= 0 {
+        let line = lines[idx as usize];
+        let trimmed = line.trim();
+        if in_block {
+            collected.push(line);
+            if is_block_comment_start(trimmed) {
+                saw_marker = true;
+                in_block = false;
+            }
+            idx -= 1;
+            continue;
+        }
+
+        if trimmed.is_empty() {
+            break;
+        }
+
+        if is_block_comment_end(trimmed) && !is_block_comment_start(trimmed) {
+            in_block = true;
+            collected.push(line);
+            idx -= 1;
+            continue;
+        }
+
+        if is_block_comment_start(trimmed) {
+            saw_marker = true;
+            collected.push(line);
+            idx -= 1;
+            continue;
+        }
+
+        if is_line_comment_start(trimmed) {
+            saw_marker = true;
+            collected.push(line);
+            idx -= 1;
+            continue;
+        }
+
+        break;
+    }
+
+    if !saw_marker {
+        return None;
+    }
+
+    collected.reverse();
+    let doc = collected.join("\n");
+    if doc.trim().is_empty() {
+        None
+    } else {
+        Some(doc)
+    }
+}
+
+fn is_line_comment_start(line: &str) -> bool {
+    line.starts_with("//") || line.starts_with('#') || line.starts_with("--")
+}
+
+fn is_block_comment_start(line: &str) -> bool {
+    line.starts_with("/*")
+}
+
+fn is_block_comment_end(line: &str) -> bool {
+    line.ends_with("*/") || line.starts_with("*/")
 }
 
 fn range_len(lines: &[&str], start: usize, end: usize) -> usize {
@@ -316,5 +398,12 @@ impl Point {
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].symbol_kind.as_deref(), Some("function"));
         assert!(chunks[0].code.len() > config.max_chars);
+    }
+
+    #[test]
+    fn test_extract_leading_doc_from_block_comment() {
+        let lines = vec!["/**", " * doc line", " */", "fn foo() {}"];
+        let doc = extract_leading_doc(&lines, 4);
+        assert_eq!(doc, Some("/**\n * doc line\n */".to_string()));
     }
 }

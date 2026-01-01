@@ -1,1 +1,108 @@
-{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"workspaceSymbol","inputSchema":{"properties":{"context_lines":{"type":"integer"},"exact":{"type":"boolean"},"limit":{"type":"integer"},"offset":{"type":"integer"},"query":{"type":"string"}},"required":["query"],"type":"object"}},{"name":"findIdentifier","inputSchema":{"properties":{"character":{"type":"integer"},"limit":{"type":"integer"},"line":{"type":"integer"},"name":{"type":"string"},"offset":{"type":"integer"},"path":{"type":"string"}},"required":["path","name"],"type":"object"}},{"name":"hover","inputSchema":{"properties":{"character":{"type":"integer"},"include_definition":{"type":"boolean"},"line":{"type":"integer"},"path":{"type":"string"},"requests":{"type":"string"}},"type":"object"}},{"name":"getDiagnostics","inputSchema":{"properties":{"file_path":{"type":"string"}},"type":"object"}},{"name":"findReferencedSymbols","inputSchema":{"properties":{"character":{"type":"integer"},"externals":{"type":"boolean"},"full_scan":{"type":"boolean"},"line":{"type":"integer"},"path":{"type":"string"}},"required":["path","line","character"],"type":"object"}},{"name":"documentSymbol","inputSchema":{"properties":{"context_lines":{"type":"integer"},"include_children":{"type":"boolean"},"include_locals":{"type":"boolean"},"limit":{"type":"integer"},"offset":{"type":"integer"},"path":{"type":"string"}},"required":["path"],"type":"object"}},{"name":"findReferences","inputSchema":{"properties":{"character":{"type":"integer"},"context_lines":{"type":"integer"},"limit":{"type":"integer"},"line":{"type":"integer"},"offset":{"type":"integer"},"path":{"type":"string"}},"required":["path","line","character"],"type":"object"}},{"name":"goToDefinition","inputSchema":{"properties":{"character":{"type":"integer"},"limit":{"type":"integer"},"line":{"type":"integer"},"offset":{"type":"integer"},"path":{"type":"string"}},"required":["path","line","character"],"type":"object"}},{"name":"callHierarchy","inputSchema":{"properties":{"character":{"type":"integer"},"context_lines":{"type":"integer"},"direction":{"type":"string"},"externals":{"type":"boolean"},"line":{"type":"integer"},"path":{"type":"string"}},"required":["path","line","character","direction"],"type":"object"}},{"name":"semanticSearch","inputSchema":{"properties":{"context_lines":{"type":"integer"},"exclude":{"items":{"type":"string"},"type":"array"},"file_pattern":{"items":{"type":"string"},"type":"array"},"limit":{"type":"integer"},"min_score":{"type":"number"},"path":{"type":"string"},"per_file":{"type":"boolean"},"query":{"type":"string"},"rerank":{"type":"boolean"}},"required":["query"],"type":"object"}},{"name":"initialInstructions","inputSchema":{"properties":{},"type":"object"}},{"name":"health","inputSchema":{"properties":{},"type":"object"}},{"name":"goToImplementation","inputSchema":{"properties":{"character":{"type":"integer"},"line":{"type":"integer"},"path":{"type":"string"}},"required":["path","line","character"],"type":"object"}}]}}
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      { "name": "hover", "inputSchema": { "type": "object" } },
+      { "name": "getDiagnostics", "inputSchema": { "type": "object" } },
+      {
+        "name": "findReferences",
+        "inputSchema": {
+          "properties": {
+            "character": { "type": "integer" },
+            "line": { "type": "integer" },
+            "path": { "type": "string" }
+          },
+          "required": ["path", "line", "character"],
+          "type": "object"
+        }
+      },
+      {
+        "name": "callHierarchy",
+        "inputSchema": {
+          "properties": {
+            "character": { "type": "integer" },
+            "direction": { "type": "string" },
+            "line": { "type": "integer" },
+            "path": { "type": "string" }
+          },
+          "required": ["path", "line", "character", "direction"],
+          "type": "object"
+        }
+      },
+      { "name": "initialInstructions", "inputSchema": { "type": "object" } },
+      { "name": "health", "inputSchema": { "type": "object" } },
+      {
+        "name": "goToDefinition",
+        "inputSchema": {
+          "properties": {
+            "character": { "type": "integer" },
+            "line": { "type": "integer" },
+            "path": { "type": "string" }
+          },
+          "required": ["path", "line", "character"],
+          "type": "object"
+        }
+      },
+      {
+        "name": "documentSymbol",
+        "inputSchema": {
+          "properties": { "path": { "type": "string" } },
+          "required": ["path"],
+          "type": "object"
+        }
+      },
+      {
+        "name": "semanticSearch",
+        "inputSchema": {
+          "properties": { "query": { "type": "string" } },
+          "required": ["query"],
+          "type": "object"
+        }
+      },
+      {
+        "name": "workspaceSymbol",
+        "inputSchema": {
+          "properties": { "query": { "type": "string" } },
+          "required": ["query"],
+          "type": "object"
+        }
+      },
+      {
+        "name": "goToImplementation",
+        "inputSchema": {
+          "properties": {
+            "character": { "type": "integer" },
+            "line": { "type": "integer" },
+            "path": { "type": "string" }
+          },
+          "required": ["path", "line", "character"],
+          "type": "object"
+        }
+      },
+      {
+        "name": "findReferencedSymbols",
+        "inputSchema": {
+          "properties": {
+            "character": { "type": "integer" },
+            "line": { "type": "integer" },
+            "path": { "type": "string" }
+          },
+          "required": ["path", "line", "character"],
+          "type": "object"
+        }
+      },
+      {
+        "name": "findIdentifier",
+        "inputSchema": {
+          "properties": {
+            "name": { "type": "string" },
+            "path": { "type": "string" }
+          },
+          "required": ["path", "name"],
+          "type": "object"
+        }
+      }
+    ]
+  }
+}

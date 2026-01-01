@@ -58,7 +58,26 @@ impl FilteredLspMcpServer {
         schema.remove("$schema");
         schema.remove("title");
         schema.remove("description");
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .map(|required| {
+                required
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect::<HashSet<String>>()
+            });
         if let Some(Value::Object(properties)) = schema.get_mut("properties") {
+            if let Some(required) = &required {
+                properties.retain(|name, _| required.contains(name));
+            } else {
+                properties.clear();
+            }
+            if properties.is_empty() {
+                schema.remove("properties");
+                return;
+            }
             Self::minimize_properties(properties);
         }
     }
@@ -242,8 +261,12 @@ mod tests {
         property_schema.insert("minimum".to_string(), Value::Number(0.into()));
         property_schema.insert("nullable".to_string(), Value::Bool(true));
 
+        let mut optional_schema = serde_json::Map::new();
+        optional_schema.insert("type".to_string(), Value::String("string".to_string()));
+
         let mut properties = serde_json::Map::new();
         properties.insert("limit".to_string(), Value::Object(property_schema));
+        properties.insert("offset".to_string(), Value::Object(optional_schema));
 
         let mut schema = serde_json::Map::new();
         schema.insert("$schema".to_string(), Value::String("schema".to_string()));
@@ -251,6 +274,10 @@ mod tests {
         schema.insert("description".to_string(), Value::String("Desc".to_string()));
         schema.insert("type".to_string(), Value::String("object".to_string()));
         schema.insert("properties".to_string(), Value::Object(properties));
+        schema.insert(
+            "required".to_string(),
+            Value::Array(vec![Value::String("limit".to_string())]),
+        );
 
         let tools = vec![Tool {
             name: Cow::Borrowed("hover"),
@@ -283,6 +310,10 @@ mod tests {
             .get("limit")
             .and_then(Value::as_object)
             .expect("Property schema missing");
+        assert!(
+            !properties.contains_key("offset"),
+            "Optional property was not removed"
+        );
         assert_eq!(
             limit_schema.get("type"),
             Some(&Value::String("integer".to_string())),

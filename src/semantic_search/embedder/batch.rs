@@ -32,7 +32,7 @@ impl BatchProcessor {
             let batch_end = (batch_start + self.config.batch_size).min(chunks.len());
             let batch = &chunks[batch_start..batch_end];
 
-            let texts: Vec<String> = batch.iter().map(|c| c.code.clone()).collect();
+            let texts: Vec<String> = batch.iter().map(embedding_text).collect();
             let hashes: Vec<String> = batch.iter().map(|c| c.segment_hash.clone()).collect();
 
             let embeddings = self.embed_with_retry(&texts).await?;
@@ -117,6 +117,18 @@ impl BatchProcessor {
     }
 }
 
+fn embedding_text(chunk: &CodeChunk) -> String {
+    if let Some(doc) = chunk.doc_comment.as_ref() {
+        if doc.trim().is_empty() {
+            chunk.code.clone()
+        } else {
+            format!("{doc}\n\n{}", chunk.code)
+        }
+    } else {
+        chunk.code.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,6 +188,7 @@ mod tests {
             CodeChunk {
                 file_path: "test.rs".to_string(),
                 code: "fn foo() {}".to_string(),
+                doc_comment: None,
                 start_line: 1,
                 end_line: 1,
                 segment_hash: "hash1".to_string(),
@@ -185,6 +198,7 @@ mod tests {
             CodeChunk {
                 file_path: "test.rs".to_string(),
                 code: "fn bar() {}".to_string(),
+                doc_comment: None,
                 start_line: 3,
                 end_line: 3,
                 segment_hash: "hash2".to_string(),
@@ -211,5 +225,58 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(provider.call_count.load(Ordering::SeqCst), 3);
+    }
+
+    struct CapturingProvider {
+        dimension: usize,
+        last_texts: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl EmbeddingProvider for CapturingProvider {
+        async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError> {
+            let mut guard = self
+                .last_texts
+                .lock()
+                .map_err(|_| EmbedderError::ApiError("Failed to lock".to_string()))?;
+            *guard = texts.to_vec();
+            Ok(texts.iter().map(|_| vec![0.0; self.dimension]).collect())
+        }
+
+        fn dimension(&self) -> usize {
+            self.dimension
+        }
+
+        fn name(&self) -> &str {
+            "capture"
+        }
+    }
+
+    #[tokio::test]
+    async fn test_doc_comment_is_prefixed_in_embeddings() {
+        let last_texts = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let provider = Arc::new(CapturingProvider {
+            dimension: 8,
+            last_texts: last_texts.clone(),
+        });
+        let processor = BatchProcessor::new(provider, BatchConfig::default());
+
+        let chunks = vec![CodeChunk {
+            file_path: "test.rs".to_string(),
+            code: "fn foo() {}".to_string(),
+            doc_comment: Some("/** doc */".to_string()),
+            start_line: 1,
+            end_line: 1,
+            segment_hash: "hash-doc".to_string(),
+            symbol_name: Some("foo".to_string()),
+            symbol_kind: Some("function".to_string()),
+        }];
+
+        let result = processor.process_chunks(&chunks).await;
+        assert!(result.is_ok());
+
+        let captured = last_texts.lock().unwrap().clone();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0], "/** doc */\n\nfn foo() {}");
     }
 }

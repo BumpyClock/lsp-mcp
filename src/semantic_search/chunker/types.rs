@@ -10,6 +10,8 @@ pub struct CodeChunk {
     pub file_path: String,
     /// The extracted code content
     pub code: String,
+    /// Optional leading doc comment text for embeddings
+    pub doc_comment: Option<String>,
     /// 1-based start line (inclusive)
     pub start_line: u32,
     /// 1-based end line (inclusive)
