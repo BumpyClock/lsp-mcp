@@ -547,7 +547,7 @@ Add this to `.lsp-mcp.json` to enable semantic search:
 }}
 ```
 
-If you prefer OpenAI embeddings, use:
+If you prefer OpenAI embeddings, use (prefer `api_key_env`; `api_key` is supported if needed):
 ```json
 {{
   "semantic_search": {{

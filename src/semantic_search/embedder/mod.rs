@@ -66,11 +66,13 @@ pub async fn create_provider(config: &EmbedderConfig) -> Result<Arc<dyn Embeddin
         EmbedderConfig::OpenAI {
             model,
             base_url,
+            api_key,
             api_key_env,
             dimension,
         } => {
             let embedder = OpenAIEmbedder::from_config(
                 base_url.clone(),
+                api_key.as_deref(),
                 api_key_env,
                 model.clone(),
                 *dimension,

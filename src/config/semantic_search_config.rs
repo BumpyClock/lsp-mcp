@@ -16,6 +16,9 @@ pub enum EmbedderConfig {
         /// API base URL (default: https://api.openai.com/v1)
         #[serde(default = "default_openai_base_url")]
         base_url: String,
+        /// Direct API key (optional, prefer api_key_env)
+        #[serde(default)]
+        api_key: Option<String>,
         /// Environment variable name containing API key
         #[serde(default = "default_openai_api_key_env")]
         api_key_env: String,
@@ -286,10 +289,20 @@ impl SemanticSearchConfig {
         }
 
         // Validate OpenAI config requires API key
-        if let EmbedderConfig::OpenAI { api_key_env, .. } = &self.embedder {
-            if std::env::var(api_key_env).is_err() {
+        if let EmbedderConfig::OpenAI {
+            api_key,
+            api_key_env,
+            ..
+        } = &self.embedder
+        {
+            let api_key_present = api_key
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some();
+            if !api_key_present && std::env::var(api_key_env).is_err() {
                 return Err(format!(
-                    "OpenAI API key not found in environment variable: {}",
+                    "OpenAI API key missing; set api_key or environment variable: {}",
                     api_key_env
                 ));
             }
@@ -301,5 +314,66 @@ impl SemanticSearchConfig {
     /// Get the storage path for the vector index.
     pub fn storage_path(&self) -> &str {
         &self.vector_store.path
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    fn random_env_var_name() -> String {
+        format!("LSP_MCP_TEST_{}", Uuid::new_v4().to_string().replace('-', "_"))
+    }
+
+    fn random_api_key() -> String {
+        format!("sk-test-{}", Uuid::new_v4())
+    }
+
+    fn openai_config(api_key: Option<String>, api_key_env: String) -> SemanticSearchConfig {
+        SemanticSearchConfig {
+            enabled: true,
+            embedder: EmbedderConfig::OpenAI {
+                model: default_openai_model(),
+                base_url: default_openai_base_url(),
+                api_key,
+                api_key_env,
+                dimension: default_openai_dimension(),
+            },
+            vector_store: VectorStoreConfig::default(),
+            index: IndexConfig::default(),
+            search: SearchConfig::default(),
+        }
+    }
+
+    #[test]
+    fn openai_config_is_valid_when_inline_api_key_is_present() {
+        let env_name = random_env_var_name();
+        let config = openai_config(Some(random_api_key()), env_name);
+        assert!(
+            config.is_valid().is_ok(),
+            "Inline API key did not validate"
+        );
+    }
+
+    #[test]
+    fn openai_config_is_valid_when_env_var_is_present() {
+        let env_name = random_env_var_name();
+        std::env::set_var(&env_name, random_api_key());
+        let config = openai_config(None, env_name);
+        assert!(
+            config.is_valid().is_ok(),
+            "Environment API key did not validate"
+        );
+    }
+
+    #[test]
+    fn openai_config_is_invalid_when_no_api_key_is_provided() {
+        let env_name = random_env_var_name();
+        let config = openai_config(None, env_name);
+        assert!(
+            config.is_valid().is_err(),
+            "Missing API key should fail validation"
+        );
     }
 }

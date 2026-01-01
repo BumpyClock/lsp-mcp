@@ -1,16 +1,26 @@
-Configuration
-=============
+# Configuration
 
 This file describes the `.lsp-mcp.json` configuration format and merge rules.
 
-Locations
----------
+## Index
+
+- [Locations](#locations)
+- [Merge Behavior](#merge-behavior)
+- [Settings](#settings)
+  - [Output](#output)
+  - [Tools](#tools)
+  - [Debug Logging](#debug-logging)
+  - [Languages](#languages)
+  - [Binaries](#binaries)
+  - [Semantic Search](#semantic-search)
+- [Examples](#examples)
+
+## Locations
 
 - Project config: `.lsp-mcp.json` in the workspace root.
 - Global config: `~/.lsp-mcp/.lsp-mcp.json`.
 
-Merge behavior
---------------
+## Merge Behavior
 
 - Project config overrides global config for `languages`, `binaries`, and `tools`.
 - `output` only overrides when it is explicitly set in the project config.
@@ -18,15 +28,16 @@ Merge behavior
 - `semantic_search` only overrides when it is explicitly set in the project config.
 - When `semantic_search` is not present in the project config, the global `semantic_search` config applies.
 
-Settings
---------
+## Settings
 
-Output mode:
+### Output
+
 - `output.mode` values: `default` (compact JSON, no meta) or `verbose` (pretty JSON + meta).
 - Default: `default`.
 - No per-tool override.
 
-Tools:
+### Tools
+
 - `tools.preset`: `minimal`, `standard`, or `full`.
 - `tools.enable`: list of tool names to enable in addition to the preset.
 - `tools.disable`: list of tool names to disable (takes precedence).
@@ -35,7 +46,8 @@ Tools:
   - `enabled`: always enable `initialSetup`.
   - `disabled`: always disable `initialSetup`.
 
-Debug logging:
+### Debug Logging
+
 - `debug.enabled`: enable file logging (default: `false`)
 - `debug.log_level`: `error` | `warn` | `info` | `debug` | `trace` (default: `debug`)
 - `debug.log_dir`: log directory (default: `.lsp-mcp/logs`)
@@ -45,13 +57,16 @@ When enabled:
 - Each tool response includes a request ID header: `<!-- request: {uuid} -->`
 - The `health` tool returns the session ID and log file path for correlation
 
-Languages:
+### Languages
+
 - `languages`: list of language identifiers to start language servers for.
 
-Binaries:
+### Binaries
+
 - `binaries`: map of language identifier to language server path.
 
-Semantic search:
+### Semantic Search
+
 - `semantic_search.enabled`: enable semantic search (default: `false`).
 - `semantic_search.embedder`:
   - `provider`: `fastembed` (default) or `openai`.
@@ -62,6 +77,7 @@ Semantic search:
   - `openai` options:
     - `model` (default: `text-embedding-3-small`)
     - `base_url` (default: `https://api.openai.com/v1`)
+    - `api_key` (optional; prefer `api_key_env`)
     - `api_key_env` (default: `OPENAI_API_KEY`)
     - `dimension` (default: `1536`)
 - `semantic_search.vector_store`:
@@ -81,8 +97,7 @@ Semantic search:
 
 Note: Semantic search requires both `semantic_search.enabled: true` and `tools.enable` to include `semanticSearch`.
 
-Examples
---------
+## Examples
 
 verbose output mode:
 ```json

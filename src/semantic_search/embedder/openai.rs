@@ -76,16 +76,22 @@ impl OpenAIEmbedder {
     /// Create from config using environment variable for API key.
     pub fn from_config(
         base_url: String,
+        api_key: Option<&str>,
         api_key_env: &str,
         model: String,
         dimension: usize,
     ) -> Result<Self, EmbedderError> {
-        let api_key = std::env::var(api_key_env).map_err(|_| {
-            EmbedderError::ConfigError(format!(
-                "API key environment variable '{}' not set",
-                api_key_env
-            ))
-        })?;
+        let api_key = api_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| std::env::var(api_key_env).ok())
+            .ok_or_else(|| {
+                EmbedderError::ConfigError(format!(
+                    "OpenAI API key missing; set api_key or environment variable: {}",
+                    api_key_env
+                ))
+            })?;
 
         Ok(Self::new(base_url, api_key, model, dimension))
     }
