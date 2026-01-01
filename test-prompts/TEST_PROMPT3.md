@@ -43,8 +43,8 @@
   - If Rust exists, pick a predicate in Rust and follow the original Rust scenario rules.
 
   **TS fallback task:**
-  Pretend you need to clarify semantics for `isAttendanceBelowPromotion` (e.g., treat `"70%"` as **not** below threshold, and explicitly handle `"70.0%"`). Identify tests or missing tests.
-
+  Pretend you need to clarify semantics for `isAttendanceBelowPromotion` (e.g., treat `"70%"` as **not** below threshold, and explicitly handle `"70.0%"`). 
+  
   ## Scenario C (TypeScript, permission filtering; no edits)
   Pretend you need to add a `mode` option to `filterNavigationByPermissions` (e.g., `"strict"` vs `"lenient"`) that changes how `needsPermission` is interpreted, then thread it through call sites.
 
@@ -60,6 +60,16 @@
   - Where does the reset timer live and how would the option alter behavior?
   - Which call sites require updates? Provide file + line.
   - Any diagnostics in the hook or call-site files?
+
+  ## Scenario E (TypeScript, ambiguous search-based discovery; no edits)
+  Pretend you need to find all places in the codebase where user input is validated against a threshold value, and where the validation logic might need to handle edge cases differently (e.g., boundary conditions, null/undefined handling, type coercion). You don't know the exact function names, but you suspect there are multiple validation patterns scattered across different modules.
+
+  **Decision-readiness questions:**
+  - What are the different validation patterns used for threshold checks? Provide file + line for each pattern found.
+  - Which of these validations might have edge case issues (e.g., strict vs loose equality, type mismatches, missing null checks)?
+  - Are there any shared utilities or helpers for threshold validation that should be centralized?
+  - What call sites would be affected if you standardized the validation approach?
+  - Any existing diagnostics that highlight potential issues in these validation areas?
 
   ---
 

@@ -67,7 +67,7 @@ pub async fn find_identifier(
 }
 
 fn resolve_exact(exact: Option<bool>) -> bool {
-    exact.unwrap_or(true)
+    exact.unwrap_or(false)
 }
 
 fn resolve_context_lines(context_lines: Option<u32>) -> u32 {
@@ -80,11 +80,11 @@ mod tests {
     use rand::Rng;
 
     #[test]
-    fn it_defaults_exact_to_true_when_omitted() {
+    fn it_defaults_exact_to_false_when_omitted() {
         let resolved = resolve_exact(None);
         assert!(
-            resolved,
-            "negative: exact must default to true when omitted"
+            !resolved,
+            "negative: exact must default to false when omitted"
         );
     }
 
