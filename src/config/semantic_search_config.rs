@@ -240,7 +240,7 @@ pub struct SearchConfig {
 }
 
 fn default_min_score() -> f32 {
-    0.25
+    0.5
 }
 
 fn default_max_results() -> usize {

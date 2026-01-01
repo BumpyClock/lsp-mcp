@@ -40,11 +40,16 @@ impl fmt::Display for LspManagerError {
 impl std::error::Error for LspManagerError {}
 
 impl LspManagerError {
+    /// Check if the error indicates tree-sitter/ast-grep functionality is unavailable.
+    /// Used to enable graceful fallback to LSP-only operations.
     pub fn is_ast_grep_missing(&self) -> bool {
         matches!(
             self,
             LspManagerError::InternalError(message)
-                if message.contains("ast-grep binary not found")
+                if message.contains("ast-grep binary not found") ||
+                   message.contains("tree-sitter parser not found") ||
+                   message.contains("query not found for language") ||
+                   message.contains("Unsupported language for extension")
         )
     }
 }

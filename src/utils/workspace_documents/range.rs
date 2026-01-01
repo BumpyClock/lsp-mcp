@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn it_clamps_start_line_when_exceeding_total_lines_instead_of_returning_empty() {
         let content = "line 0\nline 1\nline 2";
-        let total_lines = 3;
+        let _total_lines = 3; // Documenting expected line count
         let out_of_bounds_start = 47usize;
 
         let range = Range {
