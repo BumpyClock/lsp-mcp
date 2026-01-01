@@ -83,7 +83,7 @@ impl LspMcpServer {
     }
 
     /// Wrap tool output with request ID header when debug is enabled.
-    fn wrap_output(&self, request_id: Uuid, result: CallToolResult) -> CallToolResult {
+    pub(crate) fn wrap_output(&self, request_id: Uuid, result: CallToolResult) -> CallToolResult {
         if !self.debug_enabled {
             return result;
         }
