@@ -714,7 +714,7 @@ Inputs:
 - `file_pattern` (optional) list of glob patterns to include, e.g. `["**/*.test.ts"]`
 - `exclude` (optional) list of glob patterns to exclude, e.g. `["**/node_modules/**"]`
 - `min_score` (optional) minimum similarity score threshold (0.0-1.0), e.g. `0.5`
-- `per_file` (optional) return only the best match per file (default: true)
+- `per_file` (optional) return only the best match per file (default: false)
 - `rerank` (optional) rerank results using keyword overlap (default: false)
 - `context_lines` (optional) max number of lines to include from each chunk
 
