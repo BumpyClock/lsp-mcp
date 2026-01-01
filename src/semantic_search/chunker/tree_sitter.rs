@@ -128,6 +128,8 @@ impl TreeSitterChunker {
                     file_path: file_path.to_string(),
                     code,
                     doc_comment,
+                    summary: None,
+                    tags: None,
                     start_line,
                     end_line,
                     segment_hash,

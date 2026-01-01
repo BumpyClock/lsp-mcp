@@ -12,6 +12,10 @@ pub struct CodeChunk {
     pub code: String,
     /// Optional leading doc comment text for embeddings
     pub doc_comment: Option<String>,
+    /// Optional summary used for embeddings
+    pub summary: Option<String>,
+    /// Optional tags used for embeddings
+    pub tags: Option<Vec<String>>,
     /// 1-based start line (inclusive)
     pub start_line: u32,
     /// 1-based end line (inclusive)

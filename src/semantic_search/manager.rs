@@ -3,6 +3,7 @@
 
 use super::chunker::ChunkConfig;
 use super::embedder::{BatchConfig, BatchProcessor, EmbedderError};
+use super::enrichment::EnrichmentManager;
 use super::indexer::Indexer;
 use super::vector_store::{
     create_store, HnswVectorStore, IndexState, SearchOptions, SearchResult, VectorStore,
@@ -96,6 +97,7 @@ pub struct SemanticSearchManager {
     state: Arc<RwLock<SemanticSearchState>>,
     store: Option<Arc<HnswVectorStore>>,
     processor: Option<Arc<BatchProcessor>>,
+    enricher: Option<Arc<EnrichmentManager>>,
     #[allow(dead_code)]
     indexer: Option<Arc<Indexer>>,
     workspace_root: PathBuf,
@@ -129,6 +131,7 @@ impl SemanticSearchManager {
             state: Arc::new(RwLock::new(initial_state)),
             store: None,
             processor: None,
+            enricher: None,
             indexer: None,
             workspace_root,
             shutdown_tx: None,
@@ -204,6 +207,22 @@ impl SemanticSearchManager {
         let processor = Arc::new(BatchProcessor::new(provider, batch_config));
         self.processor = Some(Arc::clone(&processor));
 
+        let enricher = match EnrichmentManager::from_embedder_config(
+            &self.config.embedder,
+            &self.config.enrichment,
+        ) {
+            Ok(Some(manager)) => Some(Arc::new(manager)),
+            Ok(None) => None,
+            Err(e) => {
+                warn!(error = %e, "Failed to initialize enrichment manager");
+                None
+            }
+        };
+        self.enricher = enricher.clone();
+        if self.config.enrichment.enabled && self.enricher.is_none() {
+            warn!("Enrichment enabled but OpenAI configuration is unavailable");
+        }
+
         let index_state = store.get_state().await?;
         let completed_at = store.get_index_completed_at().await?;
         let mut requires_rebuild = index_state != IndexState::Ready || completed_at.is_none();
@@ -232,6 +251,7 @@ impl SemanticSearchManager {
             self.config.clone(),
             self.workspace_root.clone(),
             chunk_config,
+            enricher.clone(),
         ));
         self.indexer = Some(Arc::clone(&indexer));
 
@@ -400,6 +420,7 @@ impl SemanticSearchManager {
             self.workspace_root.clone(),
             store,
             processor,
+            self.enricher.clone(),
             Arc::clone(&self.state),
             chunk_config,
             shutdown_rx,

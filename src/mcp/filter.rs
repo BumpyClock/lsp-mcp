@@ -14,6 +14,7 @@ use rmcp::{
     ErrorData as McpError,
 };
 use serde_json::Map;
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
 use serde_json::Value;
@@ -50,7 +51,9 @@ impl FilteredLspMcpServer {
         let mut schema = (*tool.input_schema).clone();
         Self::strip_schema_fields(&mut schema);
         tool.input_schema = Arc::new(schema);
-        tool.description = None;
+        if let Some(description) = Self::short_tool_description(tool.name.as_ref()) {
+            tool.description = Some(Cow::Borrowed(description));
+        }
         tool
     }
 
@@ -105,6 +108,29 @@ impl FilteredLspMcpServer {
                 *property_schema = minimized;
             }
         }
+    }
+
+    fn short_tool_description(name: &str) -> Option<&'static str> {
+        let description = match name {
+            "callHierarchy" => "Call hierarchy at position; use to trace call flow",
+            "findIdentifier" => "Identifier occurrences in a file; use for local search",
+            "findReferences" => "References at position; use to see usages",
+            "goToDefinition" => "Definition at position; use to jump to source",
+            "getDiagnostics" => "Diagnostics for file/workspace; use for errors and warnings",
+            "goToImplementation" => "Implementation at position; use for interface/trait impls",
+            "documentSymbol" => "Symbols defined in a file; use to outline structure",
+            "semanticSearch" => "Semantic code search; use natural language queries",
+            "findReferencedSymbols" => "Symbols referenced by definition; use to see deps",
+            "initialInstructions" => "Usage instructions; use on startup",
+            "workspaceSymbol" => "Search symbols by name; use to locate definitions",
+            "hover" => "Type/doc info at position; use for quick context",
+            "listFiles" => "List workspace files; use to discover paths",
+            "readSourceCode" => "Read source from file; use for exact text",
+            "health" => "Service status; use to check logs/session",
+            "initialSetup" => "Guided setup; use to configure languages/tools",
+            _ => return None,
+        };
+        Some(description)
     }
 
     fn disabled_tool_result(&self, tool_name: &str) -> CallToolResult {
@@ -339,7 +365,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_filter_tools_clears_description() {
+    async fn test_filter_tools_sets_short_description() {
         let enabled_tools: HashSet<String> = ["hover".to_string()].into_iter().collect();
         let (server, _temp) = create_test_server(false, enabled_tools).await;
 
@@ -356,9 +382,10 @@ mod tests {
         }];
 
         let filtered = server.filter_tools(tools);
-        assert!(
-            filtered[0].description.is_none(),
-            "Tool description was not cleared"
+        assert_eq!(
+            filtered[0].description.as_deref(),
+            Some("Type/doc info at position; use for quick context"),
+            "Tool description was not shortened"
         );
     }
 }

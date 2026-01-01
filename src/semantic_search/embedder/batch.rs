@@ -118,15 +118,35 @@ impl BatchProcessor {
 }
 
 fn embedding_text(chunk: &CodeChunk) -> String {
+    let mut sections = Vec::new();
+
     if let Some(doc) = chunk.doc_comment.as_ref() {
-        if doc.trim().is_empty() {
-            chunk.code.clone()
-        } else {
-            format!("{doc}\n\n{}", chunk.code)
+        if !doc.trim().is_empty() {
+            sections.push(doc.clone());
         }
-    } else {
-        chunk.code.clone()
     }
+
+    if let Some(summary) = chunk.summary.as_ref() {
+        let summary = summary.trim();
+        if !summary.is_empty() {
+            sections.push(format!("Summary: {}", summary));
+        }
+    }
+
+    if let Some(tags) = chunk.tags.as_ref() {
+        let tags: Vec<String> = tags
+            .iter()
+            .map(|tag| tag.trim())
+            .filter(|tag| !tag.is_empty())
+            .map(|tag| tag.to_string())
+            .collect();
+        if !tags.is_empty() {
+            sections.push(format!("Tags: {}", tags.join(", ")));
+        }
+    }
+
+    sections.push(chunk.code.clone());
+    sections.join("\n\n")
 }
 
 #[cfg(test)]
@@ -189,6 +209,8 @@ mod tests {
                 file_path: "test.rs".to_string(),
                 code: "fn foo() {}".to_string(),
                 doc_comment: None,
+                summary: None,
+                tags: None,
                 start_line: 1,
                 end_line: 1,
                 segment_hash: "hash1".to_string(),
@@ -199,6 +221,8 @@ mod tests {
                 file_path: "test.rs".to_string(),
                 code: "fn bar() {}".to_string(),
                 doc_comment: None,
+                summary: None,
+                tags: None,
                 start_line: 3,
                 end_line: 3,
                 segment_hash: "hash2".to_string(),
@@ -265,6 +289,8 @@ mod tests {
             file_path: "test.rs".to_string(),
             code: "fn foo() {}".to_string(),
             doc_comment: Some("/** doc */".to_string()),
+            summary: None,
+            tags: None,
             start_line: 1,
             end_line: 1,
             segment_hash: "hash-doc".to_string(),

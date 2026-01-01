@@ -4,7 +4,7 @@
 use crate::markdown_formatter::ToMarkdown;
 use crate::mcp_response::{tool_result_error, tool_result_success};
 use crate::semantic_search::{
-    IndexStats, SearchResult, SemanticSearchError, SemanticSearchManager, SemanticSearchState,
+    SearchResult, SemanticSearchError, SemanticSearchManager, SemanticSearchState,
 };
 use glob::Pattern;
 use rmcp::model::CallToolResult;
@@ -16,12 +16,17 @@ use tokio::sync::RwLock;
 /// Semantic search tool response.
 pub struct SemanticSearchResponse {
     pub results: Vec<SemanticSearchDisplayResult>,
-    pub state: SemanticSearchState,
-    pub query: String,
-    pub index_stats: Option<IndexStats>,
-    pub filters: SemanticSearchFilters,
 }
 
+pub struct SemanticSearchDisplayResult {
+    pub result: SearchResult,
+    pub embed_score: f32,
+    pub lexical_score: f32,
+    pub snippet_truncated: bool,
+    pub snippet_total_lines: usize,
+}
+
+#[allow(dead_code)]
 pub struct SemanticSearchFilters {
     pub path: Option<String>,
     pub file_pattern: Vec<String>,
@@ -32,80 +37,9 @@ pub struct SemanticSearchFilters {
     pub context_lines: Option<u32>,
 }
 
-pub struct SemanticSearchDisplayResult {
-    pub result: SearchResult,
-    pub embed_score: f32,
-    pub lexical_score: f32,
-    pub matched_terms: Vec<String>,
-    pub snippet_truncated: bool,
-    pub snippet_total_lines: usize,
-    pub indexed_at: Option<String>,
-}
-
 impl ToMarkdown for SemanticSearchResponse {
     fn to_markdown(&self) -> String {
         let mut output = String::new();
-
-        // Add state indicator
-        match &self.state {
-            SemanticSearchState::Ready { total_chunks } => {
-                output.push_str(&format!(
-                    "# Semantic Search Results\n\n**Query**: `{}`\n**Index**: {} chunks\n\n",
-                    self.query, total_chunks
-                ));
-            }
-            SemanticSearchState::Updating { pending_files } => {
-                output.push_str(&format!(
-                    "# Semantic Search Results\n\n**Query**: `{}`\n**Status**: Updating ({} files pending)\n\n",
-                    self.query, pending_files
-                ));
-            }
-            _ => {
-                output.push_str(&format!(
-                    "# Semantic Search Results\n\n**Query**: `{}`\n\n",
-                    self.query
-                ));
-            }
-        }
-
-        if let Some(stats) = &self.index_stats {
-            if let Some(updated) = format_indexed_timestamp(stats.last_updated) {
-                output.push_str(&format!("**Index Updated**: {}\n", updated));
-            }
-            output.push_str(&format!(
-                "**Files**: {}  **Chunks**: {}\n",
-                stats.file_count, stats.chunk_count
-            ));
-        }
-
-        let mut filter_parts = Vec::new();
-        if let Some(ref path) = self.filters.path {
-            filter_parts.push(format!("path: `{}`", path));
-        }
-        if !self.filters.file_pattern.is_empty() {
-            filter_parts.push(format!(
-                "file_pattern: `{}`",
-                self.filters.file_pattern.join("`, `")
-            ));
-        }
-        if !self.filters.exclude.is_empty() {
-            filter_parts.push(format!("exclude: `{}`", self.filters.exclude.join("`, `")));
-        }
-        if let Some(min) = self.filters.min_score {
-            filter_parts.push(format!("min_score: {:.2}", min));
-        }
-        if self.filters.per_file {
-            filter_parts.push("per_file: true".to_string());
-        }
-        if self.filters.rerank {
-            filter_parts.push("rerank: true".to_string());
-        }
-        if let Some(lines) = self.filters.context_lines {
-            filter_parts.push(format!("context_lines: {}", lines));
-        }
-        if !filter_parts.is_empty() {
-            output.push_str(&format!("**Filters**: {}\n\n", filter_parts.join(", ")));
-        }
 
         if self.results.is_empty() {
             output.push_str("No results found.\n");
@@ -116,25 +50,13 @@ impl ToMarkdown for SemanticSearchResponse {
 
         for result in &self.results {
             output.push_str(&format!(
-                "## {}. {} (score: {:.2})\n",
-                result.result.rank, result.result.entry.file_path, result.result.score
+                "## {}. {}:{}-{} (score: {:.2})\n",
+                result.result.rank,
+                result.result.entry.file_path,
+                result.result.entry.start_line,
+                result.result.entry.end_line,
+                result.result.score
             ));
-            output.push_str(&format!(
-                "**filePath**: `{}`\n",
-                result.result.entry.file_path
-            ));
-            output.push_str(&format!(
-                "**segmentHash**: `{}`\n",
-                result.result.entry.id
-            ));
-            output.push_str(&format!(
-                "**startLine**: {}  **endLine**: {}\n",
-                result.result.entry.start_line, result.result.entry.end_line
-            ));
-
-            if let Some(ref indexed_at) = result.indexed_at {
-                output.push_str(&format!("Indexed: {}\n", indexed_at));
-            }
 
             // Add symbol info if available
             if let Some(ref name) = result.result.entry.symbol_name {
@@ -145,19 +67,10 @@ impl ToMarkdown for SemanticSearchResponse {
                 }
             }
 
-            if !result.matched_terms.is_empty() {
-                output.push_str(&format!(
-                    "**Why matched**: `{}`\n",
-                    result.matched_terms.join("`, `")
-                ));
-            }
-
-            if self.filters.rerank {
-                output.push_str(&format!(
-                    "**Embedding**: {:.2}  **Keywords**: {:.2}\n",
-                    result.embed_score, result.lexical_score
-                ));
-            }
+            output.push_str(&format!(
+                "**Embedding**: {:.2}  **Keywords**: {:.2}\n",
+                result.embed_score, result.lexical_score
+            ));
 
             // Detect language from file extension for code fence
             let lang = result
@@ -206,15 +119,6 @@ struct SnippetInfo {
     text: Option<String>,
     truncated: bool,
     total_lines: usize,
-}
-
-fn format_indexed_timestamp(timestamp: i64) -> Option<String> {
-    if timestamp <= 0 {
-        return None;
-    }
-
-    chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0)
-        .map(|dt| dt.with_timezone(&chrono::Local).to_rfc3339())
 }
 
 fn tokenize_query(query: &str) -> Vec<String> {
@@ -467,13 +371,17 @@ pub async fn semantic_search(
                     }
                 }
 
-                let matched = matched_terms(
-                    &query_terms,
-                    &result.entry.code,
-                    result.entry.symbol_name.as_deref(),
-                );
-                let keyword_score = lexical_score(&query_terms, &matched);
                 let embed_score = result.score;
+                let keyword_score = if rerank {
+                    let matched = matched_terms(
+                        &query_terms,
+                        &result.entry.code,
+                        result.entry.symbol_name.as_deref(),
+                    );
+                    lexical_score(&query_terms, &matched)
+                } else {
+                    0.0
+                };
                 let combined_score = if rerank {
                     (embed_score * 0.85) + (keyword_score * 0.15)
                 } else {
@@ -488,18 +396,13 @@ pub async fn semantic_search(
                     result.entry.code.clear();
                 }
                 result.score = combined_score;
-                let indexed_at = format_indexed_timestamp(result.entry.indexed_at);
-
-                let matched_terms = matched.into_iter().take(8).collect();
 
                 display_results.push(SemanticSearchDisplayResult {
                     result,
                     embed_score,
                     lexical_score: keyword_score,
-                    matched_terms,
                     snippet_truncated: snippet_info.truncated,
                     snippet_total_lines: snippet_info.total_lines,
-                    indexed_at,
                 });
             }
 
@@ -524,18 +427,6 @@ pub async fn semantic_search(
 
             let response = SemanticSearchResponse {
                 results: display_results,
-                state: manager.state().await,
-                query,
-                index_stats: manager.stats().await.ok(),
-                filters: SemanticSearchFilters {
-                    path,
-                    file_pattern: file_pattern.unwrap_or_default(),
-                    exclude: exclude.unwrap_or_default(),
-                    min_score,
-                    per_file,
-                    rerank,
-                    context_lines: resolved_context_lines,
-                },
             };
 
             tool_result_success(response.to_markdown())

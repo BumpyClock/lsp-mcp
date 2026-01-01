@@ -2,7 +2,7 @@
 // ABOUTME: Provides efficient approximate nearest neighbor search.
 
 use super::metadata::MetadataStore;
-use super::types::{IndexEntry, IndexState, IndexStats, SearchOptions, SearchResult};
+use super::types::{EnrichmentData, IndexEntry, IndexState, IndexStats, SearchOptions, SearchResult};
 use super::{VectorStore, VectorStoreError};
 use async_trait::async_trait;
 use hnsw_rs::api::AnnT;
@@ -183,6 +183,25 @@ impl HnswVectorStore {
 
     pub async fn delete_file_hash(&self, file_path: &str) -> Result<(), VectorStoreError> {
         self.metadata.delete_file_hash(file_path).await
+    }
+
+    pub async fn get_enrichment(
+        &self,
+        segment_hash: &str,
+    ) -> Result<Option<EnrichmentData>, VectorStoreError> {
+        self.metadata.get_enrichment(segment_hash).await
+    }
+
+    pub async fn upsert_enrichment(
+        &self,
+        segment_hash: &str,
+        summary: &str,
+        tags: &[String],
+        updated_at: i64,
+    ) -> Result<(), VectorStoreError> {
+        self.metadata
+            .upsert_enrichment(segment_hash, summary, tags, updated_at)
+            .await
     }
 
     pub async fn set_index_started_at(&self, timestamp: i64) -> Result<(), VectorStoreError> {

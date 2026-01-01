@@ -53,6 +53,8 @@ impl Chunker for LineChunker {
                     file_path: path_str.to_string(),
                     code,
                     doc_comment: None,
+                    summary: None,
+                    tags: None,
                     start_line,
                     end_line,
                     segment_hash,

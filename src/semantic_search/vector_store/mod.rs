@@ -6,7 +6,7 @@ mod metadata;
 pub mod types;
 
 pub use hnsw::HnswVectorStore;
-pub use types::{IndexEntry, IndexState, IndexStats, SearchOptions, SearchResult};
+pub use types::{EnrichmentData, IndexEntry, IndexState, IndexStats, SearchOptions, SearchResult};
 
 use async_trait::async_trait;
 use std::path::Path;

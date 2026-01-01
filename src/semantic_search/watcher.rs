@@ -3,6 +3,7 @@
 
 use super::chunker::ChunkConfig;
 use super::embedder::BatchProcessor;
+use super::enrichment::EnrichmentManager;
 use super::indexer::Indexer;
 use super::manager::{SemanticSearchError, SemanticSearchState};
 use super::vector_store::{HnswVectorStore, VectorStore};
@@ -29,6 +30,7 @@ pub struct SemanticWatcher {
     workspace_root: PathBuf,
     store: Arc<HnswVectorStore>,
     processor: Arc<BatchProcessor>,
+    enricher: Option<Arc<EnrichmentManager>>,
     state: Arc<RwLock<SemanticSearchState>>,
     chunk_config: ChunkConfig,
     shutdown_rx: broadcast::Receiver<()>,
@@ -46,6 +48,7 @@ impl SemanticWatcher {
         workspace_root: PathBuf,
         store: Arc<HnswVectorStore>,
         processor: Arc<BatchProcessor>,
+        enricher: Option<Arc<EnrichmentManager>>,
         state: Arc<RwLock<SemanticSearchState>>,
         chunk_config: ChunkConfig,
         shutdown_rx: broadcast::Receiver<()>,
@@ -57,6 +60,7 @@ impl SemanticWatcher {
             workspace_root,
             store,
             processor,
+            enricher,
             state,
             chunk_config,
             shutdown_rx,
@@ -72,6 +76,7 @@ impl SemanticWatcher {
         let workspace_root = self.workspace_root.clone();
         let store = self.store.clone();
         let processor = self.processor.clone();
+        let enricher = self.enricher.clone();
         let state = self.state.clone();
         let chunk_config = self.chunk_config.clone();
         let shutdown_rx = self.shutdown_rx;
@@ -145,6 +150,7 @@ impl SemanticWatcher {
                 workspace_for_processor,
                 store,
                 processor,
+                enricher,
                 state,
                 chunk_config,
                 change_rx,
@@ -160,12 +166,18 @@ impl SemanticWatcher {
         workspace_root: PathBuf,
         store: Arc<HnswVectorStore>,
         processor: Arc<BatchProcessor>,
+        enricher: Option<Arc<EnrichmentManager>>,
         state: Arc<RwLock<SemanticSearchState>>,
         chunk_config: ChunkConfig,
         mut change_rx: mpsc::Receiver<PathBuf>,
         mut shutdown_rx: broadcast::Receiver<()>,
     ) {
-        let indexer = Indexer::new(config.clone(), workspace_root.clone(), chunk_config);
+        let indexer = Indexer::new(
+            config.clone(),
+            workspace_root.clone(),
+            chunk_config,
+            enricher,
+        );
         let mut pending_files: HashSet<PathBuf> = HashSet::new();
         let mut batch_timer = tokio::time::interval(BATCH_INTERVAL);
 

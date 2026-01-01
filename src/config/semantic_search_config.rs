@@ -261,6 +261,70 @@ impl Default for SearchConfig {
     }
 }
 
+/// Configuration for optional LLM enrichment during indexing.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnrichmentConfig {
+    /// Enable LLM enrichment (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Model name (default: gpt-4o-mini)
+    #[serde(default = "default_enrichment_model")]
+    pub model: String,
+    /// Batch size for LLM requests (default: 16)
+    #[serde(default = "default_enrichment_batch_size")]
+    pub batch_size: usize,
+    /// Maximum number of concurrent LLM requests (default: 2)
+    #[serde(default = "default_enrichment_max_concurrency")]
+    pub max_concurrency: usize,
+    /// Maximum summary length in characters (default: 280)
+    #[serde(default = "default_enrichment_summary_max_chars")]
+    pub summary_max_chars: usize,
+    /// Maximum number of tags per item (default: 6)
+    #[serde(default = "default_enrichment_max_tags")]
+    pub max_tags: usize,
+    /// Request timeout in milliseconds (default: 8000)
+    #[serde(default = "default_enrichment_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+fn default_enrichment_model() -> String {
+    "gpt-4o-mini".to_string()
+}
+
+fn default_enrichment_batch_size() -> usize {
+    16
+}
+
+fn default_enrichment_max_concurrency() -> usize {
+    2
+}
+
+fn default_enrichment_summary_max_chars() -> usize {
+    280
+}
+
+fn default_enrichment_max_tags() -> usize {
+    6
+}
+
+fn default_enrichment_timeout_ms() -> u64 {
+    8000
+}
+
+impl Default for EnrichmentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: default_enrichment_model(),
+            batch_size: default_enrichment_batch_size(),
+            max_concurrency: default_enrichment_max_concurrency(),
+            summary_max_chars: default_enrichment_summary_max_chars(),
+            max_tags: default_enrichment_max_tags(),
+            timeout_ms: default_enrichment_timeout_ms(),
+        }
+    }
+}
+
 /// Semantic search feature configuration.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SemanticSearchConfig {
@@ -279,6 +343,9 @@ pub struct SemanticSearchConfig {
     /// Search configuration
     #[serde(default)]
     pub search: SearchConfig,
+    /// Optional LLM enrichment configuration
+    #[serde(default)]
+    pub enrichment: EnrichmentConfig,
 }
 
 impl SemanticSearchConfig {
@@ -343,6 +410,7 @@ mod tests {
             vector_store: VectorStoreConfig::default(),
             index: IndexConfig::default(),
             search: SearchConfig::default(),
+            enrichment: EnrichmentConfig::default(),
         }
     }
 

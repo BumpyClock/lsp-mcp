@@ -2,6 +2,7 @@
 // ABOUTME: Handles chunking, batching, and progress tracking during indexing.
 
 use super::chunker::{create_chunker, ChunkConfig, CodeChunk};
+use super::enrichment::EnrichmentManager;
 use super::embedder::BatchProcessor;
 use super::manager::SemanticSearchState;
 use super::vector_store::{HnswVectorStore, IndexEntry, VectorStore};
@@ -22,6 +23,7 @@ pub struct Indexer {
     config: SemanticSearchConfig,
     workspace_root: PathBuf,
     chunk_config: ChunkConfig,
+    enricher: Option<Arc<EnrichmentManager>>,
 }
 
 impl Indexer {
@@ -30,11 +32,13 @@ impl Indexer {
         config: SemanticSearchConfig,
         workspace_root: PathBuf,
         chunk_config: ChunkConfig,
+        enricher: Option<Arc<EnrichmentManager>>,
     ) -> Self {
         Self {
             config,
             workspace_root,
             chunk_config,
+            enricher,
         }
     }
 
@@ -289,6 +293,12 @@ impl Indexer {
     ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
         if chunks.is_empty() {
             return Ok(0);
+        }
+
+        if let Some(enricher) = &self.enricher {
+            if let Err(e) = enricher.enrich_chunks(store, chunks).await {
+                warn!(error = %e, "Failed to enrich semantic chunks");
+            }
         }
 
         let embeddings = processor.process_chunks(chunks).await?;

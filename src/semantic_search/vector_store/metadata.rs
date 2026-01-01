@@ -1,7 +1,7 @@
 // ABOUTME: SQLite metadata store for vector index entries.
 // ABOUTME: Maps segment hashes to numeric IDs and stores chunk metadata.
 
-use super::types::{IndexEntry, IndexState};
+use super::types::{EnrichmentData, IndexEntry, IndexState};
 use super::VectorStoreError;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
@@ -26,6 +26,15 @@ CREATE TABLE IF NOT EXISTS entries (
 CREATE INDEX IF NOT EXISTS idx_file_path ON entries(file_path);
 CREATE INDEX IF NOT EXISTS idx_segment_hash ON entries(segment_hash);
 CREATE INDEX IF NOT EXISTS idx_symbol_kind ON entries(symbol_kind);
+
+CREATE TABLE IF NOT EXISTS enrichments (
+    segment_hash TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    tags_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_enrichments_updated_at ON enrichments(updated_at);
 
 CREATE TABLE IF NOT EXISTS hnsw_ids (
     segment_hash TEXT PRIMARY KEY,
@@ -285,6 +294,70 @@ impl MetadataStore {
         .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
     }
 
+    /// Get enrichment data for a segment hash.
+    pub async fn get_enrichment(
+        &self,
+        segment_hash: &str,
+    ) -> Result<Option<EnrichmentData>, VectorStoreError> {
+        let hash = segment_hash.to_string();
+        let conn = Arc::clone(&self.conn);
+
+        task::spawn_blocking(move || {
+            let conn = conn.lock();
+            let result: Result<(String, String), _> = conn.query_row(
+                "SELECT summary, tags_json FROM enrichments WHERE segment_hash = ?",
+                params![hash],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            );
+
+            match result {
+                Ok((summary, tags_json)) => {
+                    let tags: Vec<String> = serde_json::from_str(&tags_json)
+                        .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
+                    Ok(Some(EnrichmentData { summary, tags }))
+                }
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(VectorStoreError::DatabaseError(e.to_string())),
+            }
+        })
+        .await
+        .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
+    }
+
+    /// Insert or update enrichment data for a segment hash.
+    pub async fn upsert_enrichment(
+        &self,
+        segment_hash: &str,
+        summary: &str,
+        tags: &[String],
+        updated_at: i64,
+    ) -> Result<(), VectorStoreError> {
+        let hash = segment_hash.to_string();
+        let summary = summary.to_string();
+        let tags_json = serde_json::to_string(tags)
+            .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
+        let conn = Arc::clone(&self.conn);
+
+        task::spawn_blocking(move || {
+            let conn = conn.lock();
+            conn.execute(
+                r#"
+                INSERT INTO enrichments (segment_hash, summary, tags_json, updated_at)
+                VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT(segment_hash) DO UPDATE SET
+                    summary = excluded.summary,
+                    tags_json = excluded.tags_json,
+                    updated_at = excluded.updated_at
+                "#,
+                params![hash, summary, tags_json, updated_at],
+            )
+            .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
+    }
+
     /// Get HNSW IDs for entries that match a path prefix or exact file path.
     pub async fn get_hnsw_ids_by_path_prefix(
         &self,
@@ -406,6 +479,11 @@ impl MetadataStore {
                 params![hash],
             )
             .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
+            conn.execute(
+                "DELETE FROM enrichments WHERE segment_hash = ?",
+                params![hash],
+            )
+            .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
             Ok(())
         })
         .await
@@ -422,6 +500,11 @@ impl MetadataStore {
             let conn = conn.lock();
             conn.execute(
                 "DELETE FROM hnsw_ids WHERE segment_hash IN (SELECT segment_hash FROM entries WHERE file_path = ?)",
+                params![path.clone()],
+            )
+            .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
+            conn.execute(
+                "DELETE FROM enrichments WHERE segment_hash IN (SELECT segment_hash FROM entries WHERE file_path = ?)",
                 params![path.clone()],
             )
             .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
@@ -668,6 +751,7 @@ impl MetadataStore {
                 DELETE FROM entries;
                 DELETE FROM hnsw_ids;
                 DELETE FROM file_hashes;
+                DELETE FROM enrichments;
                 DELETE FROM index_state;
                 "#,
             )

@@ -24,6 +24,13 @@ pub struct IndexEntry {
     pub indexed_at: i64,
 }
 
+/// Optional enrichment metadata for a chunk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnrichmentData {
+    pub summary: String,
+    pub tags: Vec<String>,
+}
+
 /// Result from a semantic search query.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {

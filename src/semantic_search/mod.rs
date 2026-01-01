@@ -3,6 +3,7 @@
 
 pub mod chunker;
 pub mod embedder;
+mod enrichment;
 mod indexer;
 pub mod manager;
 pub mod vector_store;
