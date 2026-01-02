@@ -290,14 +290,31 @@ impl AstGrepClient {
                 .collect();
             let lines_text = lines.join("\n");
 
+            // Calculate leading/trailing char counts for context display
+            // Tree-sitter columns are byte offsets, convert to character counts for LSP compliance
+            let start_byte_col = def_node.start_position().column;
+            let end_byte_col = def_node.end_position().column;
+
+            let leading = lines
+                .first()
+                .and_then(|first_line| first_line.get(..start_byte_col))
+                .map(|s| s.chars().count())
+                .unwrap_or(0);
+
+            let trailing = lines
+                .last()
+                .and_then(|last_line| last_line.get(end_byte_col..))
+                .map(|s| s.chars().count())
+                .unwrap_or(0);
+
             let ast_match = AstGrepMatch {
                 text: name_text.clone(),
                 range: def_range.clone(),
                 file: file_name.to_string(),
                 lines: lines_text,
                 char_count: CharCount {
-                    leading: 0,
-                    trailing: 0,
+                    leading,
+                    trailing,
                 },
                 language: lang.name().to_string(),
                 meta_variables: MetaVariables {
