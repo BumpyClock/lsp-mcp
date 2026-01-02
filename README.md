@@ -37,6 +37,29 @@ bash scripts/install-ast-grep-rules.sh
 
 Configure your MCP client to launch the server with the project root as the working directory. The server communicates over stdio.
 
+## Pre-building the Semantic Search Index
+
+When semantic search is enabled, the initial indexing can be resource-intensive. To avoid slowdowns during normal MCP usage, you can pre-build the index from the command line:
+
+```bash
+# Build index for current directory
+lsp-mcp --index
+
+# Build index for a specific workspace
+lsp-mcp --index --workspace-root /path/to/project
+
+# Force full rebuild from scratch
+lsp-mcp --index --force
+```
+
+The `--index` flag:
+- Builds the semantic search index and exits (does not start the MCP server)
+- Auto-enables semantic search even if not configured in `.lsp-mcp.json`
+- Shows progress: `Indexing: 150/500 files (30%)`
+- Reports final stats: chunks indexed and time elapsed
+
+The `--force` flag deletes any existing index and rebuilds from scratch.
+
 ## GPU Acceleration (FastEmbed)
 
 FastEmbed uses ONNX Runtime execution providers. GPU acceleration is enabled at build time via cargo features and used

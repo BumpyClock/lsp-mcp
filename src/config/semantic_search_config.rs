@@ -351,6 +351,13 @@ pub struct SemanticSearchConfig {
 }
 
 impl SemanticSearchConfig {
+    /// Create a default config with semantic search enabled.
+    pub fn default_enabled() -> Self {
+        let mut config = Self::default();
+        config.enabled = true;
+        config
+    }
+
     /// Check if the configuration is valid for starting semantic search.
     pub fn is_valid(&self) -> Result<(), String> {
         if !self.enabled {

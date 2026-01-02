@@ -104,6 +104,8 @@ pub struct SemanticSearchManager {
     /// Shutdown signal sender
     shutdown_tx: Option<broadcast::Sender<()>>,
     last_dimension_mismatch: Option<(usize, usize)>,
+    /// Force full rebuild on next start
+    force_rebuild_flag: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -136,7 +138,13 @@ impl SemanticSearchManager {
             workspace_root,
             shutdown_tx: None,
             last_dimension_mismatch: None,
+            force_rebuild_flag: false,
         }
+    }
+
+    /// Set force rebuild flag to delete and rebuild index from scratch.
+    pub fn force_rebuild(&mut self) {
+        self.force_rebuild_flag = true;
     }
 
     /// Initialize and start background indexing.
@@ -225,8 +233,12 @@ impl SemanticSearchManager {
 
         let index_state = store.get_state().await?;
         let completed_at = store.get_index_completed_at().await?;
-        let mut requires_rebuild = index_state != IndexState::Ready || completed_at.is_none();
-        if index_state == IndexState::Ready && completed_at.is_some() {
+        let mut requires_rebuild =
+            self.force_rebuild_flag || index_state != IndexState::Ready || completed_at.is_none();
+        if !self.force_rebuild_flag
+            && index_state == IndexState::Ready
+            && completed_at.is_some()
+        {
             let missing_files = store.files_missing_vectors().await?;
             if missing_files.is_empty() {
                 let stats = store.stats().await?;
