@@ -1,16 +1,13 @@
 use std::{error::Error, path::Path, process::Stdio};
 
 use async_trait::async_trait;
-use lsp_types::{
-    ClientCapabilities, DocumentSymbolClientCapabilities, InitializeParams,
-    TextDocumentClientCapabilities,
-};
+use lsp_types::{ClientCapabilities, InitializeParams};
 use notify_debouncer_mini::DebouncedEvent;
 use tokio::process::Command;
 use tokio::sync::broadcast::Receiver;
 use url::Url;
 
-use crate::lsp::client::LspClientConfig;
+use crate::lsp::client::{create_default_capabilities, LspClientConfig};
 use crate::lsp::reconnect::{DocumentTracker, SpawnConfig};
 use crate::lsp::{DiagnosticsStore, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler};
 
@@ -33,15 +30,7 @@ pub struct RustAnalyzerClient {
 #[async_trait]
 impl LspClient for RustAnalyzerClient {
     fn get_capabilities(&mut self) -> ClientCapabilities {
-        let mut capabilities = ClientCapabilities::default();
-        capabilities.text_document = Some(TextDocumentClientCapabilities {
-            document_symbol: Some(DocumentSymbolClientCapabilities {
-                hierarchical_document_symbol_support: Some(true),
-                ..Default::default()
-            }),
-            ..Default::default()
-        });
-
+        let mut capabilities = create_default_capabilities();
         capabilities.experimental = Some(serde_json::json!({
             "serverStatusNotification": true
         }));

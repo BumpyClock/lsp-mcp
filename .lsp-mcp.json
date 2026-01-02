@@ -1,9 +1,25 @@
 {
-  "languages": ["rust"],
+  "languages": [
+    "rust",
+    "bash ",
+    "python",
+    "javascript",
+    "typescript",
+    "go",
+    "java",
+    "c",
+    "cpp",
+    "csharp"
+  ],
   "tools": {
     "preset": "full",
-    "enable": ["semanticSearch"],
-    "disable": ["listFiles","readSourceCode"]
+    "enable": [
+      "semanticSearch"
+    ],
+    "disable": [
+      "listFiles",
+      "readSourceCode"
+    ]
   },
   "semantic_search": {
     "enabled": true,

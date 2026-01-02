@@ -15,6 +15,6 @@ pub use types::response::{
 };
 pub use utils::external::{ExternalInfo, PackageInfo};
 pub use utils::signature::{
-    filter_sibling_exports, is_internal_builder_symbol, truncate_signature,
-    DEFAULT_MAX_SIGNATURE_LENGTH,
+    extract_signature_and_docs_from_markdown, filter_sibling_exports, is_internal_builder_symbol,
+    truncate_signature, DEFAULT_MAX_SIGNATURE_LENGTH,
 };

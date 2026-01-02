@@ -9,6 +9,7 @@ pub mod filter;
 mod hover;
 mod references;
 mod semantic_search;
+mod serde_helpers;
 mod server;
 mod symbols;
 pub mod tool_params;
@@ -632,6 +633,7 @@ Restart your agent for new settings to take effect."#,
             Some(manager) => {
                 semantic_search::semantic_search(
                     manager,
+                    &self.service,
                     params.query,
                     params.limit,
                     params.path,

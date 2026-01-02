@@ -1,11 +1,13 @@
 // ABOUTME: MCP tool handler for semantic code search.
 // ABOUTME: Provides natural language search over indexed code chunks.
 
+use crate::api_types::Position;
 use crate::markdown_formatter::ToMarkdown;
 use crate::mcp_response::{tool_result_error, tool_result_success};
 use crate::semantic_search::{
     SearchResult, SemanticSearchError, SemanticSearchManager, SemanticSearchState,
 };
+use crate::service::{extract_signature_and_docs_from_markdown, LspService};
 use glob::Pattern;
 use rmcp::model::CallToolResult;
 use std::cmp::Ordering;
@@ -16,15 +18,12 @@ use tokio::sync::RwLock;
 /// Semantic search tool response.
 pub struct SemanticSearchResponse {
     pub results: Vec<SemanticSearchDisplayResult>,
-    pub hidden_count: usize,
 }
 
 pub struct SemanticSearchDisplayResult {
     pub result: SearchResult,
-    pub embed_score: f32,
-    pub lexical_score: f32,
-    pub snippet_truncated: bool,
-    pub snippet_total_lines: usize,
+    pub signature: Option<String>,
+    pub doc_line: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -38,92 +37,96 @@ pub struct SemanticSearchFilters {
     pub context_lines: Option<u32>,
 }
 
+/// Find the 1-based character position of a symbol name in code.
+/// Searches line by line and returns the position on the first line containing the symbol.
+fn find_symbol_character_position(code: &str, symbol_name: &str) -> Option<u32> {
+    for line in code.lines() {
+        if let Some(pos) = line.find(symbol_name) {
+            // Return 1-based character position
+            return Some((pos + 1) as u32);
+        }
+    }
+    None
+}
+
+/// Convert HoverContents to a markdown string for parsing.
+fn hover_contents_to_string(contents: &crate::api_types::HoverContents) -> String {
+    match contents {
+        crate::api_types::HoverContents::Markup(s) => s.clone(),
+        crate::api_types::HoverContents::Array(arr) => arr.join("\n\n"),
+    }
+}
+
 impl ToMarkdown for SemanticSearchResponse {
     fn to_markdown(&self) -> String {
-        let mut output = String::new();
-
         if self.results.is_empty() {
-            output.push_str("No results found.\n");
-            return output;
+            return "No results found.\n".to_string();
         }
 
-        output.push_str(&format!("**Found**: {} results\n", self.results.len()));
-        if self.hidden_count > 0 {
-            output.push_str(&format!("*{} low quality results hidden*\n", self.hidden_count));
-        }
-        output.push('\n');
+        let mut output = format!("Found {} results\n\n", self.results.len());
 
         for result in &self.results {
+            let name = result
+                .result
+                .entry
+                .symbol_name
+                .as_deref()
+                .unwrap_or("chunk");
+
+            // Line 1: rank, name, score, file:line-range
             output.push_str(&format!(
-                "## {}. {}:{}-{} (score: {:.2})\n",
+                "{}. {} ({:.2}) - {}:{}-{}\n",
                 result.result.rank,
+                name,
+                result.result.score,
                 result.result.entry.file_path,
                 result.result.entry.start_line,
                 result.result.entry.end_line,
-                result.result.score
             ));
 
-            // Add symbol info if available
-            if let Some(ref name) = result.result.entry.symbol_name {
-                if let Some(ref kind) = result.result.entry.symbol_kind {
-                    output.push_str(&format!("**Symbol**: {} `{}`\n", kind, name));
+            // Line 2: signature from LSP (or fallback to symbol name)
+            if let Some(sig) = &result.signature {
+                // Truncate signature if too long
+                let sig_display = if sig.len() > 120 {
+                    format!("{}...", &sig[..117])
                 } else {
-                    output.push_str(&format!("**Symbol**: `{}`\n", name));
-                }
+                    sig.clone()
+                };
+                output.push_str(&format!("   {}\n", sig_display));
             }
 
-            output.push_str(&format!(
-                "**Embedding**: {:.2}  **Keywords**: {:.2}\n",
-                result.embed_score, result.lexical_score
-            ));
-
-            // Detect language from file extension for code fence
-            let lang = result
-                .result
-                .entry
-                .file_path
-                .rsplit('.')
-                .next()
-                .map(|ext| match ext {
-                    "rs" => "rust",
-                    "py" => "python",
-                    "ts" | "tsx" => "typescript",
-                    "js" | "jsx" => "javascript",
-                    "go" => "go",
-                    "java" => "java",
-                    "cpp" | "cc" | "cxx" => "cpp",
-                    "c" | "h" => "c",
-                    "cs" => "csharp",
-                    "rb" => "ruby",
-                    "php" => "php",
-                    "md" => "markdown",
-                    _ => ext,
-                })
-                .unwrap_or("text");
-
-            if !result.result.entry.code.is_empty() {
-                output.push_str(&format!(
-                    "**codeChunk**:\n```{}\n{}\n```\n",
-                    lang, result.result.entry.code
-                ));
-                if result.snippet_truncated {
-                    output.push_str(&format!(
-                        "[truncated, {} total lines]\n",
-                        result.snippet_total_lines
-                    ));
-                }
-                output.push('\n');
+            // Line 3: doc comment from LSP (if available)
+            if let Some(doc) = &result.doc_line {
+                // Truncate doc line if too long
+                let doc_display = if doc.len() > 80 {
+                    format!("{}...", &doc[..77])
+                } else {
+                    doc.clone()
+                };
+                output.push_str(&format!("   /// {}\n", doc_display));
             }
+
+            output.push('\n');
         }
 
         output
     }
 }
 
-struct SnippetInfo {
-    text: Option<String>,
-    truncated: bool,
-    total_lines: usize,
+/// Truncates code to a maximum number of lines, returning None if max_lines is 0.
+fn truncate_code(code: &str, max_lines: Option<u32>) -> Option<String> {
+    match max_lines {
+        None => Some(code.to_string()),
+        Some(0) => None,
+        Some(max) => {
+            let lines: Vec<&str> = code.lines().collect();
+            if lines.len() <= max as usize {
+                Some(code.to_string())
+            } else {
+                Some(lines[..max as usize].join("\n"))
+            }
+        }
+    }
 }
 
 fn tokenize_query(query: &str) -> Vec<String> {
@@ -166,43 +169,6 @@ fn lexical_score(terms: &[String], matched: &[String]) -> f32 {
         return 0.0;
     }
     matched.len() as f32 / terms.len() as f32
-}
-
-fn truncate_code_lines(code: &str, max_lines: Option<u32>) -> SnippetInfo {
-    let lines: Vec<&str> = code.lines().collect();
-    let total_lines = lines.len();
-
-    let max_lines = match max_lines {
-        None => {
-            return SnippetInfo {
-                text: Some(code.to_string()),
-                truncated: false,
-                total_lines,
-            }
-        }
-        Some(0) => {
-            return SnippetInfo {
-                text: None,
-                truncated: false,
-                total_lines,
-            }
-        }
-        Some(value) => value as usize,
-    };
-
-    if total_lines <= max_lines {
-        return SnippetInfo {
-            text: Some(code.to_string()),
-            truncated: false,
-            total_lines,
-        };
-    }
-
-    SnippetInfo {
-        text: Some(lines[..max_lines].join("\n")),
-        truncated: true,
-        total_lines,
-    }
 }
 
 fn compile_exclude_patterns(patterns: &[String]) -> Result<Vec<Pattern>, String> {
@@ -269,6 +235,7 @@ fn dedupe_by_segment(
 /// Execute semantic search tool.
 pub async fn semantic_search(
     manager: &Arc<RwLock<SemanticSearchManager>>,
+    lsp_service: &LspService,
     query: String,
     limit: Option<u32>,
     path: Option<String>,
@@ -349,7 +316,6 @@ pub async fn semantic_search(
         Ok(results) => {
             let query_terms = tokenize_query(&query);
             let mut display_results = Vec::new();
-            let mut hidden_count = 0;
 
             for result in results {
                 // Apply exclude patterns
@@ -373,7 +339,6 @@ pub async fn semantic_search(
                 // Apply min_score filter
                 if let Some(min) = min_score {
                     if result.score < min {
-                        hidden_count += 1;
                         continue;
                     }
                 }
@@ -395,9 +360,8 @@ pub async fn semantic_search(
                     embed_score
                 };
 
-                let snippet_info = truncate_code_lines(&result.entry.code, resolved_context_lines);
                 let mut result = result;
-                if let Some(snippet) = snippet_info.text {
+                if let Some(snippet) = truncate_code(&result.entry.code, resolved_context_lines) {
                     result.entry.code = snippet;
                 } else {
                     result.entry.code.clear();
@@ -406,10 +370,8 @@ pub async fn semantic_search(
 
                 display_results.push(SemanticSearchDisplayResult {
                     result,
-                    embed_score,
-                    lexical_score: keyword_score,
-                    snippet_truncated: snippet_info.truncated,
-                    snippet_total_lines: snippet_info.total_lines,
+                    signature: None,
+                    doc_line: None,
                 });
             }
 
@@ -432,9 +394,51 @@ pub async fn semantic_search(
                 item.result.rank = (idx + 1) as u32;
             }
 
+            // Enrich results with LSP hover data (signature + docs)
+            for item in display_results.iter_mut() {
+                // Find character position of symbol name in the code chunk
+                let character = if let Some(ref symbol_name) = item.result.entry.symbol_name {
+                    // Search for symbol name in the code to find its character position
+                    find_symbol_character_position(&item.result.entry.code, symbol_name)
+                        .unwrap_or(1)
+                } else {
+                    1
+                };
+
+                let hover_result = lsp_service
+                    .hover(
+                        &item.result.entry.file_path,
+                        Position {
+                            line: item.result.entry.start_line,
+                            character,
+                        },
+                        false, // include_raw_response
+                        false, // include_definition
+                    )
+                    .await;
+
+                if let Ok(hover) = hover_result {
+                    // Extract signature and docs from hover contents using robust markdown parsing
+                    let (extracted_sig, extracted_docs) = hover
+                        .contents
+                        .as_ref()
+                        .map(|contents| {
+                            let text = hover_contents_to_string(contents);
+                            extract_signature_and_docs_from_markdown(&text)
+                        })
+                        .unwrap_or((None, None));
+
+                    // Prefer active_signature over extracted signature
+                    item.signature = hover.active_signature.clone().or(extracted_sig);
+
+                    // Get first line of docs
+                    item.doc_line =
+                        extracted_docs.and_then(|d| d.lines().next().map(|s| s.to_string()));
+                }
+            }
+
             let response = SemanticSearchResponse {
                 results: display_results,
-                hidden_count,
             };
 
             tool_result_success(response.to_markdown())

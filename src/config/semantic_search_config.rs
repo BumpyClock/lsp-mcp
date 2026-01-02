@@ -246,7 +246,7 @@ fn default_min_score() -> f32 {
 }
 
 fn default_max_results() -> usize {
-    20
+    5
 }
 
 fn default_context_lines() -> Option<u32> {

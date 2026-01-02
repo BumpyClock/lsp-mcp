@@ -9,6 +9,22 @@ use lsp_types::Position as LspPosition;
 /// Default maximum length for signatures in responses
 pub const DEFAULT_MAX_SIGNATURE_LENGTH: usize = 100;
 
+/// Extracts signature and documentation from hover markdown text.
+/// Uses pulldown-cmark for robust parsing - works with any language.
+pub fn extract_signature_and_docs_from_markdown(text: &str) -> (Option<String>, Option<String>) {
+    use super::hover_parser;
+
+    let parsed = hover_parser::parse_hover_markdown(text);
+    let signature = hover_parser::select_signature(&parsed);
+    let docs = if parsed.text_content.is_empty() {
+        None
+    } else {
+        Some(parsed.text_content)
+    };
+
+    (signature, docs)
+}
+
 /// Truncates a signature with semantic awareness:
 /// 1. Normalizes whitespace (collapses newlines/spaces)
 /// 2. Truncates at generic opener `<` for complex types

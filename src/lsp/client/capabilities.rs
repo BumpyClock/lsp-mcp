@@ -3,10 +3,10 @@
 
 use lsp_types::{
     ClientCapabilities, CodeActionClientCapabilities, CodeActionKindLiteralSupport,
-    CodeActionLiteralSupport, DiagnosticTag, DocumentSymbolClientCapabilities, MarkupKind,
-    PublishDiagnosticsClientCapabilities, SignatureHelpClientCapabilities,
-    SelectionRangeClientCapabilities, SignatureInformationSettings, TagSupport,
-    TextDocumentClientCapabilities,
+    CodeActionLiteralSupport, DiagnosticTag, DocumentSymbolClientCapabilities,
+    HoverClientCapabilities, MarkupKind, PublishDiagnosticsClientCapabilities,
+    SelectionRangeClientCapabilities, SignatureHelpClientCapabilities,
+    SignatureInformationSettings, TagSupport, TextDocumentClientCapabilities,
 };
 
 /// Creates default client capabilities for LSP initialization
@@ -17,6 +17,10 @@ pub fn create_default_capabilities() -> ClientCapabilities {
             dynamic_registration: Some(false),
             hierarchical_document_symbol_support: Some(true),
             ..Default::default()
+        }),
+        hover: Some(HoverClientCapabilities {
+            dynamic_registration: Some(false),
+            content_format: Some(vec![MarkupKind::Markdown, MarkupKind::PlainText]),
         }),
         publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
             related_information: Some(true),
