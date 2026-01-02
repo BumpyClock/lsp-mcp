@@ -240,6 +240,8 @@ pub struct SearchConfig {
 }
 
 fn default_min_score() -> f32 {
+    // Higher threshold (0.4) improves precision over 0.25
+    // Users can override via config if broader recall is needed
     0.4
 }
 

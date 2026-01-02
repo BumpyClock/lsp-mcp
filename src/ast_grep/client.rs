@@ -20,10 +20,6 @@ use crate::shared::languages;
 #[derive(Clone)]
 struct CacheEntry {
     mtime: SystemTime,
-    #[allow(dead_code)]
-    tree: Tree,
-    #[allow(dead_code)]
-    source: Vec<u8>,
     symbols: Vec<AstGrepMatch>,
     identifiers: Vec<AstGrepMatch>,
     references: Vec<AstGrepMatch>,
@@ -138,7 +134,10 @@ impl AstGrepClient {
         let lang = languages::from_extension(extension).ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidInput,
-                format!("Unsupported language for extension: {}", extension),
+                format!(
+                    "Unsupported language for extension: {}. Supported: rs, ts, tsx, js, jsx, py, go, java, c, cpp, h, hpp, cs, rb, php, md",
+                    extension
+                ),
             )
         })?;
 
@@ -191,8 +190,6 @@ impl AstGrepClient {
 
         let entry = CacheEntry {
             mtime,
-            tree,
-            source,
             symbols,
             identifiers,
             references,
@@ -452,7 +449,8 @@ fn range_distance(range: &AstGrepRange, position: &lsp_types::Position) -> u64 {
 
 impl PartialEq for AstGrepRange {
     fn eq(&self, other: &Self) -> bool {
-        self.start.line == other.start.line
+        self.byte_offset == other.byte_offset
+            && self.start.line == other.start.line
             && self.start.column == other.start.column
             && self.end.line == other.end.line
             && self.end.column == other.end.column
@@ -647,5 +645,52 @@ mod tests {
 
         let cache = client.cache.read().await;
         assert!(cache.is_empty(), "Cache should be empty after clear");
+    }
+
+    #[tokio::test]
+    async fn test_get_symbol_and_references_returns_symbol_with_references() {
+        let client = AstGrepClient::new();
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_file = manifest_dir.join("src/ast_grep/client.rs");
+        let test_file = test_file.to_str().expect("Invalid path");
+
+        let position = lsp_types::Position {
+            line: 40,
+            character: 10,
+        };
+        let result = client.get_symbol_and_references(test_file, &position, false).await;
+
+        assert!(
+            result.is_ok(),
+            "Should return symbol and references: {:?}",
+            result.err()
+        );
+        let (symbol, _references) = result.unwrap();
+        assert!(
+            !symbol.text.is_empty(),
+            "Symbol should have non-empty text"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_references_contained_in_symbol_match_filters_by_position() {
+        let client = AstGrepClient::new();
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_file = manifest_dir.join("src/ast_grep/client.rs");
+        let test_file = test_file.to_str().expect("Invalid path");
+
+        let symbols = client.get_file_symbols(test_file).await.unwrap();
+        assert!(!symbols.is_empty(), "Should have symbols to test");
+
+        let symbol = &symbols[0];
+        let result = client
+            .get_references_contained_in_symbol_match(test_file, symbol, false)
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "Should return references: {:?}",
+            result.err()
+        );
     }
 }

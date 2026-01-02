@@ -61,7 +61,7 @@ pub struct AstGrepRange {
     pub end: AstGrepPosition,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ByteOffset {
     pub start: usize,

@@ -3,6 +3,14 @@
 
 use tree_sitter::Node;
 
+/// Common HTML element names to filter out in JSX
+const HTML_ELEMENTS: &[&str] = &[
+    "div", "span", "p", "a", "button", "input", "form", "label", "h1", "h2", "h3", "h4", "h5",
+    "h6", "ul", "ol", "li", "table", "tr", "td", "th", "thead", "tbody", "tfoot", "img", "video",
+    "audio", "canvas", "svg", "path", "header", "footer", "nav", "main", "section", "article",
+    "aside", "textarea", "select", "option", "optgroup",
+];
+
 /// Check if a node is inside a definition context (for filtering references)
 /// This filters out identifiers that are part of definitions, not references
 pub fn is_inside_definition(node: Node, lang: &str) -> bool {
@@ -77,14 +85,6 @@ pub fn is_inside_import(node: Node, lang: &str) -> bool {
 
 /// Check if a node is inside a JSX element (for filtering HTML-like tags)
 pub fn is_jsx_html_element(node: Node, source: &[u8]) -> bool {
-    // Common HTML element names to filter out in JSX
-    const HTML_ELEMENTS: &[&str] = &[
-        "div", "span", "p", "a", "button", "input", "form", "label", "h1", "h2", "h3", "h4", "h5",
-        "h6", "ul", "ol", "li", "table", "tr", "td", "th", "thead", "tbody", "tfoot", "img",
-        "video", "audio", "canvas", "svg", "path", "header", "footer", "nav", "main", "section",
-        "article", "aside", "textarea", "select", "option", "optgroup",
-    ];
-
     let text = node.utf8_text(source).unwrap_or("");
     HTML_ELEMENTS.contains(&text.to_lowercase().as_str())
 }
@@ -147,6 +147,101 @@ pub fn is_property_key(node: Node, lang: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    // Tests would require parsing actual code, which would be done in integration tests
-    // The functions are pure and take tree-sitter Nodes, so they need real parse trees
+    use super::*;
+    use tree_sitter::Parser;
+
+    fn parse_rust(source: &str) -> tree_sitter::Tree {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+        parser.parse(source, None).unwrap()
+    }
+
+    fn parse_tsx(source: &str) -> tree_sitter::Tree {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_typescript::LANGUAGE_TSX.into())
+            .unwrap();
+        parser.parse(source, None).unwrap()
+    }
+
+    fn find_node_by_text<'a>(node: Node<'a>, text: &str, source: &[u8]) -> Option<Node<'a>> {
+        if node.utf8_text(source).ok() == Some(text) {
+            return Some(node);
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if let Some(found) = find_node_by_text(child, text, source) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn is_inside_definition_detects_rust_function_definition() {
+        let source = b"fn foo() { bar(); }";
+        let tree = parse_rust(std::str::from_utf8(source).unwrap());
+        let foo_node = find_node_by_text(tree.root_node(), "foo", source).unwrap();
+        assert!(
+            is_inside_definition(foo_node, "rust"),
+            "foo should be inside function_item definition"
+        );
+    }
+
+    #[test]
+    fn is_inside_definition_detects_struct_definition() {
+        let source = b"struct Foo { bar: i32 }";
+        let tree = parse_rust(std::str::from_utf8(source).unwrap());
+        let foo_node = find_node_by_text(tree.root_node(), "Foo", source).unwrap();
+        assert!(
+            is_inside_definition(foo_node, "rust"),
+            "Foo should be inside struct_item definition"
+        );
+    }
+
+    #[test]
+    fn is_inside_import_detects_rust_use_declaration() {
+        let source = b"use std::io::Read;";
+        let tree = parse_rust(std::str::from_utf8(source).unwrap());
+        let read_node = find_node_by_text(tree.root_node(), "Read", source).unwrap();
+        assert!(
+            is_inside_import(read_node, "rust"),
+            "Read should be inside use_declaration"
+        );
+    }
+
+    #[test]
+    fn is_jsx_html_element_detects_common_html_tags() {
+        let source = b"<div>content</div>";
+        let tree = parse_tsx(std::str::from_utf8(source).unwrap());
+        let div_node = find_node_by_text(tree.root_node(), "div", source).unwrap();
+        assert!(
+            is_jsx_html_element(div_node, source),
+            "div should be detected as HTML element"
+        );
+    }
+
+    #[test]
+    fn is_jsx_html_element_returns_false_for_custom_components() {
+        let source = b"<MyComponent />";
+        let tree = parse_tsx(std::str::from_utf8(source).unwrap());
+        let component_node = find_node_by_text(tree.root_node(), "MyComponent", source).unwrap();
+        assert!(
+            !is_jsx_html_element(component_node, source),
+            "MyComponent should not be detected as HTML element"
+        );
+    }
+
+    #[test]
+    fn is_jsx_html_element_is_case_insensitive() {
+        let source = b"<DIV>content</DIV>";
+        let tree = parse_tsx(std::str::from_utf8(source).unwrap());
+        let div_node = find_node_by_text(tree.root_node(), "DIV", source).unwrap();
+        assert!(
+            is_jsx_html_element(div_node, source),
+            "DIV (uppercase) should be detected as HTML element"
+        );
+    }
 }

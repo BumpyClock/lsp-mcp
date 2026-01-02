@@ -105,8 +105,8 @@ pub fn from_extension(extension: &str) -> Option<ProgrammingLanguage> {
         "js" => Some(ProgrammingLanguage::JavaScript),
         "jsx" => Some(ProgrammingLanguage::Jsx),
         "py" => Some(ProgrammingLanguage::Python),
-        "c" | "h" => Some(ProgrammingLanguage::C),
-        "cpp" | "hpp" | "cc" | "cxx" | "hxx" => Some(ProgrammingLanguage::Cpp),
+        "c" => Some(ProgrammingLanguage::C),
+        "cpp" | "hpp" | "cc" | "cxx" | "hxx" | "h" => Some(ProgrammingLanguage::Cpp),
         "cs" => Some(ProgrammingLanguage::CSharp),
         "java" => Some(ProgrammingLanguage::Java),
         "go" => Some(ProgrammingLanguage::Go),
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn test_cpp_extensions() {
-        for ext in &["cpp", "hpp", "cc", "cxx", "hxx"] {
+        for ext in &["cpp", "hpp", "cc", "cxx", "hxx", "h"] {
             let lang = from_extension(ext).unwrap();
             assert_eq!(lang, ProgrammingLanguage::Cpp);
         }
