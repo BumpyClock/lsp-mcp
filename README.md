@@ -2,7 +2,7 @@
 
 LSP-MCP is built off the lsproxy project by Agentic Labs.
 
-The goal is to provide a multi-language MCP server that offers precise code navigation and analysis through Language Servers and ast-grep.
+The goal is to provide a multi-language MCP server that offers precise code navigation and analysis through Language Servers and tree-sitter
 
 Primarily designed to expose LSP functionality over MCP stdio for AI coding agents. Tested for Golang, Rust, and Typescript. Although support for Python , Ruby etc is also present based on the original lsproxy implementation.
 
