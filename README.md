@@ -134,12 +134,7 @@ Package (installed binary):
     "lsp-mcp": {
       "type": "stdio",
       "command": "lsp-mcp",
-      "args": [
-        "--workspace-root",
-        "/path/to/project"
-      ],
-      "cwd": "/path/to/project"
-    }
+        }
   }
 }
 ```

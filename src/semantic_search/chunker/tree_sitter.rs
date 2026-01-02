@@ -117,7 +117,7 @@ impl TreeSitterChunker {
 
             if line_count > config.max_lines && !allow_oversize {
                 for i in 0..node.child_count() {
-                    if let Some(child) = node.child(i) {
+                    if let Some(child) = node.child(i as u32) {
                         self.walk_tree(child, content, file_path, config, node_kinds, lines, chunks);
                     }
                 }
@@ -142,7 +142,7 @@ impl TreeSitterChunker {
 
         // Recurse into children
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
+            if let Some(child) = node.child(i as u32) {
                 self.walk_tree(child, content, file_path, config, node_kinds, lines, chunks);
             }
         }
@@ -151,7 +151,7 @@ impl TreeSitterChunker {
     fn extract_symbol_name(&self, node: &Node, content: &str) -> Option<String> {
         // Look for identifier child node
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
+            if let Some(child) = node.child(i as u32) {
                 let kind = child.kind();
                 if kind.contains("identifier") || kind.contains("name") || kind == "identifier" {
                     let start = child.start_byte();

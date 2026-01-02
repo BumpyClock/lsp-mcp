@@ -1,4 +1,6 @@
-use std::{error::Error, os::unix::fs::PermissionsExt, path::Path, process::Stdio};
+use std::{error::Error, path::Path, process::Stdio};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use async_trait::async_trait;
 use glob::glob;
@@ -98,6 +100,7 @@ impl JdtlsClient {
         let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
         let workspace_dir = Path::new("/usr/src/app/jdtls_workspace");
         tokio::fs::create_dir_all(&workspace_dir).await?;
+        #[cfg(unix)]
         tokio::fs::set_permissions(&workspace_dir, PermissionsExt::from_mode(0o700)).await?;
 
         // Find the launcher jar dynamically

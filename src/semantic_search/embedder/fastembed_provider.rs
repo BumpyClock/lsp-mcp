@@ -125,7 +125,7 @@ impl EmbeddingProvider for FastEmbedProvider {
         let texts_owned: Vec<String> = texts.to_vec();
 
         tokio::task::spawn_blocking(move || {
-            let model = model.read();
+            let mut model = model.write();
             model
                 .embed(texts_owned, None)
                 .map_err(|e| EmbedderError::ApiError(format!("Embedding failed: {}", e)))

@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
-use tree_sitter::{Parser, Query, QueryCursor, Tree};
+use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator, Tree};
 
 use super::filters;
 use super::query_registry::{QueryRegistry, QueryType};
@@ -219,12 +219,12 @@ impl AstGrepClient {
         };
 
         let mut cursor = QueryCursor::new();
-        let matches = cursor.matches(query, tree.root_node(), source);
+        let mut matches = cursor.matches(query, tree.root_node(), source);
 
         let mut results = Vec::new();
         let source_str = std::str::from_utf8(source)?;
 
-        for m in matches {
+        while let Some(m) = matches.next() {
             let mut name_node = None;
             let mut definition_node = None;
             let mut rule_id = String::new();
