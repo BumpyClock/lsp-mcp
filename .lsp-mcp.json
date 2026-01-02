@@ -4,7 +4,7 @@
     "python",
     "javascript",
     "typescript",
-    "go",
+    "golang",
     "java",
     "c",
     "cpp",
@@ -25,5 +25,10 @@
     "embedder": {
       "provider": "fastembed"
     }
+  },
+  "debug": {
+    "enabled": true,
+    "log_level": "debug",
+    "log_dir": ".lsp-mcp/logs"
   }
 }
