@@ -290,15 +290,21 @@ impl AstGrepClient {
                 .collect();
             let lines_text = lines.join("\n");
 
+            // Calculate leading/trailing char counts for context display
+            let leading = def_node.start_position().column;
+            let trailing = lines
+                .last()
+                .map(|last_line| last_line.len().saturating_sub(def_node.end_position().column))
+                .unwrap_or(0);
+
             let ast_match = AstGrepMatch {
                 text: name_text.clone(),
                 range: def_range.clone(),
                 file: file_name.to_string(),
                 lines: lines_text,
-                // TODO: Implement leading/trailing char counts for context display
                 char_count: CharCount {
-                    leading: 0,
-                    trailing: 0,
+                    leading,
+                    trailing,
                 },
                 language: lang.name().to_string(),
                 meta_variables: MetaVariables {
