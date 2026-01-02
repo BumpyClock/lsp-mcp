@@ -19,6 +19,17 @@
     expression: (identifier)
     name: (identifier) @name)) @reference.function-call
 
+; Qualified static calls (Namespace.Class.Method)
+(invocation_expression
+  function: (member_access_expression
+    expression: (member_access_expression)
+    name: (identifier) @name)) @reference.function-call
+
+; Generic method calls (Method<T>())
+(invocation_expression
+  function: (generic_name
+    (identifier) @name)) @reference.function-call
+
 ; Class instantiation (new ClassName())
 (object_creation_expression
   type: (identifier) @name) @reference.class-instantiation

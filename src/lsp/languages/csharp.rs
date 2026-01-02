@@ -60,7 +60,7 @@ impl LspClient for CSharpClient {
     }
 }
 impl CSharpClient {
-    pub const DEFAULT_BINARY: &'static str = "csharp-ls";
+    pub const DEFAULT_BINARY: &'static str = "OmniSharp";
 
     pub async fn new(
         root_path: &str,
@@ -70,13 +70,14 @@ impl CSharpClient {
         let debug_file = std::fs::File::create(std::env::temp_dir().join("csharp.log"))?;
         let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
         let process = Command::new(binary)
+            .arg("--languageserver")
             .current_dir(root_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(debug_file)
             .spawn()
             .map_err(|e| {
-                error!("Failed to start csharp-ls process: {}", e);
+                error!("Failed to start OmniSharp process: {}", e);
                 Box::new(e) as Box<dyn std::error::Error + Send + Sync>
             })?;
         let process_handler = ProcessHandler::new(process)

@@ -216,4 +216,5 @@ Control the verbosity of tool outputs:
 |Python|`jedi-language-server`|https://github.com/pappasam/jedi-language-server|
 |Rust|`rust-analyzer`|https://github.com/rust-lang/rust-analyzer|
 |Typescript|`typescript-language-server`|https://github.com/typescript-language-server/typescript-language-server|
+|csharp|`omnisharp-roslyn`|https://github.com/OmniSharp/omnisharp-roslyn|
 |Your Favorite Language | Awesome Language Server | https://github.com/agentic-labs/lsproxy/issues/new |

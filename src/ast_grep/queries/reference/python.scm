@@ -13,6 +13,18 @@
   function: (attribute
     attribute: (identifier) @name)) @reference.function-call
 
+; Static/class method calls with object as identifier (ClassName.method())
+(call
+  function: (attribute
+    object: (identifier)
+    attribute: (identifier) @name)) @reference.static-method-call
+
+; Chained method calls (obj.attr.method())
+(call
+  function: (attribute
+    object: (attribute)
+    attribute: (identifier) @name)) @reference.function-call
+
 ; Decorators
 (decorator
   (identifier) @name) @reference.decorator

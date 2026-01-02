@@ -3,7 +3,14 @@ Use the lspMCP server or native LSP tool for code navigation, symbol lookup, and
 
 We are in active development. There are no breaking changes for MCP responses. It's okay to change the schema.
 
-## Debugging
+## Core LSP-MCP Philosophy
+- Make Language Server Protocol (LSP) features available via MCP tools.
+- Provide consistent behavior across languages and LSP servers.
+- Optimize for token efficiency and actionability of results.
+- Enable easy configuration and customization per project.
+- No language-specific code, workaround or hacks; leverage existing LSP servers. All functionality is via LSP.
+- Augment with tree-sitter parsing and fallbacks when LSP is missing features.
+
 
 
 ## Use LSP-MCP to develop

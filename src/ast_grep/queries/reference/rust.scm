@@ -19,6 +19,17 @@
   function: (field_expression
     field: (field_identifier) @name)) @reference.function-call
 
+; Associated function calls (Type::method, Self::method)
+(call_expression
+  function: (scoped_identifier
+    name: (identifier) @name)) @reference.function-call
+
+; Path-qualified calls (module::Type::method)
+(call_expression
+  function: (scoped_identifier
+    path: (scoped_identifier)
+    name: (identifier) @name)) @reference.function-call
+
 ; Macro invocations
 (macro_invocation
   macro: (identifier) @name) @reference.macro-invocation

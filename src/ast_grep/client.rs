@@ -94,16 +94,41 @@ impl AstGrepClient {
     ) -> Result<Vec<AstGrepMatch>, Box<dyn std::error::Error>> {
         let entry = self.parse_file(file_name).await?;
 
-        let contained_references = entry
+        log::debug!(
+            "get_references_contained_in_symbol_match: symbol={} range={:?}-{:?}, total_refs={}, full_scan={}",
+            symbol_match.text,
+            symbol_match.range.start,
+            symbol_match.range.end,
+            entry.references.len(),
+            full_scan
+        );
+
+        let contained_references: Vec<AstGrepMatch> = entry
             .references
             .into_iter()
             .filter(|m| {
                 let contained = symbol_match.contains(m);
                 let all_ref = m.rule_id == "all-references";
+                let passes = contained && ((full_scan && all_ref) || (!full_scan && !all_ref));
 
-                contained && ((full_scan && all_ref) || (!full_scan && !all_ref))
+                if contained && !passes {
+                    log::debug!(
+                        "  filtered out: {} (rule_id={}, all_ref={}, full_scan={})",
+                        m.text,
+                        m.rule_id,
+                        all_ref,
+                        full_scan
+                    );
+                }
+
+                passes
             })
             .collect();
+
+        log::debug!(
+            "get_references_contained_in_symbol_match: returning {} references",
+            contained_references.len()
+        );
 
         Ok(contained_references)
     }
