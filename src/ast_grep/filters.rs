@@ -61,6 +61,47 @@ pub fn is_inside_definition(node: Node, lang: &str) -> bool {
             "property_declaration",
             "formal_parameters",
         ][..],
+        "go" => &[
+            "function_declaration",
+            "method_declaration",
+            "type_declaration",
+            "type_spec",
+            "var_declaration",
+            "var_spec",
+            "const_declaration",
+            "const_spec",
+            "short_var_declaration",
+        ][..],
+        "java" => &[
+            "method_declaration",
+            "class_declaration",
+            "interface_declaration",
+            "enum_declaration",
+            "record_declaration",
+            "constructor_declaration",
+            "field_declaration",
+            "local_variable_declaration",
+            "formal_parameter",
+        ][..],
+        "ruby" => &[
+            "method",
+            "singleton_method",
+            "class",
+            "singleton_class",
+            "module",
+            "assignment",
+        ][..],
+        "cpp" => &[
+            "function_definition",
+            "class_specifier",
+            "struct_specifier",
+            "union_specifier",
+            "enum_specifier",
+            "declaration",
+            "type_definition",
+            "namespace_definition",
+            "template_declaration",
+        ][..],
         _ => &[][..],
     };
 
@@ -77,6 +118,10 @@ pub fn is_inside_import(node: Node, lang: &str) -> bool {
         "rust" => &["use_declaration"][..],
         "csharp" => &["using_directive"][..],
         "php" => &["use_declaration", "namespace_use_clause"][..],
+        "go" => &["import_declaration", "import_spec"][..],
+        "java" => &["import_declaration"][..],
+        "ruby" => &[][..],
+        "cpp" => &["preproc_include", "using_declaration"][..],
         _ => &[][..],
     };
 
@@ -111,6 +156,34 @@ pub fn is_assignment_target(node: Node, lang: &str) -> bool {
             }
             "python" => {
                 parent.kind() == "assignment"
+                    && parent.child_by_field_name("left").map(|n| n.id()) == Some(node.id())
+            }
+            "rust" => {
+                parent.kind() == "assignment_expression"
+                    && parent.child_by_field_name("left").map(|n| n.id()) == Some(node.id())
+            }
+            "csharp" => {
+                parent.kind() == "assignment_expression"
+                    && parent.child_by_field_name("left").map(|n| n.id()) == Some(node.id())
+            }
+            "php" => {
+                parent.kind() == "assignment_expression"
+                    && parent.child_by_field_name("left").map(|n| n.id()) == Some(node.id())
+            }
+            "go" => {
+                parent.kind() == "assignment_statement"
+                    && parent.child_by_field_name("left").map(|n| n.id()) == Some(node.id())
+            }
+            "java" => {
+                parent.kind() == "assignment_expression"
+                    && parent.child_by_field_name("left").map(|n| n.id()) == Some(node.id())
+            }
+            "ruby" => {
+                parent.kind() == "assignment"
+                    && parent.child_by_field_name("left").map(|n| n.id()) == Some(node.id())
+            }
+            "cpp" => {
+                parent.kind() == "assignment_expression"
                     && parent.child_by_field_name("left").map(|n| n.id()) == Some(node.id())
             }
             _ => false,
@@ -162,6 +235,38 @@ mod tests {
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_typescript::LANGUAGE_TSX.into())
+            .unwrap();
+        parser.parse(source, None).unwrap()
+    }
+
+    fn parse_go(source: &str) -> tree_sitter::Tree {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_go::LANGUAGE.into())
+            .unwrap();
+        parser.parse(source, None).unwrap()
+    }
+
+    fn parse_java(source: &str) -> tree_sitter::Tree {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_java::LANGUAGE.into())
+            .unwrap();
+        parser.parse(source, None).unwrap()
+    }
+
+    fn parse_ruby(source: &str) -> tree_sitter::Tree {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_ruby::LANGUAGE.into())
+            .unwrap();
+        parser.parse(source, None).unwrap()
+    }
+
+    fn parse_cpp(source: &str) -> tree_sitter::Tree {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_cpp::LANGUAGE.into())
             .unwrap();
         parser.parse(source, None).unwrap()
     }
@@ -242,6 +347,94 @@ mod tests {
         assert!(
             is_jsx_html_element(div_node, source),
             "DIV (uppercase) should be detected as HTML element"
+        );
+    }
+
+    #[test]
+    fn is_inside_definition_detects_go_function() {
+        let source = b"package main\nfunc foo() {}";
+        let tree = parse_go(std::str::from_utf8(source).unwrap());
+        let foo_node = find_node_by_text(tree.root_node(), "foo", source).unwrap();
+        assert!(
+            is_inside_definition(foo_node, "go"),
+            "foo should be inside function_declaration"
+        );
+    }
+
+    #[test]
+    fn is_inside_import_detects_go_import() {
+        let source = b"package main\nimport \"fmt\"";
+        let tree = parse_go(std::str::from_utf8(source).unwrap());
+        let fmt_node = find_node_by_text(tree.root_node(), "\"fmt\"", source).unwrap();
+        assert!(
+            is_inside_import(fmt_node, "go"),
+            "fmt should be inside import_declaration"
+        );
+    }
+
+    #[test]
+    fn is_inside_definition_detects_java_method() {
+        let source = b"class Foo { void bar() {} }";
+        let tree = parse_java(std::str::from_utf8(source).unwrap());
+        let bar_node = find_node_by_text(tree.root_node(), "bar", source).unwrap();
+        assert!(
+            is_inside_definition(bar_node, "java"),
+            "bar should be inside method_declaration"
+        );
+    }
+
+    #[test]
+    fn is_inside_import_detects_java_import() {
+        let source = b"import java.util.List;";
+        let tree = parse_java(std::str::from_utf8(source).unwrap());
+        let list_node = find_node_by_text(tree.root_node(), "List", source).unwrap();
+        assert!(
+            is_inside_import(list_node, "java"),
+            "List should be inside import_declaration"
+        );
+    }
+
+    #[test]
+    fn is_inside_definition_detects_ruby_method() {
+        let source = b"def foo; end";
+        let tree = parse_ruby(std::str::from_utf8(source).unwrap());
+        let foo_node = find_node_by_text(tree.root_node(), "foo", source).unwrap();
+        assert!(
+            is_inside_definition(foo_node, "ruby"),
+            "foo should be inside method definition"
+        );
+    }
+
+    #[test]
+    fn is_inside_definition_detects_ruby_class() {
+        let source = b"class Foo; end";
+        let tree = parse_ruby(std::str::from_utf8(source).unwrap());
+        let foo_node = find_node_by_text(tree.root_node(), "Foo", source).unwrap();
+        assert!(
+            is_inside_definition(foo_node, "ruby"),
+            "Foo should be inside class definition"
+        );
+    }
+
+    #[test]
+    fn is_inside_definition_detects_cpp_function() {
+        let source = b"void foo() {}";
+        let tree = parse_cpp(std::str::from_utf8(source).unwrap());
+        let foo_node = find_node_by_text(tree.root_node(), "foo", source).unwrap();
+        assert!(
+            is_inside_definition(foo_node, "cpp"),
+            "foo should be inside function_definition"
+        );
+    }
+
+    #[test]
+    fn is_inside_definition_detects_cpp_class() {
+        let source = b"class Foo {};";
+        let tree = parse_cpp(std::str::from_utf8(source).unwrap());
+        let foo_node = find_node_by_text(tree.root_node(), "Foo", source).unwrap();
+        assert!(
+            is_inside_definition(foo_node, "cpp"),
+            "Foo should be inside class_specifier"
         );
     }
 }
