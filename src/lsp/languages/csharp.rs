@@ -67,7 +67,7 @@ impl CSharpClient {
         watch_events_rx: Receiver<DebouncedEvent>,
         binary: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let debug_file = std::fs::File::create("/tmp/csharp.log")?;
+        let debug_file = std::fs::File::create(std::env::temp_dir().join("csharp.log"))?;
         let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
         let process = Command::new(binary)
             .current_dir(root_path)

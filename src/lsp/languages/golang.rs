@@ -71,7 +71,7 @@ impl GoplsClient {
         let process = Command::new(binary)
             .arg("-mode=stdio")
             .arg("-vv")
-            .arg("-logfile=/tmp/gopls.log")
+            .arg(format!("-logfile={}", std::env::temp_dir().join("gopls.log").display()))
             .arg("-rpc.trace")
             .current_dir(root_path)
             .stdin(Stdio::piped())

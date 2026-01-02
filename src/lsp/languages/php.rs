@@ -80,7 +80,7 @@ impl PhpactorClient {
         let config_content = serde_json::json!({
             "logging.enabled": true,
             "logging.level": "info",
-            "logging.path": "/tmp/phpactor.log",
+            "logging.path": std::env::temp_dir().join("phpactor.log").to_string_lossy(),
             "logging.formatter": "json",
             "language_server.trace": false,
         });

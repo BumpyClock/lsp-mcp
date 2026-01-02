@@ -149,7 +149,7 @@ impl ClangdClient {
         watch_events_rx: Receiver<DebouncedEvent>,
         binary: Option<&str>,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let debug_file = std::fs::File::create("/tmp/clangd.log")?;
+        let debug_file = std::fs::File::create(std::env::temp_dir().join("clangd.log"))?;
         let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
 
         let process = Command::new(binary)

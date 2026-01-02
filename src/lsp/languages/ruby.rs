@@ -68,7 +68,7 @@ impl RubyClient {
         binary: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let binary = binary.unwrap_or(Self::DEFAULT_BINARY);
-        let debug_file = std::fs::File::create("/tmp/ruby-lsp.log")?;
+        let debug_file = std::fs::File::create(std::env::temp_dir().join("ruby-lsp.log"))?;
         let process = Command::new(binary)
             .arg("--use-launcher")
             .current_dir(root_path)
