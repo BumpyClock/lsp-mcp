@@ -16,6 +16,7 @@ use tokio::sync::RwLock;
 /// Semantic search tool response.
 pub struct SemanticSearchResponse {
     pub results: Vec<SemanticSearchDisplayResult>,
+    pub hidden_count: usize,
 }
 
 pub struct SemanticSearchDisplayResult {
@@ -46,7 +47,11 @@ impl ToMarkdown for SemanticSearchResponse {
             return output;
         }
 
-        output.push_str(&format!("**Found**: {} results\n\n", self.results.len()));
+        output.push_str(&format!("**Found**: {} results\n", self.results.len()));
+        if self.hidden_count > 0 {
+            output.push_str(&format!("*{} low quality results hidden*\n", self.hidden_count));
+        }
+        output.push('\n');
 
         for result in &self.results {
             output.push_str(&format!(
@@ -344,6 +349,7 @@ pub async fn semantic_search(
         Ok(results) => {
             let query_terms = tokenize_query(&query);
             let mut display_results = Vec::new();
+            let mut hidden_count = 0;
 
             for result in results {
                 // Apply exclude patterns
@@ -367,6 +373,7 @@ pub async fn semantic_search(
                 // Apply min_score filter
                 if let Some(min) = min_score {
                     if result.score < min {
+                        hidden_count += 1;
                         continue;
                     }
                 }
@@ -427,6 +434,7 @@ pub async fn semantic_search(
 
             let response = SemanticSearchResponse {
                 results: display_results,
+                hidden_count,
             };
 
             tool_result_success(response.to_markdown())

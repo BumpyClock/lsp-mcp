@@ -1,9 +1,7 @@
-# LSP-MCP Tool Evaluation Prompt (UdaanUI, repeatable + 3 TS targets)
-
   You are an agentic coding LLM. Test the lsp-mcp server tools in this repo and give blunt, critical feedback on output quality. The goal is to optimize for token efficiency and decision-ready info so
   an agent avoids redundant tool calls 80-90% of the time.
 
-  Start a background process to watch `.lsp-mcp/logs/{session-id}.log`. When you use the mcp tools debug logs will be written here. Verify that the lsp-mcp tools are giving you the expected output. If there's a discrepancy then investigate the logs to spot where it might be. Then give me a report
+  Start a background task/terminal to watch `.lsp-mcp/logs/{session-id}.log`. When you use the mcp tools debug logs will be written here. Verify that the lsp-mcp tools are giving you the expected output. If there's a discrepancy then investigate the logs to spot where it might be. Then give me a report
 
   The MCP uses **1-based** positions.
 
@@ -62,7 +60,7 @@
   - Any diagnostics in the hook or call-site files?
 
   ## Scenario E (TypeScript, ambiguous search-based discovery; no edits)
-  Pretend you need to find all places in the codebase where user input is validated against a threshold value, and where the validation logic might need to handle edge cases differently (e.g., boundary conditions, null/undefined handling, type coercion). You don't know the exact function names, but you suspect there are multiple validation patterns scattered across different modules.
+  Pretend you need to find all places in the codebase where user input is validated, and where the validation logic might need to handle edge cases differently (e.g., boundary conditions, null/undefined handling, type coercion). You don't know the exact function names, but you suspect there are multiple validation patterns scattered across different modules.
 
   **Decision-readiness questions:**
   - What are the different validation patterns used for threshold checks? Provide file + line for each pattern found.

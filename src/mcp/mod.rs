@@ -151,7 +151,7 @@ Before using the LSP tools in this agent, run `initialSetup` to configure langua
                 r#"
 
 ## Semantic Search
-Use `semanticSearch` for natural language code queries.
+Use `semanticSearch` for natural language code queries. Descriptive natural language queries work better than keyword searches.
 Optional params: `limit`, `path`, `file_pattern`, `exclude`, `min_score`, `per_file`, `rerank`, `context_lines`."#,
             );
         }

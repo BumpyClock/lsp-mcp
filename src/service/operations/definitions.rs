@@ -1265,6 +1265,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // DocumentSymbol::deprecated field is deprecated, but we need full struct
     fn convert_document_symbol_ignores_empty_detail() {
         let doc_symbol = DocumentSymbol {
             name: "example".to_string(),
@@ -1292,6 +1293,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // DocumentSymbol::deprecated field is deprecated, but we need full struct
     fn convert_document_symbol_truncates_giant_detail() {
         let giant_type = format!("{{ {} }}", "field: string; ".repeat(50));
         let doc_symbol = DocumentSymbol {

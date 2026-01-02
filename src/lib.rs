@@ -21,6 +21,7 @@ pub mod service;
 pub mod tool_registry;
 mod ast_grep;
 mod utils;
+pub mod shared;
 
 #[cfg(test)]
 mod test_utils;
