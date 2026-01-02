@@ -295,6 +295,7 @@ impl AstGrepClient {
                 range: def_range.clone(),
                 file: file_name.to_string(),
                 lines: lines_text,
+                // TODO: Implement leading/trailing char counts for context display
                 char_count: CharCount {
                     leading: 0,
                     trailing: 0,
