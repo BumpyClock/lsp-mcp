@@ -99,7 +99,7 @@ impl FilteredLspMcpServer {
         let description = match name {
             "callHierarchy" => "Call hierarchy at position; use to trace call flow",
             "findIdentifier" => "Identifier occurrences in a file; use for local search",
-            "findReferences" => "References to a symbol by name; use to see usages",
+            "findReferences" => "References to a symbol by name; summary by default, detail=true for full output",
             "goToDefinition" => "Definition at position; use to jump to source",
             "getDiagnostics" => "Diagnostics for file/workspace; use for errors and warnings",
             "goToImplementation" => "Implementation at position; use for interface/trait impls",

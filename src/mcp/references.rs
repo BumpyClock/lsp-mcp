@@ -4,6 +4,7 @@
 use crate::api_types::Position;
 use crate::config::OutputMode;
 use crate::mcp_response::{format_response, tool_result_from_error, tool_result_success};
+use crate::markdown_formatter::format_references_summary;
 use crate::service::{LspService, ServiceError};
 use crate::service::types::response::{ReferenceCandidate, ReferencesSelection};
 use crate::utils::file_utils::normalize_path;
@@ -14,11 +15,15 @@ pub async fn find_references(
     output_mode: OutputMode,
     symbol: String,
     path: Option<String>,
+    detail: Option<bool>,
+    file_limit: Option<u32>,
     context_lines: Option<u32>,
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> CallToolResult {
-    let context_lines = resolve_context_lines(context_lines);
+    let detail = resolve_detail(detail, context_lines, limit, offset);
+    let context_lines = resolve_context_lines(detail, context_lines);
+    let (limit, offset) = if detail { (limit, offset) } else { (None, None) };
 
     let preferred_path = match path.as_deref() {
         Some(p) => match normalize_path(p) {
@@ -142,7 +147,11 @@ pub async fn find_references(
     {
         Ok(mut response) => {
             response.selection = Some(selection);
-            let resp = format_response(&response, output_mode);
+            let resp = if detail {
+                format_response(&response, output_mode)
+            } else {
+                format_references_summary(&response, file_limit)
+            };
             tool_result_success(resp)
         }
         Err(e) => tool_result_from_error(e),
@@ -254,12 +263,28 @@ pub async fn find_referenced_symbols(
     }
 }
 
-fn resolve_context_lines(context_lines: Option<u32>) -> Option<u32> {
-    Some(context_lines.unwrap_or(1))
+fn resolve_context_lines(detail: bool, context_lines: Option<u32>) -> Option<u32> {
+    if detail {
+        Some(context_lines.unwrap_or(1))
+    } else {
+        None
+    }
 }
 
 fn resolve_include_externals(externals: Option<bool>) -> bool {
     externals.unwrap_or(false)
+}
+
+fn resolve_detail(
+    detail: Option<bool>,
+    context_lines: Option<u32>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> bool {
+    match detail {
+        Some(value) => value,
+        None => context_lines.is_some() || limit.is_some() || offset.is_some(),
+    }
 }
 
 #[cfg(test)]
@@ -268,25 +293,34 @@ mod tests {
     use rand::Rng;
 
     #[test]
-    fn it_defaults_context_lines_to_one_when_omitted() {
-        let context_lines = None;
-        let resolved = resolve_context_lines(context_lines);
+    fn it_defaults_context_lines_to_none_when_summary() {
+        let resolved = resolve_context_lines(false, None);
         assert_eq!(
             resolved,
-            Some(1),
-            "negative: omitted context lines must default to one line"
+            None,
+            "negative: summary output must omit context lines by default"
         );
     }
 
     #[test]
-    fn it_preserves_explicit_context_line_values() {
+    fn it_defaults_context_lines_to_one_when_detail() {
+        let resolved = resolve_context_lines(true, None);
+        assert_eq!(
+            resolved,
+            Some(1),
+            "negative: detail output must default to one context line"
+        );
+    }
+
+    #[test]
+    fn it_preserves_explicit_context_line_values_for_detail() {
         let mut rng = rand::rng();
         let value: u32 = rng.random_range(2..50);
-        let resolved = resolve_context_lines(Some(value));
+        let resolved = resolve_context_lines(true, Some(value));
         assert_eq!(
             resolved,
             Some(value),
-            "negative: explicit context lines must be preserved"
+            "negative: explicit context lines must be preserved for detail mode"
         );
     }
 
@@ -308,6 +342,33 @@ mod tests {
             resolved,
             explicit,
             "negative: explicit externals value must be preserved"
+        );
+    }
+
+    #[test]
+    fn it_defaults_detail_to_summary_without_other_hints() {
+        let resolved = resolve_detail(None, None, None, None);
+        assert!(
+            !resolved,
+            "negative: detail must default to summary without other params"
+        );
+    }
+
+    #[test]
+    fn it_infers_detail_from_context_lines() {
+        let resolved = resolve_detail(None, Some(2), None, None);
+        assert!(
+            resolved,
+            "negative: detail must be inferred when context_lines is provided"
+        );
+    }
+
+    #[test]
+    fn it_respects_explicit_detail_override() {
+        let resolved = resolve_detail(Some(false), Some(2), Some(10), Some(1));
+        assert!(
+            !resolved,
+            "negative: explicit detail flag must override other params"
         );
     }
 }

@@ -56,6 +56,12 @@ pub struct FindReferencesParams {
     pub symbol: String,
     /// Optional file path to disambiguate when multiple symbols share the same name.
     pub path: Option<String>,
+    /// Return full per-reference details (default: false, summary output).
+    pub detail: Option<bool>,
+    /// Max files to include in summary output (default: 10).
+    #[serde(default, deserialize_with = "deserialize_flexible_u32_opt")]
+    #[schemars(with = "Option<u32>")]
+    pub file_limit: Option<u32>,
     #[serde(default, deserialize_with = "deserialize_flexible_u32_opt")]
     #[schemars(with = "Option<u32>")]
     pub context_lines: Option<u32>,

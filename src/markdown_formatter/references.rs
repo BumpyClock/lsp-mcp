@@ -5,6 +5,120 @@ use super::{escape_inline_code, ToMarkdown};
 use crate::api_types::ReferencedSymbolsResponse;
 use crate::service::types::response::{McpReferencesResponse, McpReferenceLocation, ReferenceType};
 
+pub fn format_references_summary(
+    response: &McpReferencesResponse,
+    file_limit: Option<u32>,
+) -> String {
+    let mut output = String::new();
+    let symbol_name = escape_inline_code(&response.selected_identifier.name);
+
+    output.push_str(&format!(
+        "References to `{}` ({} total)\n",
+        symbol_name, response.total_count
+    ));
+
+    if let Some(selection) = &response.selection {
+        let chosen_name = escape_inline_code(&selection.chosen.name);
+        let chosen_kind = selection.chosen.kind.as_deref().unwrap_or("unknown");
+        let chosen_pos = &selection.chosen.position;
+        if let Some(module) = &selection.chosen.module {
+            output.push_str(&format!(
+                "Selected candidate: `{}` ({}) — {}:{}:{} (module: {})\n",
+                chosen_name,
+                chosen_kind,
+                selection.chosen.path,
+                chosen_pos.line,
+                chosen_pos.character,
+                escape_inline_code(module)
+            ));
+        } else {
+            output.push_str(&format!(
+                "Selected candidate: `{}` ({}) — {}:{}:{}\n",
+                chosen_name,
+                chosen_kind,
+                selection.chosen.path,
+                chosen_pos.line,
+                chosen_pos.character
+            ));
+        }
+    }
+
+    let mut definitions: Vec<String> = Vec::new();
+    let mut reexports: Vec<String> = Vec::new();
+    for file_group in &response.by_file {
+        for reference in &file_group.refs {
+            let entry = format!(
+                "{}:{}:{}",
+                file_group.path, reference.position.line, reference.position.character
+            );
+            match reference.reference_type {
+                ReferenceType::Definition => definitions.push(entry),
+                ReferenceType::ReExport => reexports.push(entry),
+                _ => {}
+            }
+        }
+    }
+
+    if !definitions.is_empty() {
+        if definitions.len() == 1 {
+            output.push_str(&format!("Definition: {}\n", definitions[0]));
+        } else {
+            output.push_str(&format!(
+                "Definitions ({}): {}\n",
+                definitions.len(),
+                definitions.join(", ")
+            ));
+        }
+    }
+
+    if !reexports.is_empty() {
+        if reexports.len() == 1 {
+            output.push_str(&format!("Re-export: {}\n", reexports[0]));
+        } else {
+            output.push_str(&format!(
+                "Re-exports ({}): {}\n",
+                reexports.len(),
+                reexports.join(", ")
+            ));
+        }
+    }
+
+    let by_type = &response.by_type;
+    if response.total_count > 0 {
+        output.push_str(&format!(
+            "By type: def {}, import {}, re-export {}, call {}\n",
+            by_type.definition, by_type.import, by_type.reexport, by_type.call
+        ));
+    }
+
+    let mut file_counts: Vec<(String, u32)> = response
+        .by_file
+        .iter()
+        .map(|group| (group.path.clone(), group.count))
+        .collect();
+    file_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    let total_files = file_counts.len();
+    let max_files = file_limit.unwrap_or(10) as usize;
+    if max_files > 0 && !file_counts.is_empty() {
+        let shown: Vec<String> = file_counts
+            .iter()
+            .take(max_files)
+            .map(|(path, count)| format!("{} ({})", path, count))
+            .collect();
+        output.push_str(&format!("Used in: {}\n", shown.join(", ")));
+
+        if total_files > max_files {
+            output.push_str(&format!(
+                "[Showing {} of {} files]\n",
+                max_files, total_files
+            ));
+        }
+    }
+
+    output
+}
+
 impl ToMarkdown for McpReferencesResponse {
     fn to_markdown(&self) -> String {
         let mut output = String::new();
@@ -228,6 +342,7 @@ mod tests {
     use crate::api_types::{CodeContext, FileRange, Identifier, Position, Range};
     use crate::service::types::response::{
         FileGroup, McpReferenceLocation, ReferenceCandidate, ReferenceType, ReferencesSelection,
+        TypeCounts,
     };
     use rand::Rng;
 
@@ -291,6 +406,19 @@ mod tests {
             },
             snippet: None,
             reference_type: ReferenceType::Call,
+        }
+    }
+
+    fn create_reference_with_type(line: u32, reference_type: ReferenceType) -> McpReferenceLocation {
+        McpReferenceLocation {
+            path: None,
+            position: Position { line, character: 5 },
+            symbol_range: Range {
+                start: Position { line, character: 5 },
+                end: Position { line, character: 15 },
+            },
+            snippet: None,
+            reference_type,
         }
     }
 
@@ -907,6 +1035,64 @@ mod tests {
             !markdown.contains("WRONG"),
             "negative: must not display content from context lines before the reference. Got: {}",
             markdown
+        );
+    }
+
+    #[test]
+    fn it_formats_summary_with_counts_and_files() {
+        let response = McpReferencesResponse {
+            raw_response: None,
+            selected_identifier: create_test_identifier("LspClient"),
+            selection: None,
+            limit: 50,
+            offset: 0,
+            truncated: false,
+            total_count: 4,
+            by_file: vec![
+                FileGroup {
+                    path: "src/alpha.rs".to_string(),
+                    count: 3,
+                    refs: vec![
+                        create_reference_with_type(10, ReferenceType::Call),
+                        create_reference_with_type(12, ReferenceType::Import),
+                        create_reference_with_type(14, ReferenceType::Definition),
+                    ],
+                },
+                FileGroup {
+                    path: "src/beta.rs".to_string(),
+                    count: 1,
+                    refs: vec![create_reference_with_type(4, ReferenceType::ReExport)],
+                },
+            ],
+            by_type: TypeCounts {
+                definition: 1,
+                import: 1,
+                reexport: 1,
+                call: 1,
+            },
+        };
+
+        let summary = format_references_summary(&response, Some(5));
+
+        assert!(
+            summary.contains("References to `LspClient`"),
+            "negative: summary must include header"
+        );
+        assert!(
+            summary.contains("Definition: src/alpha.rs:14:5"),
+            "negative: summary must include definition location"
+        );
+        assert!(
+            summary.contains("Re-export: src/beta.rs:4:5"),
+            "negative: summary must include re-export location"
+        );
+        assert!(
+            summary.contains("Used in:"),
+            "negative: summary must include file list"
+        );
+        assert!(
+            summary.contains("By type:"),
+            "negative: summary must include type counts"
         );
     }
 }

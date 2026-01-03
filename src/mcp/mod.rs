@@ -245,7 +245,7 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "findReferences", description = "References to symbol by name. Optional: path for disambiguation")]
+    #[tool(name = "findReferences", description = "References to symbol by name. Summary by default; set detail=true for per-reference output.")]
     async fn find_references(
         &self,
         Parameters(params): Parameters<FindReferencesParams>,
@@ -264,6 +264,8 @@ impl LspMcpServer {
             self.output_mode,
             params.symbol,
             params.path,
+            params.detail,
+            params.file_limit,
             params.context_lines,
             params.limit,
             params.offset,
