@@ -245,7 +245,7 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "findReferences", description = "References to symbol at position")]
+    #[tool(name = "findReferences", description = "References to symbol by name. Optional: path for disambiguation")]
     async fn find_references(
         &self,
         Parameters(params): Parameters<FindReferencesParams>,
@@ -254,18 +254,16 @@ impl LspMcpServer {
         tracing::debug!(
             request_id = %request_id,
             tool = "findReferences",
-            path = %params.path,
-            line = params.line,
-            character = params.character,
+            symbol = %params.symbol,
+            path = ?params.path,
             "Processing tool request"
         );
 
         let output = references::find_references(
             &self.service,
             self.output_mode,
+            params.symbol,
             params.path,
-            params.line,
-            params.character,
             params.context_lines,
             params.limit,
             params.offset,

@@ -61,22 +61,7 @@ impl FilteredLspMcpServer {
         schema.remove("$schema");
         schema.remove("title");
         schema.remove("description");
-        let required = schema
-            .get("required")
-            .and_then(Value::as_array)
-            .map(|required| {
-                required
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(String::from)
-                    .collect::<HashSet<String>>()
-            });
         if let Some(Value::Object(properties)) = schema.get_mut("properties") {
-            if let Some(required) = &required {
-                properties.retain(|name, _| required.contains(name));
-            } else {
-                properties.clear();
-            }
             if properties.is_empty() {
                 schema.remove("properties");
                 return;
@@ -114,7 +99,7 @@ impl FilteredLspMcpServer {
         let description = match name {
             "callHierarchy" => "Call hierarchy at position; use to trace call flow",
             "findIdentifier" => "Identifier occurrences in a file; use for local search",
-            "findReferences" => "References at position; use to see usages",
+            "findReferences" => "References to a symbol by name; use to see usages",
             "goToDefinition" => "Definition at position; use to jump to source",
             "getDiagnostics" => "Diagnostics for file/workspace; use for errors and warnings",
             "goToImplementation" => "Implementation at position; use for interface/trait impls",
@@ -335,10 +320,10 @@ mod tests {
             .get("limit")
             .and_then(Value::as_object)
             .expect("Property schema missing");
-        assert!(
-            !properties.contains_key("offset"),
-            "Optional property was not removed"
-        );
+        let offset_schema = properties
+            .get("offset")
+            .and_then(Value::as_object)
+            .expect("Optional property schema missing");
         assert_eq!(
             limit_schema.get("type"),
             Some(&Value::String("integer".to_string())),
@@ -360,6 +345,17 @@ mod tests {
         assert!(
             !limit_schema.contains_key("nullable"),
             "Property schema still included nullable"
+        );
+
+        assert_eq!(
+            offset_schema.get("type"),
+            Some(&Value::String("string".to_string())),
+            "Optional property type was not preserved"
+        );
+        assert_eq!(
+            offset_schema.len(),
+            1,
+            "Optional property schema includes extra fields"
         );
     }
 

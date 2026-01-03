@@ -1048,6 +1048,7 @@ fn internal_helper() {
                 },
                 kind: Some("function".to_string()),
             },
+            selection: None,
             limit: 200,
             offset: 0,
             truncated: false,

@@ -14,6 +14,67 @@ impl ToMarkdown for McpReferencesResponse {
             self.selected_identifier.name, self.total_count
         ));
 
+        if let Some(selection) = &self.selection {
+            let chosen_name = escape_inline_code(&selection.chosen.name);
+            let chosen_kind = selection
+                .chosen
+                .kind
+                .as_deref()
+                .unwrap_or("unknown");
+            let chosen_path = &selection.chosen.path;
+            let chosen_pos = &selection.chosen.position;
+
+            if let Some(module) = &selection.chosen.module {
+                output.push_str(&format!(
+                    "Selected candidate: `{}` ({}) — {}:{}:{} (module: {})\n",
+                    chosen_name,
+                    chosen_kind,
+                    chosen_path,
+                    chosen_pos.line,
+                    chosen_pos.character,
+                    escape_inline_code(module)
+                ));
+            } else {
+                output.push_str(&format!(
+                    "Selected candidate: `{}` ({}) — {}:{}:{}\n",
+                    chosen_name,
+                    chosen_kind,
+                    chosen_path,
+                    chosen_pos.line,
+                    chosen_pos.character
+                ));
+            }
+
+            if !selection.others.is_empty() {
+                output.push_str(&format!(
+                    "Other candidates ({})\n",
+                    selection.others.len()
+                ));
+                for (idx, other) in selection.others.iter().enumerate() {
+                    let other_name = escape_inline_code(&other.name);
+                    let other_kind = other.kind.as_deref().unwrap_or("unknown");
+                    if let Some(module) = &other.module {
+                        output.push_str(&format!(
+                            "  {}) `{}` ({}) — {} (module: {})\n",
+                            idx + 1,
+                            other_name,
+                            other_kind,
+                            other.path,
+                            escape_inline_code(module)
+                        ));
+                    } else {
+                        output.push_str(&format!(
+                            "  {}) `{}` ({}) — {}\n",
+                            idx + 1,
+                            other_name,
+                            other_kind,
+                            other.path
+                        ));
+                    }
+                }
+            }
+        }
+
         for file_group in &self.by_file {
             let ref_word = if file_group.count == 1 { "ref" } else { "refs" };
             output.push_str(&format!(
@@ -165,7 +226,9 @@ impl ToMarkdown for ReferencedSymbolsResponse {
 mod tests {
     use super::*;
     use crate::api_types::{CodeContext, FileRange, Identifier, Position, Range};
-    use crate::service::types::response::{FileGroup, McpReferenceLocation, ReferenceType};
+    use crate::service::types::response::{
+        FileGroup, McpReferenceLocation, ReferenceCandidate, ReferenceType, ReferencesSelection,
+    };
     use rand::Rng;
 
     fn random_line() -> u32 {
@@ -239,6 +302,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier(&symbol_name),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -260,6 +324,60 @@ mod tests {
     }
 
     #[test]
+    fn it_renders_candidate_selection_when_present() {
+        let response = McpReferencesResponse {
+            raw_response: None,
+            selected_identifier: create_test_identifier("Store"),
+            selection: Some(ReferencesSelection {
+                chosen: ReferenceCandidate {
+                    name: "Store".to_string(),
+                    kind: Some("class".to_string()),
+                    module: Some("App".to_string()),
+                    path: "src/app/store.ts".to_string(),
+                    position: Position { line: 12, character: 3 },
+                },
+                others: vec![
+                    ReferenceCandidate {
+                        name: "Store".to_string(),
+                        kind: Some("type".to_string()),
+                        module: None,
+                        path: "src/types/store.ts".to_string(),
+                        position: Position { line: 5, character: 1 },
+                    },
+                    ReferenceCandidate {
+                        name: "Store".to_string(),
+                        kind: Some("class".to_string()),
+                        module: Some("Legacy".to_string()),
+                        path: "src/legacy/store.ts".to_string(),
+                        position: Position { line: 9, character: 1 },
+                    },
+                ],
+            }),
+            limit: 50,
+            offset: 0,
+            truncated: false,
+            total_count: 0,
+            by_file: vec![],
+            by_type: Default::default(),
+        };
+
+        let markdown = response.to_markdown();
+
+        assert!(
+            markdown.contains("Selected candidate:"),
+            "negative: selection header must be rendered"
+        );
+        assert!(
+            markdown.contains("Other candidates"),
+            "negative: alternates header must be rendered"
+        );
+        assert!(
+            markdown.contains("src/app/store.ts"),
+            "negative: chosen filepath must be rendered"
+        );
+    }
+
+    #[test]
     fn it_includes_reference_type_tags() {
         let reference = McpReferenceLocation {
             path: None,
@@ -275,6 +393,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("scoreMember"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -303,6 +422,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("handleClick"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -331,6 +451,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("processData"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -362,6 +483,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("testFn"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -390,6 +512,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("store"),
+            selection: None,
             limit: showing,
             offset: 0,
             truncated: true,
@@ -425,6 +548,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("myFunc"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -457,6 +581,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("store"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -505,6 +630,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("msg"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -531,6 +657,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("unusedSymbol"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -556,6 +683,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("singleUse"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -583,6 +711,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("process"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -670,6 +799,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("authenticate"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,
@@ -752,6 +882,7 @@ mod tests {
         let response = McpReferencesResponse {
             raw_response: None,
             selected_identifier: create_test_identifier("testSymbol"),
+            selection: None,
             limit: 50,
             offset: 0,
             truncated: false,

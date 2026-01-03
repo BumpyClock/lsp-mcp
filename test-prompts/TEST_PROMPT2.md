@@ -133,10 +133,10 @@
   - Relative: `useFileViewerState` at `src/Pages/Class/ClassTeacherPage/Grading/HomeworkFileViewer.tsx:119:30`
 
   ### 2) `findReferences`
-  - Relative: `scoreMember` at `src/utilities/memberScoring.ts:36:17`
-  - Absolute: `isAttendanceBelowPromotion` at `$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/utilities/promotionCriteriaUtils.ts:30:14`
-  - Relative: `filterNavigationByPermissions` at `src/Components/Navigation/navigationConstants.ts:185:14`
-  - Relative: `useFileViewerState` at `src/Pages/Class/ClassTeacherPage/Grading/hooks/useFileViewerState.ts:126:14`
+  - Relative: `findReferences(symbol: "scoreMember", path: "src/utilities/memberScoring.ts")`
+  - Absolute: `findReferences(symbol: "isAttendanceBelowPromotion", path: "$HOME/Projects/Gurukul/SchoolWeb/UdaanUI/src/utilities/promotionCriteriaUtils.ts")`
+  - Relative: `findReferences(symbol: "filterNavigationByPermissions", path: "src/Components/Navigation/navigationConstants.ts")`
+  - Relative: `findReferences(symbol: "useFileViewerState", path: "src/Pages/Class/ClassTeacherPage/Grading/hooks/useFileViewerState.ts")`
 
   ### 3) `callHierarchy` (outgoing)
   - Relative: `scoreMember` at `src/utilities/memberScoring.ts:36:17`

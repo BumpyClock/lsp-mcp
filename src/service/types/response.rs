@@ -85,6 +85,27 @@ pub struct TypeCounts {
     pub reexport: u32,
 }
 
+/// Summary information about a symbol candidate used for name-based resolution.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct ReferenceCandidate {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Module/container name if available from the language server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module: Option<String>,
+    pub path: String,
+    pub position: Position,
+}
+
+/// Name-based selection metadata for findReferences.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct ReferencesSelection {
+    pub chosen: ReferenceCandidate,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<ReferenceCandidate>,
+}
+
 fn is_zero(val: &u32) -> bool {
     *val == 0
 }
@@ -94,6 +115,9 @@ pub struct McpReferencesResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_response: Option<Value>,
     pub selected_identifier: Identifier,
+    /// Present when the tool had to resolve a name-based query into a concrete symbol candidate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection: Option<ReferencesSelection>,
     pub limit: u32,
     pub offset: u32,
     pub truncated: bool,

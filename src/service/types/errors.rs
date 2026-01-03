@@ -11,6 +11,7 @@ pub enum ServiceError {
     Lsp(LspManagerError),
     IdentifierSelection(PositionError),
     CallHierarchy(CallHierarchyError),
+    SymbolResolution(String),
     Serialization(String),
     InvalidPath(String),
 }
@@ -24,6 +25,9 @@ impl fmt::Display for ServiceError {
             }
             ServiceError::CallHierarchy(e) => {
                 write!(f, "Call hierarchy failed because {e}")
+            }
+            ServiceError::SymbolResolution(message) => {
+                write!(f, "Symbol resolution failed because {message}")
             }
             ServiceError::Serialization(message) => {
                 write!(f, "Serialization failed because {message}")
@@ -40,6 +44,10 @@ impl ServiceError {
         match self {
             ServiceError::IdentifierSelection(e) => e.suggestions(),
             ServiceError::CallHierarchy(e) => e.suggestions(),
+            ServiceError::SymbolResolution(_) => vec![
+                "Try workspaceSymbol to see possible matches".to_string(),
+                "If multiple symbols share the same name, pass 'path' to disambiguate".to_string(),
+            ],
             ServiceError::Lsp(_) | ServiceError::Serialization(_) | ServiceError::InvalidPath(_) => vec![],
         }
     }

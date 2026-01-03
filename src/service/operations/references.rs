@@ -158,6 +158,7 @@ pub(crate) async fn find_references_impl(
     Ok(McpReferencesResponse {
         raw_response,
         selected_identifier,
+        selection: None,
         limit: limit_val,
         offset: offset_val,
         truncated,

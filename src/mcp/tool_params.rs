@@ -49,16 +49,13 @@ pub struct GoToDefinitionParams {
 }
 
 /// Parameters for the findReferences tool.
-/// Returns all references to a symbol at a given position.
+/// Returns all references to a symbol by name.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FindReferencesParams {
-    pub path: String,
-    #[serde(deserialize_with = "deserialize_flexible_u32")]
-    #[schemars(with = "u32")]
-    pub line: u32,
-    #[serde(deserialize_with = "deserialize_flexible_u32")]
-    #[schemars(with = "u32")]
-    pub character: u32,
+    /// Symbol name to find references for (e.g., "LspClient")
+    pub symbol: String,
+    /// Optional file path to disambiguate when multiple symbols share the same name.
+    pub path: Option<String>,
     #[serde(default, deserialize_with = "deserialize_flexible_u32_opt")]
     #[schemars(with = "Option<u32>")]
     pub context_lines: Option<u32>,
