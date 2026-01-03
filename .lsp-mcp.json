@@ -9,7 +9,9 @@
     ],
     "disable": [
       "listFiles",
-      "readSourceCode"
+      "readSourceCode",
+      "findIdentifier",
+      "findReferencedSymbols"
     ]
   },
   "semantic_search": {

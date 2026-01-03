@@ -4,6 +4,7 @@
 use crate::mcp::LspMcpServer;
 use crate::mcp_response::tool_disabled_message;
 use crate::session::new_request_id;
+use crate::stats::StatsStore;
 use rmcp::{
     ServerHandler,
     model::{
@@ -26,14 +27,16 @@ use serde_json::Value;
 pub struct FilteredLspMcpServer {
     inner: LspMcpServer,
     enabled_tools: HashSet<String>,
+    stats_store: Arc<StatsStore>,
 }
 
 impl FilteredLspMcpServer {
     /// Create a new filtered handler wrapping the inner handler.
-    pub fn new(inner: LspMcpServer, enabled_tools: HashSet<String>) -> Self {
+    pub fn new(inner: LspMcpServer, enabled_tools: HashSet<String>, stats_store: Arc<StatsStore>) -> Self {
         Self {
             inner,
             enabled_tools,
+            stats_store,
         }
     }
 
@@ -153,11 +156,19 @@ impl ServerHandler for FilteredLspMcpServer {
     ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
         let enabled = &self.enabled_tools;
         let tool_name = request.name.to_string();
+        let stats_store = Arc::clone(&self.stats_store);
         async move {
             if !enabled.contains(&tool_name) {
+                stats_store.record_call(&tool_name, false).await;
                 return Ok(self.disabled_tool_result(&tool_name));
             }
-            self.inner.call_tool(request, context).await
+            let result = self.inner.call_tool(request, context).await;
+            let success = match &result {
+                Ok(call_result) => call_result.is_error != Some(true),
+                Err(_) => false,
+            };
+            stats_store.record_call(&tool_name, success).await;
+            result
         }
     }
 }
@@ -199,7 +210,8 @@ mod tests {
         };
 
         let server = LspMcpServer::new(Arc::new(manager), &config, workspace_root);
-        let filtered_server = FilteredLspMcpServer::new(server, enabled_tools);
+        let stats_store = Arc::new(StatsStore::new(workspace_root).await);
+        let filtered_server = FilteredLspMcpServer::new(server, enabled_tools, stats_store);
         (filtered_server, temp_dir)
     }
 

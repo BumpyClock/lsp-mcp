@@ -6,6 +6,7 @@ use crate::lsp::manager::Manager;
 use crate::mcp::filter::FilteredLspMcpServer;
 use crate::mcp::LspMcpServer;
 use crate::semantic_search::SemanticSearchManager;
+use crate::stats::StatsStore;
 use log::info;
 use rmcp::transport::stdio;
 use rmcp::ServiceExt;
@@ -55,8 +56,11 @@ pub async fn run_server(
         config.tools.preset
     );
 
+    // Initialize stats store
+    let stats_store = Arc::new(StatsStore::new(workspace_root).await);
+
     // Wrap with filtered handler to apply tool enable/disable filtering
-    let filtered_server = FilteredLspMcpServer::new(server, enabled_tools);
+    let filtered_server = FilteredLspMcpServer::new(server, enabled_tools, stats_store);
 
     // Create stdio transport and serve
     let transport = stdio();

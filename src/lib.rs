@@ -18,6 +18,7 @@ pub mod mcp_response;
 pub mod semantic_search;
 pub mod session;
 pub mod service;
+pub mod stats;
 pub mod tool_registry;
 mod ast_grep;
 mod utils;
