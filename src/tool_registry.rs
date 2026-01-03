@@ -11,7 +11,7 @@ pub const ALL_TOOLS: &[&str] = &[
     "getSymbolDefinition",
     "findReferences",
     "hover",
-    "workspaceSymbol",
+    "findSymbol",
     "goToImplementation",
     "callHierarchy",
     "findReferencedSymbols",
@@ -22,10 +22,11 @@ pub const ALL_TOOLS: &[&str] = &[
     "getDiagnostics",
     "initialSetup",
     "semanticSearch",
+    "codemap",
 ];
 
 /// Tools that require explicit opt-in, even in full preset.
-pub const OPT_IN_TOOLS: &[&str] = &["semanticSearch"];
+pub const OPT_IN_TOOLS: &[&str] = &["semanticSearch", "codemap"];
 
 /// Core tools (Tier 1+2): Enabled by default in "standard" preset
 pub const CORE_TOOLS: &[&str] = &[
@@ -34,7 +35,7 @@ pub const CORE_TOOLS: &[&str] = &[
     "findReferences",
     "hover",
     "getDiagnostics",
-    "workspaceSymbol",
+    "findSymbol",
     "documentSymbol",
     "callHierarchy",
     "findReferencedSymbols",
@@ -86,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_all_tools_count() {
-        assert_eq!(ALL_TOOLS.len(), 16, "Expected 16 total tools");
+        assert_eq!(ALL_TOOLS.len(), 17, "Expected 17 total tools");
     }
 
     #[test]
@@ -120,7 +121,7 @@ mod tests {
         assert!(tools.contains("hover"));
         assert!(tools.contains("getDiagnostics"));
         // Plus additional core tools
-        assert!(tools.contains("workspaceSymbol"));
+        assert!(tools.contains("findSymbol"));
         assert!(tools.contains("documentSymbol"));
         assert!(tools.contains("callHierarchy"));
         assert!(tools.contains("findReferencedSymbols"));

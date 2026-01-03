@@ -5,7 +5,8 @@
   "tools": {
     "preset": "full",
     "enable": [
-      "semanticSearch"
+      "semanticSearch",
+      "codemap"
     ],
     "disable": [
       "listFiles",

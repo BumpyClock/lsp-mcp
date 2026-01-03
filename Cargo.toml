@@ -64,6 +64,7 @@ rusqlite = { version = "0.38.0", features = ["bundled"] }
 blake3 = "1.5"
 parking_lot = "0.12"
 hex = "0.4"
+thiserror = "2.0.17"
 
 [dev-dependencies]
 tempfile = "3.8.1"

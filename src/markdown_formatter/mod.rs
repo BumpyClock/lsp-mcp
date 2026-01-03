@@ -2,6 +2,7 @@
 // ABOUTME: Provides ToMarkdown trait and utility functions for consistent markdown generation.
 
 mod call_hierarchy;
+mod codemap;
 mod definition;
 mod diagnostics;
 mod files;
@@ -10,6 +11,7 @@ mod hover;
 mod references;
 mod symbols;
 
+pub use codemap::format_codemap_response;
 pub use files::SourceCodeResponse;
 pub use hover::HoverBatchResponse;
 pub use references::format_references_summary;

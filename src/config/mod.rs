@@ -255,7 +255,7 @@ mod tests {
         assert!(tools.contains("findReferences"));
         assert!(tools.contains("hover"));
         assert!(tools.contains("getDiagnostics"));
-        assert!(tools.contains("workspaceSymbol"));
+        assert!(tools.contains("findSymbol"));
         assert!(tools.contains("documentSymbol"));
         assert!(tools.contains("callHierarchy"));
         assert!(tools.contains("findReferencedSymbols"));

@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 pub mod api_types;
+pub mod codemap;
 pub mod config;
 pub mod lsp;
 pub mod logging;

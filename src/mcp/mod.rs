@@ -2,6 +2,7 @@
 // ABOUTME: Organizes tool handlers into submodules with public server exports.
 
 mod call_hierarchy;
+mod codemap;
 mod definitions;
 mod diagnostics;
 mod files;
@@ -17,6 +18,7 @@ pub mod tool_params;
 pub use filter::FilteredLspMcpServer;
 pub use server::run_server;
 
+use crate::codemap::CodemapManager;
 use crate::config::{DebugConfig, LspMcpConfig, OutputMode};
 use crate::lsp::registry::LanguageMetadata;
 use crate::api_types::SupportedLanguages;
@@ -51,6 +53,7 @@ pub struct LspMcpServer {
     workspace_root: PathBuf,
     enabled_tools: HashSet<String>,
     semantic_search_manager: Option<Arc<RwLock<SemanticSearchManager>>>,
+    codemap_manager: Option<Arc<CodemapManager>>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -64,6 +67,7 @@ impl LspMcpServer {
             workspace_root: workspace_root.to_path_buf(),
             enabled_tools: config.enabled_tools(),
             semantic_search_manager: None,
+            codemap_manager: None,
             tool_router: Self::tool_router(),
         }
     }
@@ -71,6 +75,12 @@ impl LspMcpServer {
     /// Set the semantic search manager for this server.
     pub fn with_semantic_search(mut self, manager: Arc<RwLock<SemanticSearchManager>>) -> Self {
         self.semantic_search_manager = Some(manager);
+        self
+    }
+
+    /// Set the codemap manager for this server.
+    pub fn with_codemap(mut self, manager: Arc<CodemapManager>) -> Self {
+        self.codemap_manager = Some(manager);
         self
     }
 
@@ -338,7 +348,7 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "workspaceSymbol", description = "Search symbols by name")]
+    #[tool(name = "findSymbol", description = "Search symbols by name")]
     async fn workspace_symbol(
         &self,
         Parameters(params): Parameters<WorkspaceSymbolParams>,
@@ -346,7 +356,7 @@ impl LspMcpServer {
         let request_id = new_request_id();
         tracing::debug!(
             request_id = %request_id,
-            tool = "workspaceSymbol",
+            tool = "findSymbol",
             query = %params.query,
             "Processing tool request"
         );
@@ -676,6 +686,53 @@ Restart your agent for new settings to take effect."#,
             None => {
                 tool_result_success(
                     "Semantic search is disabled. Enable it in `.lsp-mcp.json`:\n\n```json\n{\n  \"tools\": {\n    \"enable\": [\"semanticSearch\"]\n  },\n  \"semantic_search\": {\n    \"enabled\": true,\n    \"embedder\": {\n      \"provider\": \"fastembed\"\n    }\n  }\n}\n```".to_string()
+                )
+            }
+        };
+
+        tracing::debug!(
+            request_id = %request_id,
+            "Tool request completed"
+        );
+
+        Ok(self.wrap_output(request_id, output))
+    }
+
+    #[tool(
+        name = "codemap",
+        description = "Query codebase dependency graph. Modes: overview (high-level map), impact (reverse deps), context (local subgraph)"
+    )]
+    async fn codemap_tool(
+        &self,
+        Parameters(params): Parameters<CodemapParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "codemap",
+            mode = %params.mode,
+            "Processing tool request"
+        );
+
+        let output = match &self.codemap_manager {
+            Some(manager) => {
+                codemap::codemap(
+                    manager,
+                    params.mode,
+                    params.target,
+                    params.edge_type,
+                    params.depth,
+                    params.detail,
+                    params.limit,
+                    params.offset,
+                    params.scope,
+                    params.externals,
+                )
+                .await
+            }
+            None => {
+                tool_result_success(
+                    "Codemap is disabled. Enable it in `.lsp-mcp.json`:\n\n```json\n{\n  \"tools\": {\n    \"enable\": [\"codemap\"]\n  }\n}\n```".to_string()
                 )
             }
         };

@@ -65,7 +65,7 @@
       }
     },
     {
-      "name": "workspaceSymbol",
+      "name": "findSymbol",
       "description": "Search symbols by name; use to locate definitions",
       "inputSchema": {
         "properties": {

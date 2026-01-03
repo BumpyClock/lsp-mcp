@@ -231,3 +231,45 @@ pub struct SemanticSearchParams {
     #[schemars(with = "Option<u32>")]
     pub context_lines: Option<u32>,
 }
+
+/// Parameters for the codemap tool.
+/// Queries codebase dependency graph for structure, impact, and context analysis.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CodemapParams {
+    /// Query mode: "overview" | "impact" | "context"
+    pub mode: String,
+
+    /// Target for impact/context queries (symbol name or file path)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+
+    /// Filter by edge type: "defines" | "imports" | "calls"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edge_type: Option<String>,
+
+    /// Traversal depth (default: 2)
+    #[serde(default, deserialize_with = "deserialize_flexible_u32_opt")]
+    #[schemars(with = "Option<u32>")]
+    pub depth: Option<u32>,
+
+    /// Output detail: "summary" (default) | "full"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+
+    /// Max results (default: 50)
+    #[serde(default, deserialize_with = "deserialize_flexible_u32_opt")]
+    #[schemars(with = "Option<u32>")]
+    pub limit: Option<u32>,
+
+    /// Pagination offset
+    #[serde(default, deserialize_with = "deserialize_flexible_u32_opt")]
+    #[schemars(with = "Option<u32>")]
+    pub offset: Option<u32>,
+
+    /// Directory scope filter
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+
+    /// Include external dependencies
+    pub externals: Option<bool>,
+}

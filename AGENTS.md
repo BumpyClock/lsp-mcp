@@ -1,7 +1,8 @@
  
-Use the lspMCP server or native LSP tool for code navigation, symbol lookup, and diagnostics; prefer it over manual search when possible.
+Use the `lspMCP` for code navigation, symbol lookup, and diagnostics; prefer it over manual search when possible.
 
 We are in active development. There are no breaking changes for MCP responses. It's okay to change the schema.
+
 
 ## Core LSP-MCP Philosophy
 - Make Language Server Protocol (LSP) features available via MCP tools.
