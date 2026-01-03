@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "lsp-mcp": {
+    "lspMCP": {
       "type": "stdio",
       "command": "lsp-mcp"
     }
