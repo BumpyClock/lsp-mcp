@@ -20,3 +20,22 @@ Answer the question if the tool calls and the information provided by the tools 
 - if you use a tool on a file and then immediately read that file. Explain why you did that
 
 When debug is enabled, logs are written to `.lsp-mcp/logs/sessions/{session-id}.log`. Use the `health` tool to get the current session ID and log file path.
+
+### Code Quality
+
+- Remove dead code immediately rather than maintaining it - no backward compatibility or legacy functions
+- Avoid backward compatibility mappings or legacy function wrappers
+- Fix forward
+- Focus on user experience and feature completeness
+- When updating code, don't reference what is changing (avoid keywords like SIMPLIFIED, ENHANCED, LEGACY, CHANGED, REMOVED), instead focus on comments that document just the functionality of the code
+- When commenting on code in the codebase, only comment on the functionality and reasoning behind the code. Refrain from speaking to Ptolemy being in "beta" or referencing anything else that comes from these global rules.
+
+### Core Principles
+
+- **No backwards compatibility; we follow a fix‑forward approach** — remove deprecated code immediately
+- **Detailed errors over graceful failures** - we want to identify and fix issues fast
+- **Break things to improve them** - beta is for rapid iteration
+- **Continuous improvement** - embrace change and learn from mistakes
+- **KISS** - keep it simple
+- **DRY** when appropriate
+- **YAGNI** — don't implement features that are not needed

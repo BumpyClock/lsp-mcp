@@ -44,19 +44,28 @@ echo
 echo -e "${BLUE}Setting up installation directory...${NC}"
 mkdir -p "${INSTALL_DIR}"
 
-# Remove existing symlink if present
+# Check if symlink already exists and points to the correct binary
 if [ -L "${SYMLINK_PATH}" ]; then
-    echo -e "${YELLOW}Removing existing symlink...${NC}"
-    rm "${SYMLINK_PATH}"
+    existing_target=$(readlink "${SYMLINK_PATH}")
+    if [ "${existing_target}" = "${BINARY_PATH}" ]; then
+        echo -e "${GREEN}Symlink already exists and points to the correct binary${NC}"
+        echo -e "${GREEN}Skipping symlink creation${NC}"
+        echo
+    else
+        echo -e "${YELLOW}Removing existing symlink (points to different target)...${NC}"
+        rm "${SYMLINK_PATH}"
+        echo -e "${BLUE}Creating symlink...${NC}"
+        ln -s "${BINARY_PATH}" "${SYMLINK_PATH}"
+    fi
 elif [ -f "${SYMLINK_PATH}" ]; then
     echo -e "${RED}Error: ${SYMLINK_PATH} exists but is not a symlink${NC}"
     echo -e "${RED}Please remove it manually before continuing${NC}"
     exit 1
+else
+    # Create symlink
+    echo -e "${BLUE}Creating symlink...${NC}"
+    ln -s "${BINARY_PATH}" "${SYMLINK_PATH}"
 fi
-
-# Create symlink
-echo -e "${BLUE}Creating symlink...${NC}"
-ln -s "${BINARY_PATH}" "${SYMLINK_PATH}"
 
 # Verify installation
 if [ -L "${SYMLINK_PATH}" ] && [ -e "${SYMLINK_PATH}" ]; then

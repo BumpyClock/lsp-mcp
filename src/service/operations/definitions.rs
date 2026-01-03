@@ -16,7 +16,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::service::types::errors::{PositionError, ServiceError};
-use crate::service::types::response::{McpDefinitionResponse, McpSymbolsResponse};
+use crate::service::types::response::{
+    McpDefinitionResponse, McpSymbolsResponse, SymbolDefinitionMatch, SymbolDefinitionResponse,
+};
 use crate::service::utils::identifiers::find_identifier_at_position;
 use crate::service::utils::pagination::paginate_items;
 use crate::service::utils::signature::{batch_enrich_symbols, extract_identifier_name_from_hover, truncate_signature, DEFAULT_ENRICHMENT_CONCURRENCY};
@@ -630,6 +632,88 @@ pub(crate) async fn definitions_in_file_impl(
         offset: pagination.offset,
         truncated: pagination.truncated,
     })
+}
+
+pub(crate) async fn get_symbol_definition_impl(
+    manager: &Arc<Manager>,
+    symbol_name: &str,
+    file_path: &str,
+) -> Result<SymbolDefinitionResponse, ServiceError> {
+    let mut definitions = Vec::new();
+
+    let symbols = symbols_in_file(manager, file_path).await?;
+    let matches: Vec<Symbol> = symbols
+        .into_iter()
+        .filter(|symbol| symbol.name == symbol_name)
+        .collect();
+
+    for symbol in matches {
+        let definition = read_definition_source(manager, file_path, &symbol).await?;
+        definitions.push(SymbolDefinitionMatch {
+            name: symbol.name.clone(),
+            kind: normalize_kind_field(&symbol.kind),
+            definition,
+            signature: symbol.signature.clone(),
+            doc: symbol.jsdoc_summary.clone(),
+        });
+    }
+
+    if definitions.is_empty() {
+        return Err(ServiceError::SymbolResolution(format!(
+            "No definitions found for '{}'",
+            symbol_name
+        )));
+    }
+
+    Ok(SymbolDefinitionResponse {
+        symbol: symbol_name.to_string(),
+        file: file_path.to_string(),
+        definitions,
+        truncated: false,
+    })
+}
+
+async fn symbols_in_file(
+    manager: &Arc<Manager>,
+    file_path: &str,
+) -> Result<Vec<Symbol>, ServiceError> {
+    let response = definitions_in_file_impl(manager, file_path, true, true, None, None, 0).await?;
+    let mut flattened = Vec::new();
+    flatten_symbols(&response.symbols, &mut flattened);
+    Ok(flattened)
+}
+
+fn flatten_symbols(symbols: &[Symbol], output: &mut Vec<Symbol>) {
+    for symbol in symbols {
+        let mut cloned = symbol.clone();
+        if let Some(children) = &symbol.children {
+            flatten_symbols(children, output);
+        }
+        cloned.children = None;
+        output.push(cloned);
+    }
+}
+
+async fn read_definition_source(
+    manager: &Arc<Manager>,
+    file_path: &str,
+    symbol: &Symbol,
+) -> Result<CodeContext, ServiceError> {
+    let mut range = symbol.file_range.clone();
+    if range.path.is_empty() {
+        range.path = file_path.to_string();
+    }
+    let lsp_range: LspRange = range.clone().into();
+    let source_code = manager.read_source_code(file_path, Some(lsp_range)).await?;
+    Ok(CodeContext { range, source_code })
+}
+
+fn normalize_kind_field(kind: &str) -> Option<String> {
+    if kind.trim().is_empty() {
+        None
+    } else {
+        Some(kind.to_string())
+    }
 }
 
 async fn attach_snippets_to_symbols(

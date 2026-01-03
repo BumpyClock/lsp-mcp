@@ -3,7 +3,7 @@
 
 use super::{escape_inline_code, format_file_position, truncate_lines, ToMarkdown};
 use crate::api_types::RelatedSymbols;
-use crate::service::types::response::McpDefinitionResponse;
+use crate::service::types::response::{McpDefinitionResponse, SymbolDefinitionResponse};
 
 const SOURCE_CODE_MAX_LINES: usize = 100;
 
@@ -101,6 +101,71 @@ impl ToMarkdown for McpDefinitionResponse {
     }
 }
 
+impl ToMarkdown for SymbolDefinitionResponse {
+    fn to_markdown(&self) -> String {
+        let mut output = String::new();
+
+        output.push_str(&format!(
+            "Definition of `{}`\n\n",
+            escape_inline_code(&self.symbol)
+        ));
+
+        output.push_str(&format!("File: {}\n\n", self.file));
+
+        if self.definitions.is_empty() {
+            output.push_str("No definitions found.\n");
+            return output;
+        }
+
+        for (index, def) in self.definitions.iter().enumerate() {
+            if self.definitions.len() > 1 {
+                output.push_str(&format!("Definition {}\n\n", index + 1));
+            }
+
+            let path = &def.definition.range.path;
+            let start = &def.definition.range.range.start;
+            let end = &def.definition.range.range.end;
+            output.push_str(&format!(
+                "Location: {}:{}:{}-{}:{}\n",
+                path, start.line, start.character, end.line, end.character
+            ));
+
+            if let Some(ref kind) = def.kind {
+                output.push_str(&format!("Kind: {}\n", kind));
+            }
+
+            if let Some(ref signature) = def.signature {
+                output.push_str(&format!("Signature: `{}`\n", escape_inline_code(signature)));
+            }
+
+            if let Some(ref doc) = def.doc {
+                if !doc.is_empty() {
+                    output.push_str("\nDocumentation\n");
+                    output.push_str(doc);
+                    output.push('\n');
+                }
+            }
+
+            let language = detect_language(path);
+            let source = format_source_with_line_numbers(
+                &def.definition.source_code,
+                def.definition.range.range.start.line,
+            );
+            output.push_str("\nSource\n");
+            output.push_str(&format!("```{}\n{}\n```\n", language, source));
+        }
+
+        if self.truncated {
+            output.push_str(&format!(
+                "\nResults truncated (showing {} of more)\n",
+                self.definitions.len()
+            ));
+        }
+
+        output
+    }
+}
+
 fn detect_language(path: &str) -> &'static str {
     if let Some(ext) = path.rsplit('.').next() {
         match ext.to_lowercase().as_str() {
@@ -119,6 +184,15 @@ fn detect_language(path: &str) -> &'static str {
     } else {
         ""
     }
+}
+
+fn format_source_with_line_numbers(source: &str, start_line: u32) -> String {
+    let mut output = String::new();
+    for (idx, line) in source.lines().enumerate() {
+        let line_num = start_line + idx as u32;
+        output.push_str(&format!("{}: {}\n", line_num, line));
+    }
+    output.trim_end().to_string()
 }
 
 fn format_related_symbols(output: &mut String, related: &RelatedSymbols) {
@@ -168,7 +242,7 @@ fn format_related_symbols(output: &mut String, related: &RelatedSymbols) {
 mod tests {
     use super::*;
     use crate::api_types::{CodeContext, FilePosition, FileRange, Identifier, Position, Range, Symbol};
-    use crate::service::types::response::McpDefinitionLocation;
+    use crate::service::types::response::{McpDefinitionLocation, SymbolDefinitionMatch, SymbolDefinitionResponse};
     use crate::service::utils::external::PackageInfo;
     use rand::Rng;
 
@@ -197,6 +271,63 @@ mod tests {
                 character: end_char,
             },
         }
+    }
+
+    fn random_irregular_string() -> String {
+        let mut rng = rand::rng();
+        let len: usize = rng.random_range(5..15);
+        let mut value: String = (0..len)
+            .map(|_| char::from(rng.random_range(97..123)))
+            .collect();
+        let insert_at = usize::min(1, value.len());
+        value.insert(insert_at, '\t');
+        value.push('_');
+        value
+    }
+
+    #[test]
+    fn it_formats_symbol_definition_with_line_numbers() {
+        let mut rng = rand::rng();
+        let start_line = rng.random_range(1..200);
+        let start_char = rng.random_range(1..20);
+        let end_line = start_line + rng.random_range(1..5);
+        let end_char = rng.random_range(1..20);
+
+        let line_one = random_irregular_string();
+        let line_two = random_irregular_string();
+        let source = format!("{}\n{}", line_one, line_two);
+
+        let response = SymbolDefinitionResponse {
+            symbol: format!("Sym{}", random_irregular_string()),
+            file: format!("src/{}.rs", random_irregular_string()),
+            definitions: vec![SymbolDefinitionMatch {
+                name: format!("Sym{}", random_irregular_string()),
+                kind: Some(random_irregular_string()),
+                definition: CodeContext {
+                    range: FileRange {
+                        path: format!("src/{}.rs", random_irregular_string()),
+                        range: create_range(start_line, start_char, end_line, end_char),
+                    },
+                    source_code: source.clone(),
+                },
+                signature: Some(format!("{}()", random_irregular_string())),
+                doc: Some(random_irregular_string()),
+            }],
+            truncated: false,
+        };
+
+        let markdown = response.to_markdown();
+        let first_numbered_line = format!("{}: {}", start_line, line_one);
+        let second_numbered_line = format!("{}: {}", start_line + 1, line_two);
+
+        assert!(
+            markdown.contains(&first_numbered_line),
+            "negative: formatted output must include the first numbered line"
+        );
+        assert!(
+            markdown.contains(&second_numbered_line),
+            "negative: formatted output must include the second numbered line"
+        );
     }
 
     fn create_file_range(path: &str, start_line: u32, end_line: u32) -> FileRange {

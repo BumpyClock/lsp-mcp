@@ -14,6 +14,10 @@ pub use semantic_search_config::{
 pub use tools_config::{InitialSetupMode, ToolsConfig};
 pub use types::{DebugConfig, DebugLogLevel, OutputConfig, OutputMode};
 
+pub(crate) use semantic_search_config::SemanticSearchConfigFile;
+pub(crate) use tools_config::ToolsConfigFile;
+pub(crate) use types::{DebugConfigFile, OutputConfigFile};
+
 /// Configuration for the lsp-mcp server loaded from .lsp-mcp.json.
 ///
 /// Supports both project-level config (workspace root) and global config (~/.lsp-mcp/).
@@ -245,8 +249,9 @@ mod tests {
         let config = LspMcpConfig::default();
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         assert!(tools.contains("goToDefinition"));
+        assert!(tools.contains("getSymbolDefinition"));
         assert!(tools.contains("findReferences"));
         assert!(tools.contains("hover"));
         assert!(tools.contains("getDiagnostics"));
@@ -270,7 +275,7 @@ mod tests {
         };
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         assert!(tools.contains("findReferencedSymbols"));
     }
 
@@ -287,7 +292,7 @@ mod tests {
         };
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 9);
         assert!(!tools.contains("callHierarchy"));
     }
 
@@ -316,7 +321,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 9);
     }
 
     #[test]
@@ -332,7 +337,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
     }
 
     #[test]
@@ -348,7 +353,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 9);
     }
 
     #[test]
@@ -363,8 +368,8 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        // Full preset is 14 tools (15 ALL_TOOLS - 1 opt-in semanticSearch), minus initialSetup = 13
-        assert_eq!(tools.len(), 13);
+        // Full preset is 15 tools (16 ALL_TOOLS - 1 opt-in semanticSearch), minus initialSetup = 14
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]
@@ -516,6 +521,81 @@ mod tests {
         assert!(config.languages.is_empty());
         assert!(config.binaries.is_empty());
         assert_eq!(config.tools.preset, ToolPreset::Standard);
+    }
+
+    #[test]
+    fn test_load_merged_semantic_search_deep_merge() {
+        let home_dir = TempDir::new().expect("Failed to create temp directory");
+        let workspace_dir = TempDir::new().expect("Failed to create temp directory");
+        let global_config_dir = home_dir.path().join(".lsp-mcp");
+        std::fs::create_dir_all(&global_config_dir).expect("Failed to create global config dir");
+
+        let global_config = r#"{
+            "semantic_search": {
+                "enabled": true,
+                "embedder": {
+                    "provider": "openai",
+                    "model": "global-model",
+                    "api_key_env": "GLOBAL_KEY",
+                    "base_url": "https://global"
+                },
+                "vector_store": { "path": ".global/semantic" },
+                "enrichment": {
+                    "enabled": true,
+                    "model": "global-enrich"
+                }
+            }
+        }"#;
+        let global_config_path = global_config_dir.join(".lsp-mcp.json");
+        std::fs::write(&global_config_path, global_config).expect("Failed to write global config");
+
+        let project_config = r#"{
+            "semantic_search": {
+                "embedder": {
+                    "provider": "openai",
+                    "model": "project-model"
+                },
+                "enrichment": { "max_concurrency": 4 },
+                "default_context_lines": null
+            }
+        }"#;
+        let project_config_path = workspace_dir.path().join(".lsp-mcp.json");
+        std::fs::write(&project_config_path, project_config)
+            .expect("Failed to write project config");
+
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", home_dir.path());
+
+        let config = LspMcpConfig::load_merged(workspace_dir.path());
+
+        match original_home {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+
+        let semantic = config
+            .semantic_search
+            .expect("Expected semantic_search to be present");
+        assert!(semantic.enabled);
+        assert_eq!(semantic.vector_store.path, ".global/semantic");
+        assert!(semantic.enrichment.enabled);
+        assert_eq!(semantic.enrichment.model, "global-enrich");
+        assert_eq!(semantic.enrichment.max_concurrency, 4);
+        assert_eq!(semantic.default_context_lines, None);
+
+        match semantic.embedder {
+            EmbedderConfig::OpenAI {
+                model,
+                base_url,
+                api_key_env,
+                ..
+            } => {
+                assert_eq!(model, "project-model");
+                assert_eq!(base_url, "https://global");
+                assert_eq!(api_key_env, "GLOBAL_KEY");
+            }
+            _ => panic!("Expected OpenAI embedder"),
+        }
     }
 
     #[test]

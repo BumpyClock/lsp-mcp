@@ -8,6 +8,7 @@ use std::collections::HashSet;
 pub const ALL_TOOLS: &[&str] = &[
     "documentSymbol",
     "goToDefinition",
+    "getSymbolDefinition",
     "findReferences",
     "hover",
     "workspaceSymbol",
@@ -29,6 +30,7 @@ pub const OPT_IN_TOOLS: &[&str] = &["semanticSearch"];
 /// Core tools (Tier 1+2): Enabled by default in "standard" preset
 pub const CORE_TOOLS: &[&str] = &[
     "goToDefinition",
+    "getSymbolDefinition",
     "findReferences",
     "hover",
     "getDiagnostics",
@@ -53,10 +55,10 @@ pub const MINIMAL_TOOLS: &[&str] = &[
 pub enum ToolPreset {
     /// Minimal: Only essential navigation tools (4 tools)
     Minimal,
-    /// Standard (default): Core tools for productive development (9 tools)
+    /// Standard (default): Core tools for productive development (10 tools)
     #[default]
     Standard,
-    /// Full: All available tools except opt-in (14 tools)
+    /// Full: All available tools except opt-in (15 tools)
     Full,
 }
 
@@ -84,12 +86,12 @@ mod tests {
 
     #[test]
     fn test_all_tools_count() {
-        assert_eq!(ALL_TOOLS.len(), 15, "Expected 15 total tools");
+        assert_eq!(ALL_TOOLS.len(), 16, "Expected 16 total tools");
     }
 
     #[test]
     fn test_core_tools_count() {
-        assert_eq!(CORE_TOOLS.len(), 9, "Expected 9 core tools");
+        assert_eq!(CORE_TOOLS.len(), 10, "Expected 10 core tools");
     }
 
     #[test]
@@ -110,9 +112,10 @@ mod tests {
     #[test]
     fn test_get_preset_tools_standard() {
         let tools = get_preset_tools(ToolPreset::Standard);
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         // Should include all minimal tools
         assert!(tools.contains("goToDefinition"));
+        assert!(tools.contains("getSymbolDefinition"));
         assert!(tools.contains("findReferences"));
         assert!(tools.contains("hover"));
         assert!(tools.contains("getDiagnostics"));
@@ -127,7 +130,7 @@ mod tests {
     #[test]
     fn test_get_preset_tools_full() {
         let tools = get_preset_tools(ToolPreset::Full);
-        assert_eq!(tools.len(), 14);
+        assert_eq!(tools.len(), 15);
         for tool in ALL_TOOLS {
             if OPT_IN_TOOLS.contains(tool) {
                 assert!(

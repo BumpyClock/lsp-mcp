@@ -154,6 +154,26 @@ pub struct McpListFilesResponse {
     pub truncated: bool,
 }
 
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct SymbolDefinitionMatch {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    pub definition: CodeContext,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doc: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct SymbolDefinitionResponse {
+    pub symbol: String,
+    pub file: String,
+    pub definitions: Vec<SymbolDefinitionMatch>,
+    pub truncated: bool,
+}
+
 /// Ultra-compact response format for find_definition (~180 chars)
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct CompactDefinitionResponse {

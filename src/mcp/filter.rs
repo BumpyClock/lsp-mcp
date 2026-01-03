@@ -101,6 +101,7 @@ impl FilteredLspMcpServer {
             "findIdentifier" => "Identifier occurrences in a file; use for local search",
             "findReferences" => "References to a symbol by name; summary by default, detail=true for full output",
             "goToDefinition" => "Definition at position; use to jump to source",
+            "getSymbolDefinition" => "Full definition for a symbol by name",
             "getDiagnostics" => "Diagnostics for file/workspace; use for errors and warnings",
             "goToImplementation" => "Implementation at position; use for interface/trait impls",
             "documentSymbol" => "Symbols defined in a file; use to outline structure",

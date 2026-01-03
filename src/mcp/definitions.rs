@@ -76,6 +76,24 @@ pub async fn find_definition(
     }
 }
 
+pub async fn get_symbol_definition(
+    service: &LspService,
+    output_mode: OutputMode,
+    symbol_name: String,
+    file_path: String,
+) -> CallToolResult {
+    match service
+        .get_symbol_definition(&symbol_name, &file_path)
+        .await
+    {
+        Ok(response) => {
+            let markdown = format_response(&response, output_mode);
+            tool_result_success(markdown)
+        }
+        Err(e) => tool_result_from_error(e),
+    }
+}
+
 fn resolve_context_lines(context_lines: Option<u32>) -> u32 {
     context_lines.unwrap_or(1)
 }

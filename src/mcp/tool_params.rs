@@ -1,5 +1,5 @@
 // ABOUTME: Parameter structs for MCP tools.
-// ABOUTME: Strongly-typed parameter definitions for all 16 MCP tools with serde and JSON schema support.
+// ABOUTME: Strongly-typed parameter definitions for all MCP tools with serde and JSON schema support.
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -46,6 +46,15 @@ pub struct GoToDefinitionParams {
     #[serde(default, deserialize_with = "deserialize_flexible_u32_opt")]
     #[schemars(with = "Option<u32>")]
     pub offset: Option<u32>,
+}
+
+/// Parameters for the getSymbolDefinition tool.
+/// Returns the full definition for a symbol by name.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetSymbolDefinitionParams {
+    /// Symbol name to resolve (e.g., "EmbeddingProvider")
+    pub symbol_name: String,
+    pub file_path: String,
 }
 
 /// Parameters for the findReferences tool.

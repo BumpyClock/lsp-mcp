@@ -9,5 +9,5 @@ pub use errors::{CallHierarchyError, PositionError, ServiceError};
 pub use response::{
     CompactDefinitionResponse, FileGroup, McpDefinitionLocation, McpDefinitionResponse,
     McpIdentifierResponse, McpListFilesResponse, McpReferenceLocation, McpReferencesResponse,
-    McpSymbolsResponse, TypeCounts,
+    McpSymbolsResponse, SymbolDefinitionMatch, SymbolDefinitionResponse, TypeCounts,
 };

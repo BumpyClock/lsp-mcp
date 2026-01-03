@@ -17,7 +17,7 @@ use super::operations::{call_hierarchy, definitions, diagnostics, hover, referen
 use super::types::errors::ServiceError;
 use super::types::response::{
     McpDefinitionResponse, McpIdentifierResponse, McpListFilesResponse, McpReferencesResponse,
-    McpSymbolsResponse,
+    McpSymbolsResponse, SymbolDefinitionResponse,
 };
 
 /// Provides code navigation operations over a workspace manager.
@@ -255,6 +255,17 @@ impl LspService {
             context_lines,
         )
         .await
+    }
+
+    /// Returns full definitions for a symbol by name, optionally scoped to a file.
+    pub async fn get_symbol_definition(
+        &self,
+        symbol_name: &str,
+        file_path: &str,
+    ) -> Result<SymbolDefinitionResponse, ServiceError> {
+        let file_path = normalize_file_path(file_path)?;
+        definitions::get_symbol_definition_impl(&self.manager, symbol_name, &file_path)
+            .await
     }
 
     /// Prepares the call hierarchy at the given position.

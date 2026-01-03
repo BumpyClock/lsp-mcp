@@ -22,11 +22,11 @@ This file describes the `.lsp-mcp.json` configuration format and merge rules.
 
 ## Merge Behavior
 
-- Project config overrides global config for `languages`, `binaries`, and `tools`.
-- `output` only overrides when it is explicitly set in the project config.
-- When `output` is not present in the project config, the global `output` mode applies.
-- `semantic_search` only overrides when it is explicitly set in the project config.
-- When `semantic_search` is not present in the project config, the global `semantic_search` config applies.
+- Project config overrides global config for `languages`.
+- `binaries` merge per key (project values override matching global keys).
+- `tools` merge per field; `enable`/`disable` lists are unioned when both are present.
+- `output`, `debug`, and `semantic_search` merge field-by-field.
+- For nested `semantic_search` sections (like `embedder`, `vector_store`, `exclude`, `enrichment`), fields only override when present in the project config.
 
 ## Settings
 

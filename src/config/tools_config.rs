@@ -39,6 +39,60 @@ pub struct ToolsConfig {
     pub initial_setup: InitialSetupMode,
 }
 
+/// Optional tools configuration for config file merging.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct ToolsConfigFile {
+    /// Preset to use as base ("minimal", "standard", "full")
+    pub preset: Option<ToolPreset>,
+    /// Tools to explicitly enable (added to preset)
+    pub enable: Option<Vec<String>>,
+    /// Tools to explicitly disable (removed from final set, overrides enable)
+    pub disable: Option<Vec<String>>,
+    /// Initial setup tool behavior ("auto", "enabled", "disabled")
+    pub initial_setup: Option<InitialSetupMode>,
+}
+
+impl ToolsConfigFile {
+    pub(crate) fn merge(self, project: Self) -> Self {
+        let enable = match (self.enable, project.enable) {
+            (None, None) => None,
+            (Some(global), None) => Some(global),
+            (None, Some(project_enable)) => Some(project_enable),
+            (Some(global), Some(project_enable)) => {
+                let mut merged: HashSet<_> = global.into_iter().collect();
+                merged.extend(project_enable);
+                Some(merged.into_iter().collect())
+            }
+        };
+        let disable = match (self.disable, project.disable) {
+            (None, None) => None,
+            (Some(global), None) => Some(global),
+            (None, Some(project_disable)) => Some(project_disable),
+            (Some(global), Some(project_disable)) => {
+                let mut merged: HashSet<_> = global.into_iter().collect();
+                merged.extend(project_disable);
+                Some(merged.into_iter().collect())
+            }
+        };
+
+        ToolsConfigFile {
+            preset: project.preset.or(self.preset),
+            enable,
+            disable,
+            initial_setup: project.initial_setup.or(self.initial_setup),
+        }
+    }
+
+    pub(crate) fn resolve(self) -> ToolsConfig {
+        ToolsConfig {
+            preset: self.preset.unwrap_or_default(),
+            enable: self.enable.unwrap_or_default(),
+            disable: self.disable.unwrap_or_default(),
+            initial_setup: self.initial_setup.unwrap_or_default(),
+        }
+    }
+}
+
 impl ToolsConfig {
     /// Compute the final set of enabled tools based on preset and overrides
     pub fn enabled_tools(&self, project_config_present: bool) -> HashSet<String> {
@@ -71,6 +125,7 @@ impl ToolsConfig {
     }
 
     /// Merge project config over global config for tools
+    #[cfg(test)]
     pub(crate) fn merge(self, project: Self) -> Self {
         let preset = project.preset;
         let initial_setup = project.initial_setup;

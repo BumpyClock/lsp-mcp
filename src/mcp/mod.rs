@@ -245,6 +245,36 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
+    #[tool(name = "getSymbolDefinition", description = "Full definition for a symbol by name")]
+    async fn get_symbol_definition(
+        &self,
+        Parameters(params): Parameters<GetSymbolDefinitionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let request_id = new_request_id();
+        tracing::debug!(
+            request_id = %request_id,
+            tool = "getSymbolDefinition",
+            symbol = %params.symbol_name,
+            file = %params.file_path,
+            "Processing tool request"
+        );
+
+        let output = definitions::get_symbol_definition(
+            &self.service,
+            self.output_mode,
+            params.symbol_name,
+            params.file_path,
+        )
+        .await;
+
+        tracing::debug!(
+            request_id = %request_id,
+            "Tool request completed"
+        );
+
+        Ok(self.wrap_output(request_id, output))
+    }
+
     #[tool(name = "findReferences", description = "References to symbol by name. Summary by default; set detail=true for per-reference output.")]
     async fn find_references(
         &self,

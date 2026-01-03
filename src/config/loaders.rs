@@ -1,7 +1,10 @@
 // ABOUTME: Configuration loaders for the lsp-mcp server.
 // ABOUTME: Loads and merges global and project-level .lsp-mcp.json config files.
 
-use super::{DebugConfig, LspMcpConfig, OutputConfig, OutputMode, SemanticSearchConfig, ToolsConfig};
+use super::{
+    DebugConfig, DebugConfigFile, LspMcpConfig, OutputConfigFile, OutputMode,
+    SemanticSearchConfigFile, ToolsConfigFile,
+};
 use log::info;
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -10,18 +13,12 @@ use std::path::Path;
 /// Internal config structure for deserialization.
 #[derive(Debug, Deserialize, Default, Clone)]
 pub(crate) struct LspMcpConfigFile {
-    #[serde(default)]
-    pub languages: Vec<String>,
-    #[serde(default)]
-    pub binaries: std::collections::HashMap<String, String>,
-    #[serde(default)]
-    pub tools: ToolsConfig,
-    #[serde(default)]
-    pub output: Option<OutputConfig>,
-    #[serde(default)]
-    pub debug: Option<DebugConfig>,
-    #[serde(default)]
-    pub semantic_search: Option<SemanticSearchConfig>,
+    pub languages: Option<Vec<String>>,
+    pub binaries: Option<std::collections::HashMap<String, String>>,
+    pub tools: Option<ToolsConfigFile>,
+    pub output: Option<OutputConfigFile>,
+    pub debug: Option<DebugConfigFile>,
+    pub semantic_search: Option<SemanticSearchConfigFile>,
 }
 
 impl LspMcpConfig {
@@ -37,16 +34,20 @@ impl LspMcpConfig {
 
     /// Load global config from $HOME/.lsp-mcp/.lsp-mcp.json
     pub fn load_global() -> Option<Self> {
+        Self::load_global_file().map(LspMcpConfigFile::resolve)
+    }
+
+    fn load_global_file() -> Option<LspMcpConfigFile> {
         let home = dirs::home_dir()?;
         let global_config_path = home.join(".lsp-mcp").join(".lsp-mcp.json");
-        Self::load_from_path(&global_config_path).map(|f| f.into())
+        Self::load_from_path(&global_config_path)
     }
 
     /// Load project config from workspace root (.lsp-mcp.json)
     pub fn load_project(workspace_root: &Path) -> Option<Self> {
         let config_path = workspace_root.join(".lsp-mcp.json");
         Self::load_from_path(&config_path).map(|f| {
-            let mut config: LspMcpConfig = f.into();
+            let mut config = f.resolve();
             config.project_config_present = true;
             config
         })
@@ -61,39 +62,36 @@ impl LspMcpConfig {
     ///
     /// Returns default config if neither global nor project config exists.
     pub fn load_merged(workspace_root: &Path) -> Self {
-        let global = Self::load_global();
+        let global_file = Self::load_global_file();
         let project_file = Self::load_from_path(&workspace_root.join(".lsp-mcp.json"));
         let project_present = project_file.is_some();
-        let project = project_file.map(|f| {
-            let mut config: LspMcpConfig = f.into();
-            config.project_config_present = true;
-            config
-        });
-
-        let mut config = match (global, project) {
+        let merged = match (global_file, project_file) {
             (None, None) => {
                 info!("No config files found, using defaults");
-                Self::default()
+                None
             }
-            (Some(g), None) => {
+            (Some(global), None) => {
                 info!("Loaded global config from ~/.lsp-mcp/.lsp-mcp.json");
-                g
+                Some(global)
             }
-            (None, Some(p)) => {
+            (None, Some(project)) => {
                 info!("Loaded project config from .lsp-mcp.json");
-                p
+                Some(project)
             }
-            (Some(g), Some(p)) => {
+            (Some(global), Some(project)) => {
                 info!("Merged global and project configs");
-                g.merge(p)
+                Some(global.merge(project))
             }
         };
+
+        let mut config = merged.map(LspMcpConfigFile::resolve).unwrap_or_default();
 
         config.project_config_present = project_present;
         config
     }
 
     /// Merge project config over this (global) config
+    #[cfg(test)]
     pub(crate) fn merge(self, project: Self) -> Self {
         LspMcpConfig {
             languages: if project.languages.is_empty() {
@@ -137,15 +135,60 @@ impl LspMcpConfig {
     }
 }
 
-impl From<LspMcpConfigFile> for LspMcpConfig {
-    fn from(file: LspMcpConfigFile) -> Self {
+impl LspMcpConfigFile {
+    fn merge(self, project: Self) -> Self {
+        let binaries = match (self.binaries, project.binaries) {
+            (None, None) => None,
+            (Some(global), None) => Some(global),
+            (None, Some(project_binaries)) => Some(project_binaries),
+            (Some(mut global), Some(project_binaries)) => {
+                global.extend(project_binaries);
+                Some(global)
+            }
+        };
+        let tools = match (self.tools, project.tools) {
+            (None, None) => None,
+            (Some(global), None) => Some(global),
+            (None, Some(project_tools)) => Some(project_tools),
+            (Some(global), Some(project_tools)) => Some(global.merge(project_tools)),
+        };
+        let output = match (self.output, project.output) {
+            (None, None) => None,
+            (Some(global), None) => Some(global),
+            (None, Some(project_output)) => Some(project_output),
+            (Some(global), Some(project_output)) => Some(global.merge(project_output)),
+        };
+        let debug = match (self.debug, project.debug) {
+            (None, None) => None,
+            (Some(global), None) => Some(global),
+            (None, Some(project_debug)) => Some(project_debug),
+            (Some(global), Some(project_debug)) => Some(global.merge(project_debug)),
+        };
+        let semantic_search = match (self.semantic_search, project.semantic_search) {
+            (None, None) => None,
+            (Some(global), None) => Some(global),
+            (None, Some(project_search)) => Some(project_search),
+            (Some(global), Some(project_search)) => Some(global.merge(project_search)),
+        };
+
+        LspMcpConfigFile {
+            languages: project.languages.or(self.languages),
+            binaries,
+            tools,
+            output,
+            debug,
+            semantic_search,
+        }
+    }
+
+    fn resolve(self) -> LspMcpConfig {
         LspMcpConfig {
-            languages: file.languages,
-            binaries: file.binaries,
-            tools: file.tools,
-            output: file.output,
-            debug: file.debug,
-            semantic_search: file.semantic_search,
+            languages: self.languages.unwrap_or_default(),
+            binaries: self.binaries.unwrap_or_default(),
+            tools: self.tools.unwrap_or_default().resolve(),
+            output: self.output.map(OutputConfigFile::resolve),
+            debug: self.debug.map(DebugConfigFile::resolve),
+            semantic_search: self.semantic_search.map(SemanticSearchConfigFile::resolve),
             project_config_present: false,
         }
     }

@@ -67,12 +67,21 @@ if (-not (Test-Path $BinaryPath)) {
 Write-Host "${BLUE}Setting up installation directory...${NC}"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
-# Remove existing symlink if present
+# Check if symlink already exists and points to the correct binary
+$skipSymlink = $false
 if (Test-Path $SymlinkPath) {
     $item = Get-Item $SymlinkPath
     if ($item.LinkType -eq "SymbolicLink") {
-        Write-Host "${YELLOW}Removing existing symlink...${NC}"
-        Remove-Item $SymlinkPath -Force
+        $existingTarget = $item.Target
+        if ($existingTarget -eq $BinaryPath) {
+            Write-Host "${GREEN}Symlink already exists and points to the correct binary${NC}"
+            Write-Host "${GREEN}Skipping symlink creation${NC}"
+            Write-Host ""
+            $skipSymlink = $true
+        } else {
+            Write-Host "${YELLOW}Removing existing symlink (points to different target)...${NC}"
+            Remove-Item $SymlinkPath -Force
+        }
     } elseif ($item.PSIsContainer -eq $false) {
         Write-Host "${RED}Error: ${SymlinkPath} exists but is not a symlink${NC}"
         Write-Host "${RED}Please remove it manually before continuing${NC}"
@@ -80,23 +89,25 @@ if (Test-Path $SymlinkPath) {
     }
 }
 
-# Create symlink
-Write-Host "${BLUE}Creating symlink...${NC}"
-try {
-    New-Item -ItemType SymbolicLink -Path $SymlinkPath -Target $BinaryPath | Out-Null
-} catch {
-    Write-Host "${RED}Error: Failed to create symlink${NC}"
-    Write-Host ""
-    Write-Host "${YELLOW}Creating symbolic links on Windows requires either:${NC}"
-    Write-Host "  1. Administrator privileges (run PowerShell as Administrator)"
-    Write-Host "  2. Developer Mode enabled in Windows Settings"
-    Write-Host ""
-    Write-Host "${YELLOW}To enable Developer Mode:${NC}"
-    Write-Host "  1. Open Settings > Update & Security > For developers"
-    Write-Host "  2. Turn on 'Developer Mode'"
-    Write-Host ""
-    Write-Host "${YELLOW}Alternatively, run this script as Administrator.${NC}"
-    exit 1
+if (-not $skipSymlink) {
+    # Create symlink
+    Write-Host "${BLUE}Creating symlink...${NC}"
+    try {
+        New-Item -ItemType SymbolicLink -Path $SymlinkPath -Target $BinaryPath | Out-Null
+    } catch {
+        Write-Host "${RED}Error: Failed to create symlink${NC}"
+        Write-Host ""
+        Write-Host "${YELLOW}Creating symbolic links on Windows requires either:${NC}"
+        Write-Host "  1. Administrator privileges (run PowerShell as Administrator)"
+        Write-Host "  2. Developer Mode enabled in Windows Settings"
+        Write-Host ""
+        Write-Host "${YELLOW}To enable Developer Mode:${NC}"
+        Write-Host "  1. Open Settings > Update & Security > For developers"
+        Write-Host "  2. Turn on 'Developer Mode'"
+        Write-Host ""
+        Write-Host "${YELLOW}Alternatively, run this script as Administrator.${NC}"
+        exit 1
+    }
 }
 
 # Verify installation
