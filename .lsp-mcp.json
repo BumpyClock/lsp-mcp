@@ -13,10 +13,8 @@
     ]
   },
   "semantic_search": {
-    "enabled": true,
-    "embedder": {
-      "provider": "fastembed"
-    }
+    "enabled": true
+    
   },
   "debug": {
     "enabled": true,

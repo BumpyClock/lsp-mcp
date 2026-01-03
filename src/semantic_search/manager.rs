@@ -211,7 +211,7 @@ impl SemanticSearchManager {
             }
         }
 
-        let batch_config = BatchConfig::with_batch_size(self.config.index.batch_size);
+        let batch_config = BatchConfig::with_batch_size(self.config.batch_size);
         let processor = Arc::new(BatchProcessor::new(provider, batch_config));
         self.processor = Some(Arc::clone(&processor));
 
@@ -253,10 +253,10 @@ impl SemanticSearchManager {
         }
 
         let chunk_config = ChunkConfig::from_index_config(
-            self.config.index.min_chunk_chars,
-            self.config.index.max_chunk_chars,
-            self.config.index.max_function_chunk_chars,
-            self.config.index.chunk_overlap_chars,
+            self.config.min_chunk_chars,
+            self.config.max_chunk_chars,
+            self.config.max_function_chunk_chars,
+            self.config.chunk_overlap_chars,
         );
 
         let indexer = Arc::new(Indexer::new(
@@ -416,16 +416,16 @@ impl SemanticSearchManager {
             p.clone()
         } else {
             let provider = super::embedder::create_provider(&self.config.embedder).await?;
-            let batch_config = BatchConfig::with_batch_size(self.config.index.batch_size);
+            let batch_config = BatchConfig::with_batch_size(self.config.batch_size);
             Arc::new(BatchProcessor::new(provider, batch_config))
         };
 
-        let chunk_config = ChunkConfig::from_index_config(
-            self.config.index.min_chunk_chars,
-            self.config.index.max_chunk_chars,
-            self.config.index.max_function_chunk_chars,
-            self.config.index.chunk_overlap_chars,
-        );
+            let chunk_config = ChunkConfig::from_index_config(
+                self.config.min_chunk_chars,
+                self.config.max_chunk_chars,
+                self.config.max_function_chunk_chars,
+                self.config.chunk_overlap_chars,
+            );
 
         let watcher = SemanticWatcher::new(
             self.config.clone(),
@@ -451,7 +451,7 @@ impl SemanticSearchManager {
 
     /// Get default context lines from config.
     pub fn default_context_lines(&self) -> Option<u32> {
-        self.config.search.default_context_lines
+        self.config.default_context_lines
     }
 
     /// Perform semantic search.
@@ -502,10 +502,10 @@ impl SemanticSearchManager {
         // Embed the query
         let query_embedding = processor.embed_query(query).await?;
 
-        let max_results = limit.unwrap_or(self.config.search.max_results);
+        let max_results = limit.unwrap_or(self.config.max_results);
         let options = SearchOptions {
             limit: max_results,
-            min_score: Some(self.config.search.min_score),
+            min_score: Some(self.config.min_score),
             path_prefix,
             symbol_kinds: None,
         };
