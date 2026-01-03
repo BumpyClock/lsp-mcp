@@ -13,8 +13,12 @@
     ]
   },
   "semantic_search": {
-    "enabled": true
-    
+    "enabled": true,
+    "exclude": {
+      "directories": [
+        "**/sample_project/**"
+      ]
+    }
   },
   "debug": {
     "enabled": true,
