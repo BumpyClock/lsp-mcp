@@ -1,0 +1,26 @@
+{
+    "languages": [
+        "cpp"
+    ],
+    "tools": {
+        "preset": "full",
+        "enable": [
+            "semanticSearch"
+        ],
+        "disable": [
+            "listFiles",
+            "readSourceCode"
+        ]
+    },
+    "semantic_search": {
+        "enabled": true,
+        "embedder": {
+            "provider": "fastembed"
+        }
+    },
+    "debug": {
+        "enabled": true,
+        "log_level": "debug",
+        "log_dir": ".lsp-mcp/logs"
+    }
+}
