@@ -4,318 +4,318 @@
  
 
   "result": {
-    "tools": [
-      {
-        "name": "findReferencedSymbols",
-        "description": "Symbols referenced by definition; use to see deps",
-        "inputSchema": {
-          "properties": {
-            "character": {
-              "type": "integer"
-            },
-            "externals": {
-              "type": "boolean"
-            },
-            "full_scan": {
-              "type": "boolean"
-            },
-            "line": {
-              "type": "integer"
-            },
-            "path": {
-              "type": "string"
-            }
+  "tools": [
+    {
+      "name": "findReferencedSymbols",
+      "description": "Symbols referenced by definition; use to see deps",
+      "inputSchema": {
+        "properties": {
+          "character": {
+            "type": "integer"
           },
-          "required": [
-            "path",
-            "line",
-            "character"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "documentSymbol",
-        "description": "Symbols defined in a file; use to outline structure",
-        "inputSchema": {
-          "properties": {
-            "context_lines": {
-              "type": "integer"
-            },
-            "include_children": {
-              "type": "boolean"
-            },
-            "include_locals": {
-              "type": "boolean"
-            },
-            "limit": {
-              "type": "integer"
-            },
-            "offset": {
-              "type": "integer"
-            },
-            "path": {
-              "type": "string"
-            }
+          "externals": {
+            "type": "boolean"
           },
-          "required": [
-            "path"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "workspaceSymbol",
-        "description": "Search symbols by name; use to locate definitions",
-        "inputSchema": {
-          "properties": {
-            "context_lines": {
-              "type": "integer"
-            },
-            "exact": {
-              "type": "boolean"
-            },
-            "limit": {
-              "type": "integer"
-            },
-            "offset": {
-              "type": "integer"
-            },
-            "query": {
-              "type": "string"
-            }
+          "full_scan": {
+            "type": "boolean"
           },
-          "required": [
-            "query"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "findReferences",
-        "description": "References to a symbol by name; use to see usages",
-        "inputSchema": {
-          "properties": {
-            "context_lines": {
-              "type": "integer"
-            },
-            "limit": {
-              "type": "integer"
-            },
-            "offset": {
-              "type": "integer"
-            },
-            "path": {
-              "type": "string"
-            },
-            "symbol": {
-              "type": "string"
-            }
+          "line": {
+            "type": "integer"
           },
-          "required": [
-            "symbol"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "semanticSearch",
-        "description": "Semantic code search; use descriptive natural language queries (not keywords)",
-        "inputSchema": {
-          "properties": {
-            "context_lines": {
-              "type": "integer"
-            },
-            "exclude": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "file_pattern": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "limit": {
-              "type": "integer"
-            },
-            "min_score": {
-              "type": "number"
-            },
-            "path": {
-              "type": "string"
-            },
-            "per_file": {
-              "type": "boolean"
-            },
-            "query": {
-              "type": "string"
-            },
-            "rerank": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "query"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "hover",
-        "description": "Type/doc info at position; use for quick context",
-        "inputSchema": {
-          "properties": {
-            "include_definition": {
-              "type": "boolean"
-            },
-            "requests": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "requests"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "goToImplementation",
-        "description": "Implementation at position; use for interface/trait impls",
-        "inputSchema": {
-          "properties": {
-            "character": {
-              "type": "integer"
-            },
-            "line": {
-              "type": "integer"
-            },
-            "path": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "path",
-            "line",
-            "character"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "callHierarchy",
-        "description": "Call hierarchy at position; use to trace call flow",
-        "inputSchema": {
-          "properties": {
-            "character": {
-              "type": "integer"
-            },
-            "context_lines": {
-              "type": "integer"
-            },
-            "direction": {
-              "type": "string"
-            },
-            "externals": {
-              "type": "boolean"
-            },
-            "line": {
-              "type": "integer"
-            },
-            "path": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "path",
-            "line",
-            "character",
-            "direction"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "goToDefinition",
-        "description": "Definition at position; use to jump to source",
-        "inputSchema": {
-          "properties": {
-            "character": {
-              "type": "integer"
-            },
-            "limit": {
-              "type": "integer"
-            },
-            "line": {
-              "type": "integer"
-            },
-            "offset": {
-              "type": "integer"
-            },
-            "path": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "path",
-            "line",
-            "character"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "findIdentifier",
-        "description": "Identifier occurrences in a file; use for local search",
-        "inputSchema": {
-          "properties": {
-            "character": {
-              "type": "integer"
-            },
-            "limit": {
-              "type": "integer"
-            },
-            "line": {
-              "type": "integer"
-            },
-            "name": {
-              "type": "string"
-            },
-            "offset": {
-              "type": "integer"
-            },
-            "path": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "path",
-            "name"
-          ],
-          "type": "object"
-        }
-      },
-      {
-        "name": "getDiagnostics",
-        "description": "Diagnostics for file/workspace; use for errors and warnings",
-        "inputSchema": {
-          "properties": {
-            "file_path": {
-              "type": "string"
-            }
-          },
-          "type": "object"
-        }
-      },
-      {
-        "name": "health",
-        "description": "Service status; use to check logs/session",
-        "inputSchema": {
-          "type": "object"
-        }
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "line",
+          "character"
+        ],
+        "type": "object"
       }
-    ]
-  }
+    },
+    {
+      "name": "documentSymbol",
+      "description": "Symbols defined in a file; use to outline structure",
+      "inputSchema": {
+        "properties": {
+          "context_lines": {
+            "type": "integer"
+          },
+          "include_children": {
+            "type": "boolean"
+          },
+          "include_locals": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "workspaceSymbol",
+      "description": "Search symbols by name; use to locate definitions",
+      "inputSchema": {
+        "properties": {
+          "context_lines": {
+            "type": "integer"
+          },
+          "exact": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "findReferences",
+      "description": "References to a symbol by name; use to see usages",
+      "inputSchema": {
+        "properties": {
+          "context_lines": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "semanticSearch",
+      "description": "Semantic code search; use descriptive natural language queries (not keywords)",
+      "inputSchema": {
+        "properties": {
+          "context_lines": {
+            "type": "integer"
+          },
+          "exclude": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "file_pattern": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "min_score": {
+            "type": "number"
+          },
+          "path": {
+            "type": "string"
+          },
+          "per_file": {
+            "type": "boolean"
+          },
+          "query": {
+            "type": "string"
+          },
+          "rerank": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "hover",
+      "description": "Type/doc info at position; use for quick context",
+      "inputSchema": {
+        "properties": {
+          "include_definition": {
+            "type": "boolean"
+          },
+          "requests": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requests"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "goToImplementation",
+      "description": "Implementation at position; use for interface/trait impls",
+      "inputSchema": {
+        "properties": {
+          "character": {
+            "type": "integer"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "line",
+          "character"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "callHierarchy",
+      "description": "Call hierarchy at position; use to trace call flow",
+      "inputSchema": {
+        "properties": {
+          "character": {
+            "type": "integer"
+          },
+          "context_lines": {
+            "type": "integer"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "externals": {
+            "type": "boolean"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "line",
+          "character",
+          "direction"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "goToDefinition",
+      "description": "Definition at position; use to jump to source",
+      "inputSchema": {
+        "properties": {
+          "character": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "line",
+          "character"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "findIdentifier",
+      "description": "Identifier occurrences in a file; use for local search",
+      "inputSchema": {
+        "properties": {
+          "character": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "getDiagnostics",
+      "description": "Diagnostics for file/workspace; use for errors and warnings",
+      "inputSchema": {
+        "properties": {
+          "file_path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "health",
+      "description": "Service status; use to check logs/session",
+      "inputSchema": {
+        "type": "object"
+      }
+    }
+  ]
+}
 }
