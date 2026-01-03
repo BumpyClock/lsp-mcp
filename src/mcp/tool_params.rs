@@ -71,20 +71,13 @@ pub struct FindReferencesParams {
 }
 
 /// Parameters for the hover tool.
-/// Returns hover information (documentation, type info) for a symbol at a given position.
-/// Supports both single-position and batch mode via requests parameter.
+/// Returns hover information (documentation, type info) for symbols at given positions.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct HoverParams {
-    pub path: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_flexible_u32_opt")]
-    #[schemars(with = "Option<u32>")]
-    pub line: Option<u32>,
-    #[serde(default, deserialize_with = "deserialize_flexible_u32_opt")]
-    #[schemars(with = "Option<u32>")]
-    pub character: Option<u32>,
+    /// JSON array of hover requests: [{path, line, character}, ...]
+    pub requests: String,
+    /// Include definition location in response
     pub include_definition: Option<bool>,
-    /// JSON string containing array of hover requests for batch mode.
-    pub requests: Option<String>,
 }
 
 /// Parameters for the workspaceSymbol tool.
