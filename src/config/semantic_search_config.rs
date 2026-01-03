@@ -116,36 +116,15 @@ impl Default for VectorStoreConfig {
     }
 }
 
-/// Configuration for indexing behavior.
+/// Configuration for excluding files and directories during indexing.
 #[derive(Debug, Clone, Deserialize)]
-pub struct IndexConfig {
-    /// File patterns to include (glob patterns)
-    #[serde(default = "default_include_patterns")]
-    pub include: Vec<String>,
+pub struct ExcludeConfig {
     /// File patterns to exclude (glob patterns)
-    #[serde(default = "default_exclude_patterns")]
-    pub exclude: Vec<String>,
-    /// Maximum file size to index in MB (default: 1)
-    #[serde(default = "default_max_file_size_mb")]
-    pub max_file_size_mb: f64,
-    /// Minimum chunk size in characters (default: 50)
-    #[serde(default = "default_min_chunk_chars")]
-    pub min_chunk_chars: usize,
-    /// Maximum chunk size in characters (default: 2000)
-    #[serde(default = "default_max_chunk_chars")]
-    pub max_chunk_chars: usize,
-    /// Maximum chunk size for functions in characters (default: 5000)
-    #[serde(default = "default_max_function_chunk_chars")]
-    pub max_function_chunk_chars: usize,
-    /// Overlap size between chunks in characters (default: 200)
-    #[serde(default = "default_chunk_overlap_chars")]
-    pub chunk_overlap_chars: usize,
-    /// Batch size for embedding requests (default: 60)
-    #[serde(default = "default_batch_size")]
-    pub batch_size: usize,
-    /// Whether to respect .gitignore files when indexing (default: true)
-    #[serde(default = "default_respect_gitignore")]
-    pub respect_gitignore: bool,
+    #[serde(default)]
+    pub files: Vec<String>,
+    /// Directory patterns to exclude (glob patterns)
+    #[serde(default = "default_exclude_directories")]
+    pub directories: Vec<String>,
 }
 
 fn default_include_patterns() -> Vec<String> {
@@ -168,7 +147,7 @@ fn default_include_patterns() -> Vec<String> {
     ]
 }
 
-fn default_exclude_patterns() -> Vec<String> {
+fn default_exclude_directories() -> Vec<String> {
     vec![
         "**/node_modules/**".to_string(),
         "**/target/**".to_string(),
@@ -209,34 +188,13 @@ fn default_respect_gitignore() -> bool {
     true
 }
 
-impl Default for IndexConfig {
+impl Default for ExcludeConfig {
     fn default() -> Self {
-        IndexConfig {
-            include: default_include_patterns(),
-            exclude: default_exclude_patterns(),
-            max_file_size_mb: default_max_file_size_mb(),
-            min_chunk_chars: default_min_chunk_chars(),
-            max_chunk_chars: default_max_chunk_chars(),
-            max_function_chunk_chars: default_max_function_chunk_chars(),
-            chunk_overlap_chars: default_chunk_overlap_chars(),
-            batch_size: default_batch_size(),
-            respect_gitignore: default_respect_gitignore(),
+        ExcludeConfig {
+            files: Vec::new(),
+            directories: default_exclude_directories(),
         }
     }
-}
-
-/// Configuration for search behavior.
-#[derive(Debug, Clone, Deserialize)]
-pub struct SearchConfig {
-    /// Minimum similarity score threshold (0.0 to 1.0, default: 0.25)
-    #[serde(default = "default_min_score")]
-    pub min_score: f32,
-    /// Maximum number of results to return (default: 20)
-    #[serde(default = "default_max_results")]
-    pub max_results: usize,
-    /// Default context lines per result chunk (default: 15, None = full chunk)
-    #[serde(default = "default_context_lines")]
-    pub default_context_lines: Option<u32>,
 }
 
 fn default_min_score() -> f32 {
@@ -251,16 +209,6 @@ fn default_max_results() -> usize {
 
 fn default_context_lines() -> Option<u32> {
     Some(15)
-}
-
-impl Default for SearchConfig {
-    fn default() -> Self {
-        SearchConfig {
-            min_score: default_min_score(),
-            max_results: default_max_results(),
-            default_context_lines: default_context_lines(),
-        }
-    }
 }
 
 /// Configuration for optional LLM enrichment during indexing.
@@ -328,7 +276,7 @@ impl Default for EnrichmentConfig {
 }
 
 /// Semantic search feature configuration.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SemanticSearchConfig {
     /// Enable semantic search (default: false)
     #[serde(default)]
@@ -339,12 +287,42 @@ pub struct SemanticSearchConfig {
     /// Vector store configuration
     #[serde(default)]
     pub vector_store: VectorStoreConfig,
-    /// Indexing configuration
+    /// File patterns to include (glob patterns)
+    #[serde(default = "default_include_patterns")]
+    pub include: Vec<String>,
+    /// File and directory patterns to exclude (glob patterns)
     #[serde(default)]
-    pub index: IndexConfig,
-    /// Search configuration
-    #[serde(default)]
-    pub search: SearchConfig,
+    pub exclude: ExcludeConfig,
+    /// Maximum file size to index in MB (default: 1)
+    #[serde(default = "default_max_file_size_mb")]
+    pub max_file_size_mb: f64,
+    /// Minimum chunk size in characters (default: 50)
+    #[serde(default = "default_min_chunk_chars")]
+    pub min_chunk_chars: usize,
+    /// Maximum chunk size in characters (default: 2000)
+    #[serde(default = "default_max_chunk_chars")]
+    pub max_chunk_chars: usize,
+    /// Maximum chunk size for functions in characters (default: 5000)
+    #[serde(default = "default_max_function_chunk_chars")]
+    pub max_function_chunk_chars: usize,
+    /// Overlap size between chunks in characters (default: 200)
+    #[serde(default = "default_chunk_overlap_chars")]
+    pub chunk_overlap_chars: usize,
+    /// Batch size for embedding requests (default: 60)
+    #[serde(default = "default_batch_size")]
+    pub batch_size: usize,
+    /// Whether to respect .gitignore files when indexing (default: true)
+    #[serde(default = "default_respect_gitignore")]
+    pub respect_gitignore: bool,
+    /// Minimum similarity score threshold (0.0 to 1.0, default: 0.4)
+    #[serde(default = "default_min_score")]
+    pub min_score: f32,
+    /// Maximum number of results to return (default: 5)
+    #[serde(default = "default_max_results")]
+    pub max_results: usize,
+    /// Default context lines per result chunk (default: 15, None = full chunk)
+    #[serde(default = "default_context_lines")]
+    pub default_context_lines: Option<u32>,
     /// Optional LLM enrichment configuration
     #[serde(default)]
     pub enrichment: EnrichmentConfig,
@@ -391,6 +369,60 @@ impl SemanticSearchConfig {
     pub fn storage_path(&self) -> &str {
         &self.vector_store.path
     }
+
+    /// Expand exclude patterns to include directory matches.
+    pub fn expanded_exclude_patterns(&self) -> Vec<String> {
+        let mut patterns = Vec::new();
+        patterns.extend(self.exclude.files.clone());
+        patterns.extend(expand_directory_patterns(&self.exclude.directories));
+        patterns
+    }
+}
+
+impl Default for SemanticSearchConfig {
+    fn default() -> Self {
+        SemanticSearchConfig {
+            enabled: false,
+            embedder: EmbedderConfig::default(),
+            vector_store: VectorStoreConfig::default(),
+            include: default_include_patterns(),
+            exclude: ExcludeConfig::default(),
+            max_file_size_mb: default_max_file_size_mb(),
+            min_chunk_chars: default_min_chunk_chars(),
+            max_chunk_chars: default_max_chunk_chars(),
+            max_function_chunk_chars: default_max_function_chunk_chars(),
+            chunk_overlap_chars: default_chunk_overlap_chars(),
+            batch_size: default_batch_size(),
+            respect_gitignore: default_respect_gitignore(),
+            min_score: default_min_score(),
+            max_results: default_max_results(),
+            default_context_lines: default_context_lines(),
+            enrichment: EnrichmentConfig::default(),
+        }
+    }
+}
+
+fn expand_directory_patterns(patterns: &[String]) -> Vec<String> {
+    let mut expanded = Vec::new();
+    for pattern in patterns {
+        let trimmed = pattern.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.contains('*') {
+            let normalized = trimmed.trim_end_matches('/');
+            expanded.push(trimmed.to_string());
+            if !normalized.ends_with("/**") {
+                expanded.push(format!("{}/**", normalized));
+            }
+        } else {
+            let normalized = trimmed.trim_matches('/');
+            if !normalized.is_empty() {
+                expanded.push(format!("**/{}/**", normalized));
+            }
+        }
+    }
+    expanded
 }
 
 #[cfg(test)]
@@ -417,8 +449,18 @@ mod tests {
                 dimension: default_openai_dimension(),
             },
             vector_store: VectorStoreConfig::default(),
-            index: IndexConfig::default(),
-            search: SearchConfig::default(),
+            include: default_include_patterns(),
+            exclude: ExcludeConfig::default(),
+            max_file_size_mb: default_max_file_size_mb(),
+            min_chunk_chars: default_min_chunk_chars(),
+            max_chunk_chars: default_max_chunk_chars(),
+            max_function_chunk_chars: default_max_function_chunk_chars(),
+            chunk_overlap_chars: default_chunk_overlap_chars(),
+            batch_size: default_batch_size(),
+            respect_gitignore: default_respect_gitignore(),
+            min_score: default_min_score(),
+            max_results: default_max_results(),
+            default_context_lines: default_context_lines(),
             enrichment: EnrichmentConfig::default(),
         }
     }

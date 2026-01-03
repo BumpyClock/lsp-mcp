@@ -263,8 +263,8 @@ impl SemanticWatcher {
             .to_string_lossy();
 
         // Check exclude patterns
-        for pattern in &config.index.exclude {
-            if let Ok(p) = Pattern::new(pattern) {
+        for pattern in config.expanded_exclude_patterns() {
+            if let Ok(p) = Pattern::new(&pattern) {
                 if p.matches(&relative_path) {
                     return false;
                 }
@@ -272,11 +272,11 @@ impl SemanticWatcher {
         }
 
         // Check include patterns
-        if config.index.include.is_empty() {
+        if config.include.is_empty() {
             return true;
         }
 
-        for pattern in &config.index.include {
+        for pattern in &config.include {
             if let Ok(p) = Pattern::new(pattern) {
                 if p.matches(&relative_path) {
                     return true;

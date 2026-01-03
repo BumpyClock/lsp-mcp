@@ -64,7 +64,7 @@ impl Indexer {
         let mut pending_chunks: Vec<CodeChunk> = Vec::new();
         let mut pending_file_hashes: HashMap<String, String> = HashMap::new();
 
-        let batch_size = self.config.index.batch_size;
+        let batch_size = self.config.batch_size;
         let max_size_bytes = self.max_file_size_bytes();
 
         for file_path in files {
@@ -211,7 +211,6 @@ impl Indexer {
         // Compile include patterns
         let include_patterns: Vec<Pattern> = self
             .config
-            .index
             .include
             .iter()
             .filter_map(|p| Pattern::new(p).ok())
@@ -220,8 +219,7 @@ impl Indexer {
         // Compile exclude patterns
         let exclude_patterns: Vec<Pattern> = self
             .config
-            .index
-            .exclude
+            .expanded_exclude_patterns()
             .iter()
             .filter_map(|p| Pattern::new(p).ok())
             .collect();
@@ -229,7 +227,7 @@ impl Indexer {
         let walker = WalkBuilder::new(&self.workspace_root)
             .standard_filters(true)
             .hidden(true)
-            .git_ignore(self.config.index.respect_gitignore)
+            .git_ignore(self.config.respect_gitignore)
             .build();
 
         for entry in walker {
@@ -427,7 +425,7 @@ impl Indexer {
     }
 
     fn max_file_size_bytes(&self) -> u64 {
-        (self.config.index.max_file_size_mb * 1024.0 * 1024.0) as u64
+        (self.config.max_file_size_mb * 1024.0 * 1024.0) as u64
     }
 
     async fn update_file_hashes(

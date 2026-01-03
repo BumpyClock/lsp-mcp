@@ -9,8 +9,7 @@ mod types;
 use std::collections::HashMap;
 
 pub use semantic_search_config::{
-    EmbedderConfig, EnrichmentConfig, IndexConfig, SearchConfig, SemanticSearchConfig,
-    VectorStoreConfig,
+    EmbedderConfig, EnrichmentConfig, ExcludeConfig, SemanticSearchConfig, VectorStoreConfig,
 };
 pub use tools_config::{InitialSetupMode, ToolsConfig};
 pub use types::{DebugConfig, DebugLogLevel, OutputConfig, OutputMode};

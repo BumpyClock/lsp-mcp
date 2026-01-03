@@ -67,6 +67,8 @@ When enabled:
 
 ### Semantic Search
 
+Note: `semantic_search.index` and `semantic_search.search` are removed; all options now live directly under `semantic_search`.
+
 - `semantic_search.enabled`: enable semantic search (default: `false`).
 - `semantic_search.embedder`:
   - `provider`: `fastembed` (default) or `openai`.
@@ -82,18 +84,20 @@ When enabled:
     - `dimension` (default: `1536`)
 - `semantic_search.vector_store`:
   - `path`: storage path relative to workspace root (default: `.lsp-mcp/semanticSearch`)
-- `semantic_search.index`:
-  - `include`: list of glob patterns to include
-  - `exclude`: list of glob patterns to exclude
-  - `max_file_size_mb`: max file size in MB (default: `1`)
-  - `min_chunk_chars`: minimum chunk size (default: `50`)
-  - `max_chunk_chars`: maximum chunk size (default: `2000`)
-  - `batch_size`: embedding batch size (default: `60`)
-  - `respect_gitignore`: whether to skip files in .gitignore (default: `true`)
-- `semantic_search.search`:
-  - `min_score`: minimum similarity (default: `0.25`)
-  - `max_results`: maximum results (default: `20`)
-  - `default_context_lines`: max lines per result chunk (default: `15`, `null` = full chunk)
+- `semantic_search.include`: list of glob patterns to include
+- `semantic_search.exclude`:
+  - `files`: list of glob patterns to exclude files
+  - `directories`: list of glob patterns to exclude directories
+- `semantic_search.max_file_size_mb`: max file size in MB (default: `1`)
+- `semantic_search.min_chunk_chars`: minimum chunk size (default: `50`)
+- `semantic_search.max_chunk_chars`: maximum chunk size (default: `2000`)
+- `semantic_search.max_function_chunk_chars`: maximum chunk size for functions (default: `5000`)
+- `semantic_search.chunk_overlap_chars`: overlap size between chunks (default: `200`)
+- `semantic_search.batch_size`: embedding batch size (default: `60`)
+- `semantic_search.respect_gitignore`: whether to skip files in .gitignore (default: `true`)
+- `semantic_search.min_score`: minimum similarity (default: `0.4`)
+- `semantic_search.max_results`: maximum results (default: `5`)
+- `semantic_search.default_context_lines`: max lines per result chunk (default: `15`, `null` = full chunk)
 
 Note: Semantic search requires both `semantic_search.enabled: true` and `tools.enable` to include `semanticSearch`.
 
@@ -131,12 +135,11 @@ Full example:
     "embedder": {
       "provider": "fastembed"
     },
-    "index": {
-      "respect_gitignore": false
+    "exclude": {
+      "directories": ["**/node_modules/**"]
     },
-    "search": {
-      "default_context_lines": 15
-    }
+    "respect_gitignore": false,
+    "default_context_lines": 15
   },
   "output": {
     "mode": "default"
