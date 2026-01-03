@@ -2,7 +2,7 @@
   "mcpServers": {
     "lsp-mcp": {
       "type": "stdio",
-      "command": "C:/Users/adity/Projects/lsp-mcp/target/release/lsp-mcp.exe"
+      "command": "lsp-mcp"
     }
   }
 }
