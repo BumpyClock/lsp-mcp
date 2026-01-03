@@ -280,7 +280,7 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "hover", description = "Hover info at position. Use include_definition to also get definition location. Use 'requests' for batch mode with array of {path, line, character}")]
+    #[tool(name = "hover", description = "Type/doc info at position; use for quick context. Requires: requests (JSON array of {path, line, character} objects)")]
     async fn hover(
         &self,
         Parameters(params): Parameters<HoverParams>,
@@ -295,11 +295,8 @@ impl LspMcpServer {
         let output = hover::hover(
             &self.service,
             self.output_mode,
-            params.path,
-            params.line,
-            params.character,
-            params.include_definition,
             params.requests,
+            params.include_definition,
         )
         .await;
 
