@@ -87,7 +87,10 @@ fn resolve_log_dir(config: &DebugConfig, workspace_root: &Path) -> PathBuf {
                 workspace_root.join(path).join("sessions")
             }
         }
-        None => workspace_root.join(".lsp-mcp").join("logs").join("sessions"),
+        None => workspace_root
+            .join(".lsp-mcp")
+            .join("logs")
+            .join("sessions"),
     }
 }
 
@@ -108,7 +111,10 @@ fn debug_level_to_filter(level: DebugLogLevel) -> EnvFilter {
 /// This returns the path where logs would be written based on the config.
 /// Useful for including in health response.
 /// Returns None if debug is disabled or session is not initialized.
-pub fn session_log_path(debug_config: Option<&DebugConfig>, workspace_root: &Path) -> Option<PathBuf> {
+pub fn session_log_path(
+    debug_config: Option<&DebugConfig>,
+    workspace_root: &Path,
+) -> Option<PathBuf> {
     let debug = debug_config.filter(|d| d.enabled)?;
     let session_id = crate::session::try_session_id()?;
     let log_dir = resolve_log_dir(debug, workspace_root);

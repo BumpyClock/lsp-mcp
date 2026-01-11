@@ -40,7 +40,9 @@ impl ToMarkdown for HealthResponse {
                 output.push_str(&format!("Log file: {}\n\n", log_file));
             }
             output.push_str("**Important**: If tool responses seem incomplete or low quality, inspect the log file\n");
-            output.push_str("to identify discrepancies between what the LSP returned and what was formatted.\n");
+            output.push_str(
+                "to identify discrepancies between what the LSP returned and what was formatted.\n",
+            );
             output.push_str("Report any issues to the user.\n\n");
             output.push_str("---\n\n");
         }
@@ -162,10 +164,7 @@ mod tests {
 
         let result = lang.to_markdown();
 
-        assert_eq!(
-            result, "python",
-            "negative: Python must render as 'python'"
-        );
+        assert_eq!(result, "python", "negative: Python must render as 'python'");
     }
 
     #[test]
@@ -186,10 +185,7 @@ mod tests {
 
         let result = lang.to_markdown();
 
-        assert_eq!(
-            result, "rust",
-            "negative: Rust must render as 'rust'"
-        );
+        assert_eq!(result, "rust", "negative: Rust must render as 'rust'");
     }
 
     #[test]
@@ -198,10 +194,7 @@ mod tests {
 
         let result = lang.to_markdown();
 
-        assert_eq!(
-            result, "cpp",
-            "negative: CPP must render as 'cpp'"
-        );
+        assert_eq!(result, "cpp", "negative: CPP must render as 'cpp'");
     }
 
     #[test]
@@ -210,10 +203,7 @@ mod tests {
 
         let result = lang.to_markdown();
 
-        assert_eq!(
-            result, "csharp",
-            "negative: CSharp must render as 'csharp'"
-        );
+        assert_eq!(result, "csharp", "negative: CSharp must render as 'csharp'");
     }
 
     #[test]
@@ -222,10 +212,7 @@ mod tests {
 
         let result = lang.to_markdown();
 
-        assert_eq!(
-            result, "java",
-            "negative: Java must render as 'java'"
-        );
+        assert_eq!(result, "java", "negative: Java must render as 'java'");
     }
 
     #[test]
@@ -234,10 +221,7 @@ mod tests {
 
         let result = lang.to_markdown();
 
-        assert_eq!(
-            result, "golang",
-            "negative: Golang must render as 'golang'"
-        );
+        assert_eq!(result, "golang", "negative: Golang must render as 'golang'");
     }
 
     #[test]
@@ -246,10 +230,7 @@ mod tests {
 
         let result = lang.to_markdown();
 
-        assert_eq!(
-            result, "php",
-            "negative: PHP must render as 'php'"
-        );
+        assert_eq!(result, "php", "negative: PHP must render as 'php'");
     }
 
     #[test]
@@ -258,10 +239,7 @@ mod tests {
 
         let result = lang.to_markdown();
 
-        assert_eq!(
-            result, "ruby",
-            "negative: Ruby must render as 'ruby'"
-        );
+        assert_eq!(result, "ruby", "negative: Ruby must render as 'ruby'");
     }
 
     #[test]
@@ -583,8 +561,12 @@ mod tests {
 
         let result = response.to_markdown();
 
-        let debug_pos = result.find("## Debug Mode Active").expect("debug header not found");
-        let health_pos = result.find("LSP-MCP Health").expect("health header not found");
+        let debug_pos = result
+            .find("## Debug Mode Active")
+            .expect("debug header not found");
+        let health_pos = result
+            .find("LSP-MCP Health")
+            .expect("health header not found");
 
         assert!(
             debug_pos < health_pos,

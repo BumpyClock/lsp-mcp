@@ -19,13 +19,16 @@ use crate::service::types::errors::{PositionError, ServiceError};
 use crate::service::types::response::{
     McpDefinitionResponse, McpSymbolsResponse, SymbolDefinitionMatch, SymbolDefinitionResponse,
 };
+use crate::service::utils::external::ExternalInfo;
 use crate::service::utils::identifiers::find_identifier_at_position;
 use crate::service::utils::pagination::paginate_items;
-use crate::service::utils::signature::{batch_enrich_symbols, extract_identifier_name_from_hover, truncate_signature, DEFAULT_ENRICHMENT_CONCURRENCY};
+use crate::service::utils::signature::{
+    batch_enrich_symbols, extract_identifier_name_from_hover, truncate_signature,
+    DEFAULT_ENRICHMENT_CONCURRENCY,
+};
 use crate::service::utils::transformations::{
     definition_item_from_location, definition_locations, definition_locations_lsp,
 };
-use crate::service::utils::external::ExternalInfo;
 use log::{debug, warn};
 
 use super::hover::{count_references_impl, fetch_hover_info_impl};
@@ -152,16 +155,23 @@ fn selection_range_positions(range: &SelectionRange) -> Vec<LspPosition> {
 }
 
 fn normalize_symbol_detail(detail: &Option<String>) -> Option<String> {
-    detail
-        .as_ref()
-        .and_then(|value| if value.trim().is_empty() { None } else { Some(truncate_signature(value, None)) })
+    detail.as_ref().and_then(|value| {
+        if value.trim().is_empty() {
+            None
+        } else {
+            Some(truncate_signature(value, None))
+        }
+    })
 }
 
 /// Reads a single source line from a file.
 async fn read_source_line(manager: &Arc<Manager>, path: &str, line: u32) -> Option<String> {
     let range = LspRange {
         start: LspPosition { line, character: 0 },
-        end: LspPosition { line: line + 1, character: 0 },
+        end: LspPosition {
+            line: line + 1,
+            character: 0,
+        },
     };
     manager.read_source_code(path, Some(range)).await.ok()
 }
@@ -211,10 +221,7 @@ async fn retry_definition_with_symbol_selection(
     if selection_position == lsp_position {
         return None;
     }
-    let Ok(definitions) = manager
-        .find_definition(file_path, selection_position)
-        .await
-    else {
+    let Ok(definitions) = manager.find_definition(file_path, selection_position).await else {
         return None;
     };
     if definition_locations_lsp(&definitions).is_empty() {
@@ -257,8 +264,14 @@ async fn find_overload_implementation(
                 return Some(Location {
                     uri: loc.uri.clone(),
                     range: LspRange {
-                        start: LspPosition { line: check_line, character: 0 },
-                        end: LspPosition { line: check_line + 1, character: 0 },
+                        start: LspPosition {
+                            line: check_line,
+                            character: 0,
+                        },
+                        end: LspPosition {
+                            line: check_line + 1,
+                            character: 0,
+                        },
                     },
                 });
             }
@@ -408,10 +421,15 @@ fn symbol_kind_to_string(kind: SymbolKind) -> String {
         SymbolKind::OPERATOR => "Operator",
         SymbolKind::TYPE_PARAMETER => "TypeParameter",
         _ => "Unknown",
-    }.to_string()
+    }
+    .to_string()
 }
 
-fn convert_document_symbol(doc_sym: &DocumentSymbol, file_path: &str, is_top_level: bool) -> Symbol {
+fn convert_document_symbol(
+    doc_sym: &DocumentSymbol,
+    file_path: &str,
+    is_top_level: bool,
+) -> Symbol {
     let children = doc_sym.children.as_ref().map(|kids| {
         kids.iter()
             .map(|child| convert_document_symbol(child, file_path, false))
@@ -422,14 +440,22 @@ fn convert_document_symbol(doc_sym: &DocumentSymbol, file_path: &str, is_top_lev
         name: doc_sym.name.clone(),
         kind: symbol_kind_to_string(doc_sym.kind),
         identifier_position: FilePosition {
-            path: if is_top_level { String::new() } else { file_path.to_string() },
+            path: if is_top_level {
+                String::new()
+            } else {
+                file_path.to_string()
+            },
             position: Position {
                 line: doc_sym.selection_range.start.line + 1,
                 character: doc_sym.selection_range.start.character + 1,
             },
         },
         file_range: FileRange {
-            path: if is_top_level { String::new() } else { file_path.to_string() },
+            path: if is_top_level {
+                String::new()
+            } else {
+                file_path.to_string()
+            },
             range: Range {
                 start: Position {
                     line: doc_sym.range.start.line + 1,
@@ -445,7 +471,14 @@ fn convert_document_symbol(doc_sym: &DocumentSymbol, file_path: &str, is_top_lev
         exported: None,
         jsdoc_summary: None,
         dependencies: None,
-        line_count: Some(doc_sym.range.end.line.saturating_sub(doc_sym.range.start.line) + 1),
+        line_count: Some(
+            doc_sym
+                .range
+                .end
+                .line
+                .saturating_sub(doc_sym.range.start.line)
+                + 1,
+        ),
         children,
         snippet: None,
     }
@@ -479,7 +512,15 @@ fn convert_symbol_information(sym_info: &lsp_types::SymbolInformation, _file_pat
         exported: None,
         jsdoc_summary: None,
         dependencies: None,
-        line_count: Some(sym_info.location.range.end.line.saturating_sub(sym_info.location.range.start.line) + 1),
+        line_count: Some(
+            sym_info
+                .location
+                .range
+                .end
+                .line
+                .saturating_sub(sym_info.location.range.start.line)
+                + 1,
+        ),
         children: None,
         snippet: None,
     }
@@ -500,8 +541,20 @@ fn sort_definition_candidates(mut candidates: Vec<DefinitionCandidate>) -> Vec<L
             .cmp(&b.is_external)
             .then_with(|| b.line_span.cmp(&a.line_span))
             .then_with(|| a.path.cmp(&b.path))
-            .then_with(|| a.location.range.start.line.cmp(&b.location.range.start.line))
-            .then_with(|| a.location.range.start.character.cmp(&b.location.range.start.character))
+            .then_with(|| {
+                a.location
+                    .range
+                    .start
+                    .line
+                    .cmp(&b.location.range.start.line)
+            })
+            .then_with(|| {
+                a.location
+                    .range
+                    .start
+                    .character
+                    .cmp(&b.location.range.start.character)
+            })
             .then_with(|| a.original_index.cmp(&b.original_index))
     });
     candidates.into_iter().map(|c| c.location).collect()
@@ -581,26 +634,26 @@ pub(crate) async fn definitions_in_file_impl(
     use crate::api_types::get_mount_dir;
 
     let full_path = get_mount_dir().join(file_path);
-    let metadata = tokio::fs::metadata(&full_path)
-        .await
-        .map_err(|e| ServiceError::Lsp(crate::lsp::manager::LspManagerError::FileNotFound(
-            format!("{}: {}", file_path, e)
-        )))?;
-    let mtime = metadata.modified()
-        .map_err(|e| ServiceError::Lsp(crate::lsp::manager::LspManagerError::InternalError(
-            format!("Failed to get mtime: {}", e)
-        )))?;
+    let metadata = tokio::fs::metadata(&full_path).await.map_err(|e| {
+        ServiceError::Lsp(crate::lsp::manager::LspManagerError::FileNotFound(format!(
+            "{}: {}",
+            file_path, e
+        )))
+    })?;
+    let mtime = metadata.modified().map_err(|e| {
+        ServiceError::Lsp(crate::lsp::manager::LspManagerError::InternalError(
+            format!("Failed to get mtime: {}", e),
+        ))
+    })?;
     let mtime_rfc3339 = chrono::DateTime::<chrono::Utc>::from(mtime).to_rfc3339();
 
     let lsp_response = manager.document_symbol(file_path).await?;
 
     let mut symbols: Vec<Symbol> = match lsp_response {
-        Some(DocumentSymbolResponse::Nested(doc_symbols)) => {
-            doc_symbols
-                .iter()
-                .map(|ds| convert_document_symbol(ds, file_path, true))
-                .collect()
-        }
+        Some(DocumentSymbolResponse::Nested(doc_symbols)) => doc_symbols
+            .iter()
+            .map(|ds| convert_document_symbol(ds, file_path, true))
+            .collect(),
         Some(DocumentSymbolResponse::Flat(sym_infos)) => {
             let filtered = filter_flat_symbol_information(sym_infos, include_locals);
             filtered
@@ -612,7 +665,13 @@ pub(crate) async fn definitions_in_file_impl(
     };
 
     // Enrich symbols with LSP hover data using parallel processing
-    batch_enrich_symbols(manager, file_path, &mut symbols, DEFAULT_ENRICHMENT_CONCURRENCY).await;
+    batch_enrich_symbols(
+        manager,
+        file_path,
+        &mut symbols,
+        DEFAULT_ENRICHMENT_CONCURRENCY,
+    )
+    .await;
 
     if !include_children {
         symbols = strip_symbol_children(symbols);
@@ -725,7 +784,13 @@ async fn attach_snippets_to_symbols(
     for symbol in symbols.iter_mut() {
         attach_snippet_to_symbol(manager, file_path, symbol, context_lines).await;
         if let Some(ref mut children) = symbol.children {
-            Box::pin(attach_snippets_to_symbols(manager, file_path, children, context_lines)).await;
+            Box::pin(attach_snippets_to_symbols(
+                manager,
+                file_path,
+                children,
+                context_lines,
+            ))
+            .await;
         }
     }
 }
@@ -806,7 +871,9 @@ pub(crate) async fn find_definition_impl(
             )
             .await
         }
-        None => Err(PositionError::IdentifierNotFound { closest: Vec::new() }),
+        None => Err(PositionError::IdentifierNotFound {
+            closest: Vec::new(),
+        }),
     };
 
     // Try to get definitions from LSP regardless of identifier result
@@ -995,7 +1062,9 @@ pub(crate) async fn find_implementation_impl(
             // Check if LSP found implementations - if so, position is valid
             if all_impl_locations.is_empty() {
                 // LSP also found nothing - return original error
-                debug!("find_implementation_impl: LSP also found no implementations, returning error");
+                debug!(
+                    "find_implementation_impl: LSP also found no implementations, returning error"
+                );
                 return Err(ServiceError::IdentifierSelection(
                     PositionError::IdentifierNotFound { closest },
                 ));
@@ -1358,12 +1427,24 @@ mod tests {
             tags: None,
             deprecated: None,
             range: LspRange {
-                start: LspPosition { line: 2, character: 0 },
-                end: LspPosition { line: 4, character: 0 },
+                start: LspPosition {
+                    line: 2,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 4,
+                    character: 0,
+                },
             },
             selection_range: LspRange {
-                start: LspPosition { line: 2, character: 3 },
-                end: LspPosition { line: 2, character: 10 },
+                start: LspPosition {
+                    line: 2,
+                    character: 3,
+                },
+                end: LspPosition {
+                    line: 2,
+                    character: 10,
+                },
             },
             children: None,
         };
@@ -1387,12 +1468,24 @@ mod tests {
             tags: None,
             deprecated: None,
             range: LspRange {
-                start: LspPosition { line: 7, character: 0 },
-                end: LspPosition { line: 9, character: 0 },
+                start: LspPosition {
+                    line: 7,
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: 9,
+                    character: 0,
+                },
             },
             selection_range: LspRange {
-                start: LspPosition { line: 7, character: 6 },
-                end: LspPosition { line: 7, character: 16 },
+                start: LspPosition {
+                    line: 7,
+                    character: 6,
+                },
+                end: LspPosition {
+                    line: 7,
+                    character: 16,
+                },
             },
             children: None,
         };
@@ -1418,12 +1511,16 @@ mod tests {
     fn sort_definition_candidates_prefers_internal_over_external() {
         let temp_dir = TempDir::new().expect("negative: temp dir unavailable");
         let unicode = char::from_u32(241).expect("negative: unicode should be valid");
-        let internal_path = temp_dir
-            .path()
-            .join(format!("internal_{}{}.rs", unicode, random_irregular_string()));
-        let external_path = temp_dir
-            .path()
-            .join(format!("external_{}{}.rs", unicode, random_irregular_string()));
+        let internal_path = temp_dir.path().join(format!(
+            "internal_{}{}.rs",
+            unicode,
+            random_irregular_string()
+        ));
+        let external_path = temp_dir.path().join(format!(
+            "external_{}{}.rs",
+            unicode,
+            random_irregular_string()
+        ));
         fs::write(&internal_path, "fn internal() {}").expect("negative: write failed");
         fs::write(&external_path, "fn external() {}").expect("negative: write failed");
 
@@ -1454,7 +1551,9 @@ mod tests {
     #[test]
     fn sort_definition_candidates_prefers_larger_spans_when_internal() {
         let temp_dir = TempDir::new().expect("negative: temp dir unavailable");
-        let path = temp_dir.path().join(format!("file_{}.rs", random_irregular_string()));
+        let path = temp_dir
+            .path()
+            .join(format!("file_{}.rs", random_irregular_string()));
         fs::write(&path, "fn a() {}\nfn b() {}").expect("negative: write failed");
 
         let small_span = DefinitionCandidate {
@@ -1483,7 +1582,9 @@ mod tests {
     #[test]
     fn sort_definition_candidates_preserves_order_when_equal() {
         let temp_dir = TempDir::new().expect("negative: temp dir unavailable");
-        let path = temp_dir.path().join(format!("file_{}.rs", random_irregular_string()));
+        let path = temp_dir
+            .path()
+            .join(format!("file_{}.rs", random_irregular_string()));
         fs::write(&path, "fn a() {}\nfn b() {}").expect("negative: write failed");
 
         let first = DefinitionCandidate {
@@ -1517,13 +1618,22 @@ mod tests {
             kind: "function".to_string(),
             identifier_position: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 2, character: 1 },
+                position: Position {
+                    line: 2,
+                    character: 1,
+                },
             },
             file_range: FileRange {
                 path: "src/lib.rs".to_string(),
                 range: Range {
-                    start: Position { line: 2, character: 1 },
-                    end: Position { line: 3, character: 1 },
+                    start: Position {
+                        line: 2,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 3,
+                        character: 1,
+                    },
                 },
             },
             signature: None,
@@ -1571,6 +1681,9 @@ mod tests {
         let result = filter_flat_symbol_information(vec![top_level, nested], false);
 
         assert_eq!(result.len(), 1, "negative: nested symbols must be filtered");
-        assert!(result[0].container_name.is_none(), "negative: container must be none");
+        assert!(
+            result[0].container_name.is_none(),
+            "negative: container must be none"
+        );
     }
 }

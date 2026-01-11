@@ -111,7 +111,9 @@ async fn execute_impact(
     store: &Arc<CodemapStore>,
     query: &CodemapQuery,
 ) -> Result<CodemapResponse, QueryError> {
-    let target = query.target.as_ref()
+    let target = query
+        .target
+        .as_ref()
         .ok_or_else(|| QueryError::InvalidQuery("Impact query requires target".to_string()))?;
 
     // Find target node
@@ -156,8 +158,14 @@ async fn execute_impact(
 
     // Apply limit
     let truncated = collected_nodes.len() > query.limit as usize;
-    let nodes: Vec<Node> = collected_nodes.into_iter().take(query.limit as usize).collect();
-    let edges: Vec<Edge> = collected_edges.into_iter().take(query.limit as usize * 2).collect();
+    let nodes: Vec<Node> = collected_nodes
+        .into_iter()
+        .take(query.limit as usize)
+        .collect();
+    let edges: Vec<Edge> = collected_edges
+        .into_iter()
+        .take(query.limit as usize * 2)
+        .collect();
 
     let (file_count, symbol_count, _) = store.get_stats().await?;
 
@@ -182,7 +190,9 @@ async fn execute_context(
     store: &Arc<CodemapStore>,
     query: &CodemapQuery,
 ) -> Result<CodemapResponse, QueryError> {
-    let target = query.target.as_ref()
+    let target = query
+        .target
+        .as_ref()
         .ok_or_else(|| QueryError::InvalidQuery("Context query requires target".to_string()))?;
 
     // Find target node
@@ -235,8 +245,14 @@ async fn execute_context(
 
     // Apply limit
     let truncated = collected_nodes.len() > query.limit as usize;
-    let nodes: Vec<Node> = collected_nodes.into_iter().take(query.limit as usize).collect();
-    let edges: Vec<Edge> = collected_edges.into_iter().take(query.limit as usize * 2).collect();
+    let nodes: Vec<Node> = collected_nodes
+        .into_iter()
+        .take(query.limit as usize)
+        .collect();
+    let edges: Vec<Edge> = collected_edges
+        .into_iter()
+        .take(query.limit as usize * 2)
+        .collect();
 
     let (file_count, symbol_count, _) = store.get_stats().await?;
 
@@ -308,7 +324,8 @@ fn get_top_symbols_by_refs(
     let mut symbol_refs: Vec<(&SymbolNode, u32)> = symbols
         .iter()
         .map(|s| {
-            let ref_count = cache.get_incoming(&s.id)
+            let ref_count = cache
+                .get_incoming(&s.id)
                 .iter()
                 .filter(|(k, _, _)| matches!(k, EdgeKind::Calls))
                 .count() as u32;

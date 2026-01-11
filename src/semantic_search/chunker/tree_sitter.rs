@@ -88,8 +88,7 @@ impl TreeSitterChunker {
             let ctx_end = (end_line + config.context_lines).min(lines.len() as u32);
             let mut code_start = ctx_start;
             let mut code_end = ctx_end;
-            let base_code: String =
-                lines[(ctx_start as usize - 1)..(ctx_end as usize)].join("\n");
+            let base_code: String = lines[(ctx_start as usize - 1)..(ctx_end as usize)].join("\n");
             let base_len = base_code.len();
             let is_function = matches!(boundary, ChunkBoundary::Function);
             let allow_oversize = is_function && base_len <= config.max_function_chars;
@@ -111,14 +110,15 @@ impl TreeSitterChunker {
                 code_end = expanded_end;
             }
 
-            let code: String =
-                lines[(code_start as usize - 1)..(code_end as usize)].join("\n");
+            let code: String = lines[(code_start as usize - 1)..(code_end as usize)].join("\n");
             let code_len = code.len();
 
             if line_count > config.max_lines && !allow_oversize {
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i as u32) {
-                        self.walk_tree(child, content, file_path, config, node_kinds, lines, chunks);
+                        self.walk_tree(
+                            child, content, file_path, config, node_kinds, lines, chunks,
+                        );
                     }
                 }
             } else if code_len <= max_code_chars {
@@ -364,8 +364,12 @@ impl Point {
 
         assert!(!chunks.is_empty());
         // Should find functions and structs
-        let has_function = chunks.iter().any(|c| c.symbol_kind.as_deref() == Some("function"));
-        let has_type = chunks.iter().any(|c| c.symbol_kind.as_deref() == Some("type"));
+        let has_function = chunks
+            .iter()
+            .any(|c| c.symbol_kind.as_deref() == Some("function"));
+        let has_type = chunks
+            .iter()
+            .any(|c| c.symbol_kind.as_deref() == Some("type"));
         assert!(has_function || has_type);
     }
 

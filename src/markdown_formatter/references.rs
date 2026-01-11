@@ -3,7 +3,7 @@
 
 use super::{escape_inline_code, ToMarkdown};
 use crate::api_types::ReferencedSymbolsResponse;
-use crate::service::types::response::{McpReferencesResponse, McpReferenceLocation, ReferenceType};
+use crate::service::types::response::{McpReferenceLocation, McpReferencesResponse, ReferenceType};
 
 pub fn format_references_summary(
     response: &McpReferencesResponse,
@@ -130,11 +130,7 @@ impl ToMarkdown for McpReferencesResponse {
 
         if let Some(selection) = &self.selection {
             let chosen_name = escape_inline_code(&selection.chosen.name);
-            let chosen_kind = selection
-                .chosen
-                .kind
-                .as_deref()
-                .unwrap_or("unknown");
+            let chosen_kind = selection.chosen.kind.as_deref().unwrap_or("unknown");
             let chosen_path = &selection.chosen.path;
             let chosen_pos = &selection.chosen.position;
 
@@ -151,19 +147,12 @@ impl ToMarkdown for McpReferencesResponse {
             } else {
                 output.push_str(&format!(
                     "Selected candidate: `{}` ({}) — {}:{}:{}\n",
-                    chosen_name,
-                    chosen_kind,
-                    chosen_path,
-                    chosen_pos.line,
-                    chosen_pos.character
+                    chosen_name, chosen_kind, chosen_path, chosen_pos.line, chosen_pos.character
                 ));
             }
 
             if !selection.others.is_empty() {
-                output.push_str(&format!(
-                    "Other candidates ({})\n",
-                    selection.others.len()
-                ));
+                output.push_str(&format!("Other candidates ({})\n", selection.others.len()));
                 for (idx, other) in selection.others.iter().enumerate() {
                     let other_name = escape_inline_code(&other.name);
                     let other_kind = other.kind.as_deref().unwrap_or("unknown");
@@ -196,7 +185,8 @@ impl ToMarkdown for McpReferencesResponse {
                 file_group.path, file_group.count, ref_word
             ));
 
-            let mut grouped_refs: Vec<Vec<&McpReferenceLocation>> = vec![vec![], vec![], vec![], vec![]];
+            let mut grouped_refs: Vec<Vec<&McpReferenceLocation>> =
+                vec![vec![], vec![], vec![], vec![]];
 
             for reference in &file_group.refs {
                 let index = match reference.reference_type {
@@ -227,18 +217,13 @@ impl ToMarkdown for McpReferencesResponse {
                             let escaped = escape_inline_code(target_line.trim());
                             output.push_str(&format!(
                                 "  [{}] Line {}:{}: `{}`\n",
-                                tag,
-                                line,
-                                reference.position.character,
-                                escaped
+                                tag, line, reference.position.character, escaped
                             ));
                         }
                         None => {
                             output.push_str(&format!(
                                 "  [{}] Line {}:{}\n",
-                                tag,
-                                line,
-                                reference.position.character
+                                tag, line, reference.position.character
                             ));
                         }
                     }
@@ -357,7 +342,10 @@ mod tests {
     }
 
     fn random_irregular_string() -> String {
-        format!("symbol_{}_unicode_\u{03B1}\u{03B2}", rand::rng().random_range(100..999))
+        format!(
+            "symbol_{}_unicode_\u{03B1}\u{03B2}",
+            rand::rng().random_range(100..999)
+        )
     }
 
     fn create_test_identifier(name: &str) -> Identifier {
@@ -366,8 +354,14 @@ mod tests {
             file_range: FileRange {
                 path: "src/test.rs".to_string(),
                 range: Range {
-                    start: Position { line: 1, character: 1 },
-                    end: Position { line: 1, character: 10 },
+                    start: Position {
+                        line: 1,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 1,
+                        character: 10,
+                    },
                 },
             },
             kind: Some("function".to_string()),
@@ -380,14 +374,20 @@ mod tests {
             position: Position { line, character: 5 },
             symbol_range: Range {
                 start: Position { line, character: 5 },
-                end: Position { line, character: 15 },
+                end: Position {
+                    line,
+                    character: 15,
+                },
             },
             snippet: Some(CodeContext {
                 range: FileRange {
                     path: "src/test.rs".to_string(),
                     range: Range {
                         start: Position { line, character: 1 },
-                        end: Position { line, character: 50 },
+                        end: Position {
+                            line,
+                            character: 50,
+                        },
                     },
                 },
                 source_code: source_code.to_string(),
@@ -402,20 +402,29 @@ mod tests {
             position: Position { line, character: 5 },
             symbol_range: Range {
                 start: Position { line, character: 5 },
-                end: Position { line, character: 15 },
+                end: Position {
+                    line,
+                    character: 15,
+                },
             },
             snippet: None,
             reference_type: ReferenceType::Call,
         }
     }
 
-    fn create_reference_with_type(line: u32, reference_type: ReferenceType) -> McpReferenceLocation {
+    fn create_reference_with_type(
+        line: u32,
+        reference_type: ReferenceType,
+    ) -> McpReferenceLocation {
         McpReferenceLocation {
             path: None,
             position: Position { line, character: 5 },
             symbol_range: Range {
                 start: Position { line, character: 5 },
-                end: Position { line, character: 15 },
+                end: Position {
+                    line,
+                    character: 15,
+                },
             },
             snippet: None,
             reference_type,
@@ -462,7 +471,10 @@ mod tests {
                     kind: Some("class".to_string()),
                     module: Some("App".to_string()),
                     path: "src/app/store.ts".to_string(),
-                    position: Position { line: 12, character: 3 },
+                    position: Position {
+                        line: 12,
+                        character: 3,
+                    },
                 },
                 others: vec![
                     ReferenceCandidate {
@@ -470,14 +482,20 @@ mod tests {
                         kind: Some("type".to_string()),
                         module: None,
                         path: "src/types/store.ts".to_string(),
-                        position: Position { line: 5, character: 1 },
+                        position: Position {
+                            line: 5,
+                            character: 1,
+                        },
                     },
                     ReferenceCandidate {
                         name: "Store".to_string(),
                         kind: Some("class".to_string()),
                         module: Some("Legacy".to_string()),
                         path: "src/legacy/store.ts".to_string(),
-                        position: Position { line: 9, character: 1 },
+                        position: Position {
+                            line: 9,
+                            character: 1,
+                        },
                     },
                 ],
             }),
@@ -509,10 +527,19 @@ mod tests {
     fn it_includes_reference_type_tags() {
         let reference = McpReferenceLocation {
             path: None,
-            position: Position { line: 10, character: 3 },
+            position: Position {
+                line: 10,
+                character: 3,
+            },
             symbol_range: Range {
-                start: Position { line: 10, character: 3 },
-                end: Position { line: 10, character: 12 },
+                start: Position {
+                    line: 10,
+                    character: 3,
+                },
+                end: Position {
+                    line: 10,
+                    character: 12,
+                },
             },
             snippet: None,
             reference_type: ReferenceType::Import,
@@ -866,17 +893,32 @@ mod tests {
 
         let def_ref = McpReferenceLocation {
             path: None,
-            position: Position { line: 5, character: 10 },
+            position: Position {
+                line: 5,
+                character: 10,
+            },
             symbol_range: Range {
-                start: Position { line: 5, character: 10 },
-                end: Position { line: 5, character: 20 },
+                start: Position {
+                    line: 5,
+                    character: 10,
+                },
+                end: Position {
+                    line: 5,
+                    character: 20,
+                },
             },
             snippet: Some(CodeContext {
                 range: FileRange {
                     path: file_path.to_string(),
                     range: Range {
-                        start: Position { line: 5, character: 0 },
-                        end: Position { line: 5, character: 50 },
+                        start: Position {
+                            line: 5,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 5,
+                            character: 50,
+                        },
                     },
                 },
                 source_code: "export const authenticate = () => {}".to_string(),
@@ -886,17 +928,32 @@ mod tests {
 
         let import_ref = McpReferenceLocation {
             path: None,
-            position: Position { line: 10, character: 3 },
+            position: Position {
+                line: 10,
+                character: 3,
+            },
             symbol_range: Range {
-                start: Position { line: 10, character: 3 },
-                end: Position { line: 10, character: 13 },
+                start: Position {
+                    line: 10,
+                    character: 3,
+                },
+                end: Position {
+                    line: 10,
+                    character: 13,
+                },
             },
             snippet: Some(CodeContext {
                 range: FileRange {
                     path: file_path.to_string(),
                     range: Range {
-                        start: Position { line: 10, character: 0 },
-                        end: Position { line: 10, character: 50 },
+                        start: Position {
+                            line: 10,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 10,
+                            character: 50,
+                        },
                     },
                 },
                 source_code: "import { authenticate } from './auth'".to_string(),
@@ -906,17 +963,32 @@ mod tests {
 
         let call_ref = McpReferenceLocation {
             path: None,
-            position: Position { line: 25, character: 7 },
+            position: Position {
+                line: 25,
+                character: 7,
+            },
             symbol_range: Range {
-                start: Position { line: 25, character: 7 },
-                end: Position { line: 25, character: 17 },
+                start: Position {
+                    line: 25,
+                    character: 7,
+                },
+                end: Position {
+                    line: 25,
+                    character: 17,
+                },
             },
             snippet: Some(CodeContext {
                 range: FileRange {
                     path: file_path.to_string(),
                     range: Range {
-                        start: Position { line: 25, character: 0 },
-                        end: Position { line: 25, character: 50 },
+                        start: Position {
+                            line: 25,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 25,
+                            character: 50,
+                        },
                     },
                 },
                 source_code: "const user = authenticate(credentials)".to_string(),
@@ -942,19 +1014,27 @@ mod tests {
 
         let markdown = response.to_markdown();
 
-        let def_pos = markdown.find("[def]").expect("negative: must include [def] tag");
-        let import_pos = markdown.find("[import]").expect("negative: must include [import] tag");
-        let call_pos = markdown.find("[call]").expect("negative: must include [call] tag");
+        let def_pos = markdown
+            .find("[def]")
+            .expect("negative: must include [def] tag");
+        let import_pos = markdown
+            .find("[import]")
+            .expect("negative: must include [import] tag");
+        let call_pos = markdown
+            .find("[call]")
+            .expect("negative: must include [call] tag");
 
         assert!(
             def_pos < import_pos,
             "negative: definitions must appear before imports but def at {} and import at {}",
-            def_pos, import_pos
+            def_pos,
+            import_pos
         );
         assert!(
             import_pos < call_pos,
             "negative: imports must appear before calls but import at {} and call at {}",
-            import_pos, call_pos
+            import_pos,
+            call_pos
         );
     }
 

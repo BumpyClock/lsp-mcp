@@ -12,11 +12,11 @@ pub use handler::{DidOpenConfiguration, WorkspaceDocuments, WorkspaceDocumentsHa
 mod tests {
     use super::*;
     use lsp_types::Range;
+    use notify_debouncer_mini::DebouncedEvent;
     use notify_debouncer_mini::DebouncedEventKind;
     use std::{error::Error, fs, time::Duration};
     use tempfile::tempdir;
     use tokio::sync::broadcast::{channel, Receiver, Sender};
-    use notify_debouncer_mini::DebouncedEvent;
 
     fn create_test_watcher_channels() -> (Sender<DebouncedEvent>, Receiver<DebouncedEvent>) {
         channel(100)
@@ -205,7 +205,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_file_change_invalidates_only_changed_file_cache() -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn test_file_change_invalidates_only_changed_file_cache(
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let dir = tempdir()?;
         let file_a = dir.path().join("file_a.txt");
         let file_b = dir.path().join("file_b.txt");
@@ -223,11 +224,20 @@ mod tests {
 
         let content_a = handler.read_text_document(&file_a, None).await?;
         let content_b = handler.read_text_document(&file_b, None).await?;
-        assert_eq!(content_a, "original content A", "file A should have original content");
-        assert_eq!(content_b, "original content B", "file B should have original content");
+        assert_eq!(
+            content_a, "original content A",
+            "file A should have original content"
+        );
+        assert_eq!(
+            content_b, "original content B",
+            "file B should have original content"
+        );
 
         fs::write(&file_a, "modified content A")?;
-        fs::write(&file_b, "modified content B - should NOT be seen due to cache")?;
+        fs::write(
+            &file_b,
+            "modified content B - should NOT be seen due to cache",
+        )?;
 
         tx.send(DebouncedEvent {
             path: file_a.clone(),
@@ -238,8 +248,14 @@ mod tests {
         let content_a_after = handler.read_text_document(&file_a, None).await?;
         let content_b_after = handler.read_text_document(&file_b, None).await?;
 
-        assert_eq!(content_a_after, "modified content A", "file A cache must be invalidated and re-read");
-        assert_eq!(content_b_after, "original content B", "file B cache must be preserved, not re-read from disk");
+        assert_eq!(
+            content_a_after, "modified content A",
+            "file A cache must be invalidated and re-read"
+        );
+        assert_eq!(
+            content_b_after, "original content B",
+            "file B cache must be preserved, not re-read from disk"
+        );
 
         Ok(())
     }

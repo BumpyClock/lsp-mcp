@@ -26,10 +26,8 @@ pub async fn run_server(
     let semantic_search_manager = match &config.semantic_search {
         Some(ss_config) if ss_config.enabled => {
             info!("Initializing semantic search manager...");
-            let manager = SemanticSearchManager::new(
-                ss_config.clone(),
-                workspace_root.to_path_buf(),
-            );
+            let manager =
+                SemanticSearchManager::new(ss_config.clone(), workspace_root.to_path_buf());
             let manager_arc = Arc::new(RwLock::new(manager));
             // Start indexing in the background
             let manager_clone = Arc::clone(&manager_arc);

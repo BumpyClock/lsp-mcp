@@ -1,7 +1,9 @@
 // ABOUTME: Diagnostics operations (get_diagnostics).
 // ABOUTME: Handles fetching errors, warnings, and hints from LSP servers.
 
-use crate::api_types::{Diagnostic, DiagnosticSeverity, DiagnosticsResponse, FileDiagnostics, SeverityCounts};
+use crate::api_types::{
+    Diagnostic, DiagnosticSeverity, DiagnosticsResponse, FileDiagnostics, SeverityCounts,
+};
 use crate::lsp::manager::Manager;
 use std::sync::Arc;
 
@@ -40,14 +42,12 @@ pub(crate) async fn get_diagnostics_impl(
                 .code_action(&path, lsp_range, vec![lsp_diag_clone])
                 .await
             {
-                diag.has_quick_fix = actions.iter().any(|action| {
-                    match action {
-                        lsp_types::CodeActionOrCommand::CodeAction(ca) => ca
-                            .kind
-                            .as_ref()
-                            .is_some_and(|k| k.as_str().starts_with("quickfix")),
-                        lsp_types::CodeActionOrCommand::Command(_) => false,
-                    }
+                diag.has_quick_fix = actions.iter().any(|action| match action {
+                    lsp_types::CodeActionOrCommand::CodeAction(ca) => ca
+                        .kind
+                        .as_ref()
+                        .is_some_and(|k| k.as_str().starts_with("quickfix")),
+                    lsp_types::CodeActionOrCommand::Command(_) => false,
                 });
             }
 

@@ -222,7 +222,10 @@ mod tests {
 
         let json = serde_json::to_value(&def_loc).expect("failed to serialize");
 
-        assert_eq!(json["path"], "node_modules/@reduxjs/toolkit/dist/index.d.mts");
+        assert_eq!(
+            json["path"],
+            "node_modules/@reduxjs/toolkit/dist/index.d.mts"
+        );
         assert_eq!(json["line"], 1847);
         assert_eq!(json["external"], true);
     }
@@ -231,7 +234,9 @@ mod tests {
     fn test_hover_response_with_definition() {
         let hover = HoverResponse {
             raw_response: None,
-            contents: Some(HoverContents::Markup("```typescript\nfunction configureStore<S>(): EnhancedStore\n```".to_string())),
+            contents: Some(HoverContents::Markup(
+                "```typescript\nfunction configureStore<S>(): EnhancedStore\n```".to_string(),
+            )),
             range: None,
             definitions: vec![DefinitionLocation {
                 path: "node_modules/@reduxjs/toolkit/dist/index.d.mts".to_string(),
@@ -245,8 +250,14 @@ mod tests {
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
 
-        assert!(json.get("definitions").is_some(), "definitions must be present");
-        assert_eq!(json["definitions"][0]["path"], "node_modules/@reduxjs/toolkit/dist/index.d.mts");
+        assert!(
+            json.get("definitions").is_some(),
+            "definitions must be present"
+        );
+        assert_eq!(
+            json["definitions"][0]["path"],
+            "node_modules/@reduxjs/toolkit/dist/index.d.mts"
+        );
         assert_eq!(json["definitions"][0]["line"], 1847);
         assert_eq!(json["definitions"][0]["external"], true);
     }
@@ -265,14 +276,19 @@ mod tests {
 
         let json = serde_json::to_value(&hover).expect("failed to serialize");
 
-        assert!(json.get("definitions").is_none(), "empty definitions must be skipped in serialization");
+        assert!(
+            json.get("definitions").is_none(),
+            "empty definitions must be skipped in serialization"
+        );
     }
 
     #[test]
     fn test_hover_response_with_active_signature() {
         let hover = HoverResponse {
             raw_response: None,
-            contents: Some(HoverContents::Markup("hover\tcontent with\t\u{00A0}tabs".to_string())),
+            contents: Some(HoverContents::Markup(
+                "hover\tcontent with\t\u{00A0}tabs".to_string(),
+            )),
             range: None,
             definitions: Vec::new(),
             active_signature: Some("fn \u{4E2D}\u{6587}(arg1: i32, arg2: String)".to_string()),
@@ -283,8 +299,7 @@ mod tests {
         let json = serde_json::to_value(&hover).expect("failed to serialize");
 
         assert_eq!(
-            json["active_signature"],
-            "fn \u{4E2D}\u{6587}(arg1: i32, arg2: String)",
+            json["active_signature"], "fn \u{4E2D}\u{6587}(arg1: i32, arg2: String)",
             "negative: active_signature must be serialized"
         );
         assert_eq!(
@@ -325,8 +340,14 @@ mod tests {
             range: FileRange {
                 path: "src/lib.rs".to_string(),
                 range: Range {
-                    start: Position { line: 9, character: 1 },
-                    end: Position { line: 11, character: 1 },
+                    start: Position {
+                        line: 9,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 11,
+                        character: 1,
+                    },
                 },
             },
             source_code: "pub fn example\tvalue() -> i32 {\n    42\n}".to_string(),
@@ -337,7 +358,10 @@ mod tests {
             kind: "function".to_string(),
             location: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 10, character: 8 },
+                position: Position {
+                    line: 10,
+                    character: 8,
+                },
             },
             container_name: None,
             match_kind: None,
@@ -370,7 +394,10 @@ mod tests {
             kind: "variable".to_string(),
             location: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 5, character: 5 },
+                position: Position {
+                    line: 5,
+                    character: 5,
+                },
             },
             container_name: None,
             match_kind: None,

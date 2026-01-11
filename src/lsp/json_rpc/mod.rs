@@ -52,10 +52,7 @@ mod tests {
 
         let result = store.get(&uri).await;
 
-        assert!(
-            result.is_none(),
-            "expected None for unknown file, got Some"
-        );
+        assert!(result.is_none(), "expected None for unknown file, got Some");
     }
 
     #[tokio::test]
@@ -151,7 +148,11 @@ mod tests {
         store.clear().await;
         let all = store.get_all().await;
 
-        assert!(all.is_empty(), "expected empty after clear, got {} entries", all.len());
+        assert!(
+            all.is_empty(),
+            "expected empty after clear, got {} entries",
+            all.len()
+        );
     }
 
     #[tokio::test]
@@ -270,10 +271,18 @@ mod tests {
     async fn pending_requests_fail_all_requests_notifies_all_waiting_receivers() {
         let pending = PendingRequests::new();
 
-        let mut receiver1 = pending.add_request(1).await.expect("add_request should succeed");
-        let mut receiver2 = pending.add_request(2).await.expect("add_request should succeed");
+        let mut receiver1 = pending
+            .add_request(1)
+            .await
+            .expect("add_request should succeed");
+        let mut receiver2 = pending
+            .add_request(2)
+            .await
+            .expect("add_request should succeed");
 
-        pending.fail_all_requests("LSP process died".to_string()).await;
+        pending
+            .fail_all_requests("LSP process died".to_string())
+            .await;
 
         let response1 = timeout(Duration::from_millis(100), receiver1.recv())
             .await
@@ -304,7 +313,10 @@ mod tests {
     async fn pending_requests_fail_all_requests_clears_request_channels() {
         let pending = PendingRequests::new();
 
-        let _receiver = pending.add_request(1).await.expect("add_request should succeed");
+        let _receiver = pending
+            .add_request(1)
+            .await
+            .expect("add_request should succeed");
 
         pending.fail_all_requests("test error".to_string()).await;
 

@@ -6,19 +6,18 @@ use crate::mcp_response::tool_disabled_message;
 use crate::session::new_request_id;
 use crate::stats::StatsStore;
 use rmcp::{
-    ServerHandler,
     model::{
-        CallToolResult, Content, JsonObject, ListToolsResult, ServerInfo, Tool,
-        CallToolRequestParam, PaginatedRequestParam,
+        CallToolRequestParam, CallToolResult, Content, JsonObject, ListToolsResult,
+        PaginatedRequestParam, ServerInfo, Tool,
     },
     service::{RequestContext, RoleServer},
-    ErrorData as McpError,
+    ErrorData as McpError, ServerHandler,
 };
 use serde_json::Map;
+use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
-use serde_json::Value;
 
 /// Wrapper that filters tools based on configuration.
 ///
@@ -32,7 +31,11 @@ pub struct FilteredLspMcpServer {
 
 impl FilteredLspMcpServer {
     /// Create a new filtered handler wrapping the inner handler.
-    pub fn new(inner: LspMcpServer, enabled_tools: HashSet<String>, stats_store: Arc<StatsStore>) -> Self {
+    pub fn new(
+        inner: LspMcpServer,
+        enabled_tools: HashSet<String>,
+        stats_store: Arc<StatsStore>,
+    ) -> Self {
         Self {
             inner,
             enabled_tools,
@@ -102,13 +105,17 @@ impl FilteredLspMcpServer {
         let description = match name {
             "callHierarchy" => "Call hierarchy at position; use to trace call flow",
             "findIdentifier" => "Identifier occurrences in a file; use for local search",
-            "findReferences" => "References to a symbol by name; summary by default, detail=true for full output",
+            "findReferences" => {
+                "References to a symbol by name; summary by default, detail=true for full output"
+            }
             "goToDefinition" => "Definition at position; use to jump to source",
             "getSymbolDefinition" => "Full definition for a symbol by name",
             "getDiagnostics" => "Diagnostics for file/workspace; use for errors and warnings",
             "goToImplementation" => "Implementation at position; use for interface/trait impls",
             "documentSymbol" => "Symbols defined in a file; use to outline structure",
-            "semanticSearch" => "Semantic code search; use descriptive natural language queries (not keywords)",
+            "semanticSearch" => {
+                "Semantic code search; use descriptive natural language queries (not keywords)"
+            }
             "findReferencedSymbols" => "Symbols referenced by definition; use to see deps",
             "findSymbol" => "Search symbols by name; use to locate definitions",
             "hover" => "Type/doc info at position; use for quick context",
@@ -254,8 +261,16 @@ mod tests {
         ];
 
         let filtered = server.filter_tools(tools);
-        assert_eq!(filtered.len(), 1, "Disabled tools still present after filtering");
-        assert_eq!(filtered[0].name.as_ref(), "hover", "Enabled hover tool was removed");
+        assert_eq!(
+            filtered.len(),
+            1,
+            "Disabled tools still present after filtering"
+        );
+        assert_eq!(
+            filtered[0].name.as_ref(),
+            "hover",
+            "Enabled hover tool was removed"
+        );
     }
 
     #[tokio::test]
@@ -264,9 +279,16 @@ mod tests {
         let (server, _temp) = create_test_server(true, enabled_tools).await;
 
         let result = server.disabled_tool_result("health");
-        assert_eq!(result.is_error, Some(true), "Disabled tool did not return error result");
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "Disabled tool did not return error result"
+        );
         let text = extract_text_content(&result);
-        assert!(text.contains("<!-- request:"), "Request ID header missing in debug mode");
+        assert!(
+            text.contains("<!-- request:"),
+            "Request ID header missing in debug mode"
+        );
         assert!(
             text.contains(&tool_disabled_message("health")),
             "Disabled tool message missing"

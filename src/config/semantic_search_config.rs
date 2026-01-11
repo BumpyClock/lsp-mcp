@@ -483,7 +483,9 @@ impl EnrichmentConfigFile {
         EnrichmentConfig {
             enabled: self.enabled.unwrap_or_default(),
             model: self.model.unwrap_or_else(default_enrichment_model),
-            batch_size: self.batch_size.unwrap_or_else(default_enrichment_batch_size),
+            batch_size: self
+                .batch_size
+                .unwrap_or_else(default_enrichment_batch_size),
             max_concurrency: self
                 .max_concurrency
                 .unwrap_or_else(default_enrichment_max_concurrency),
@@ -491,7 +493,9 @@ impl EnrichmentConfigFile {
                 .summary_max_chars
                 .unwrap_or_else(default_enrichment_summary_max_chars),
             max_tags: self.max_tags.unwrap_or_else(default_enrichment_max_tags),
-            timeout_ms: self.timeout_ms.unwrap_or_else(default_enrichment_timeout_ms),
+            timeout_ms: self
+                .timeout_ms
+                .unwrap_or_else(default_enrichment_timeout_ms),
         }
     }
 }
@@ -595,9 +599,7 @@ impl SemanticSearchConfigFile {
             (None, None) => None,
             (Some(global), None) => Some(global),
             (None, Some(project_enrichment)) => Some(project_enrichment),
-            (Some(global), Some(project_enrichment)) => {
-                Some(global.merge(project_enrichment))
-            }
+            (Some(global), Some(project_enrichment)) => Some(global.merge(project_enrichment)),
         };
 
         SemanticSearchConfigFile {
@@ -617,7 +619,9 @@ impl SemanticSearchConfigFile {
             respect_gitignore: project.respect_gitignore.or(self.respect_gitignore),
             min_score: project.min_score.or(self.min_score),
             max_results: project.max_results.or(self.max_results),
-            default_context_lines: self.default_context_lines.merge(project.default_context_lines),
+            default_context_lines: self
+                .default_context_lines
+                .merge(project.default_context_lines),
             enrichment,
         }
     }
@@ -638,7 +642,9 @@ impl SemanticSearchConfigFile {
                 .exclude
                 .map(ExcludeConfigFile::resolve)
                 .unwrap_or_default(),
-            max_file_size_mb: self.max_file_size_mb.unwrap_or_else(default_max_file_size_mb),
+            max_file_size_mb: self
+                .max_file_size_mb
+                .unwrap_or_else(default_max_file_size_mb),
             min_chunk_chars: self.min_chunk_chars.unwrap_or_else(default_min_chunk_chars),
             max_chunk_chars: self.max_chunk_chars.unwrap_or_else(default_max_chunk_chars),
             max_function_chunk_chars: self
@@ -765,7 +771,10 @@ mod tests {
     use uuid::Uuid;
 
     fn random_env_var_name() -> String {
-        format!("LSP_MCP_TEST_{}", Uuid::new_v4().to_string().replace('-', "_"))
+        format!(
+            "LSP_MCP_TEST_{}",
+            Uuid::new_v4().to_string().replace('-', "_")
+        )
     }
 
     fn random_api_key() -> String {
@@ -803,10 +812,7 @@ mod tests {
     fn openai_config_is_valid_when_inline_api_key_is_present() {
         let env_name = random_env_var_name();
         let config = openai_config(Some(random_api_key()), env_name);
-        assert!(
-            config.is_valid().is_ok(),
-            "Inline API key did not validate"
-        );
+        assert!(config.is_valid().is_ok(), "Inline API key did not validate");
     }
 
     #[test]

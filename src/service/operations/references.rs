@@ -7,7 +7,9 @@ use crate::api_types::{
 };
 use crate::lsp::manager::Manager;
 use crate::utils::file_utils::uri_to_relative_path_string;
-use lsp_types::{GotoDefinitionResponse, Location, Position as LspPosition, Range as LspRange, Url};
+use lsp_types::{
+    GotoDefinitionResponse, Location, Position as LspPosition, Range as LspRange, Url,
+};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -48,7 +50,9 @@ pub(crate) async fn find_references_impl(
             )
             .await
         }
-        None => Err(PositionError::IdentifierNotFound { closest: Vec::new() }),
+        None => Err(PositionError::IdentifierNotFound {
+            closest: Vec::new(),
+        }),
     };
 
     // Always get references from LSP
@@ -69,7 +73,7 @@ pub(crate) async fn find_references_impl(
             if all_references.is_empty() {
                 // LSP also found nothing - return original error
                 return Err(ServiceError::IdentifierSelection(
-                    PositionError::IdentifierNotFound { closest }
+                    PositionError::IdentifierNotFound { closest },
                 ));
             }
 
@@ -149,7 +153,11 @@ pub(crate) async fn find_references_impl(
             .get(index)
             .copied()
             .unwrap_or(ReferenceType::Call);
-        reference_items.push(reference_item_from_location(reference, snippet, reference_type));
+        reference_items.push(reference_item_from_location(
+            reference,
+            snippet,
+            reference_type,
+        ));
     }
 
     // Build by_file groups from paginated references
@@ -217,7 +225,10 @@ pub(crate) async fn find_referenced_symbols_impl(
                 definitions.iter().any(|def| files_set.contains(&def.path));
             if has_internal_definition {
                 let mut symbols_with_definitions = Vec::new();
-                for def in definitions.iter().filter(|def| files_set.contains(&def.path)) {
+                for def in definitions
+                    .iter()
+                    .filter(|def| files_set.contains(&def.path))
+                {
                     if let Ok(symbol) = manager
                         .get_symbol_from_position(
                             &def.path,
@@ -380,7 +391,9 @@ pub(crate) async fn fetch_code_context(
             },
         };
         let relative_path = uri_to_relative_path_string(&reference.uri);
-        let source_code = manager.read_source_code(&relative_path, Some(range)).await?;
+        let source_code = manager
+            .read_source_code(&relative_path, Some(range))
+            .await?;
         code_contexts.push(CodeContext {
             range: FileRange {
                 path: relative_path,
@@ -411,16 +424,22 @@ pub(crate) fn group_references_by_file(references: &[McpReferenceLocation]) -> V
     for reference in references {
         // Use path from reference, defaulting to empty string if None (shouldn't happen)
         let path = reference.path.clone().unwrap_or_default();
-        groups.entry(path)
+        groups
+            .entry(path)
             .or_insert_with(Vec::new)
             .push(reference.clone());
     }
 
-    let mut file_groups: Vec<FileGroup> = groups.into_iter()
+    let mut file_groups: Vec<FileGroup> = groups
+        .into_iter()
         .map(|(path, refs)| {
             // Clear paths from individual refs since FileGroup.path provides it
-            let refs_without_path: Vec<McpReferenceLocation> = refs.into_iter()
-                .map(|mut r| { r.path = None; r })
+            let refs_without_path: Vec<McpReferenceLocation> = refs
+                .into_iter()
+                .map(|mut r| {
+                    r.path = None;
+                    r
+                })
                 .collect();
             FileGroup {
                 count: refs_without_path.len() as u32,
@@ -441,7 +460,10 @@ pub(crate) fn group_references_by_file(references: &[McpReferenceLocation]) -> V
 async fn read_source_line(manager: &Manager, path: &str, line: u32) -> Option<String> {
     let range = LspRange {
         start: LspPosition { line, character: 0 },
-        end: LspPosition { line: line + 1, character: 0 },
+        end: LspPosition {
+            line: line + 1,
+            character: 0,
+        },
     };
     manager.read_source_code(path, Some(range)).await.ok()
 }
@@ -497,7 +519,9 @@ fn reference_key(location: &Location) -> (String, u32, u32) {
     )
 }
 
-fn definition_keys_from_response(definitions: &GotoDefinitionResponse) -> HashSet<(String, u32, u32)> {
+fn definition_keys_from_response(
+    definitions: &GotoDefinitionResponse,
+) -> HashSet<(String, u32, u32)> {
     let mut keys = HashSet::new();
     match definitions {
         GotoDefinitionResponse::Scalar(loc) => {

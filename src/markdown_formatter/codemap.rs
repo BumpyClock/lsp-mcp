@@ -88,9 +88,14 @@ fn format_impact(response: &CodemapResponse) -> String {
     ));
 
     // Group by file for readability
-    let mut by_file: std::collections::HashMap<String, Vec<&Edge>> = std::collections::HashMap::new();
+    let mut by_file: std::collections::HashMap<String, Vec<&Edge>> =
+        std::collections::HashMap::new();
     for edge in &response.edges {
-        if let Some(node) = response.nodes.iter().find(|n| n.id() == edge.from_node_id()) {
+        if let Some(node) = response
+            .nodes
+            .iter()
+            .find(|n| n.id() == edge.from_node_id())
+        {
             let path = match node {
                 Node::File(f) => f.path.clone(),
                 Node::Symbol(s) => s.location.path.clone(),
@@ -103,7 +108,10 @@ fn format_impact(response: &CodemapResponse) -> String {
     for (path, edges) in by_file.iter().take(10) {
         output.push_str(&format!("  {}\n", path));
         for edge in edges.iter().take(3) {
-            output.push_str(&format!("    {} edge\n", format_edge_kind(&edge.edge_kind())));
+            output.push_str(&format!(
+                "    {} edge\n",
+                format_edge_kind(&edge.edge_kind())
+            ));
         }
         if edges.len() > 3 {
             output.push_str(&format!("    ... and {} more\n", edges.len() - 3));
@@ -322,7 +330,13 @@ mod tests {
         }
     }
 
-    fn create_symbol_summary(name: &str, kind: SymbolKind, path: &str, line: u32, ref_count: u32) -> SymbolSummary {
+    fn create_symbol_summary(
+        name: &str,
+        kind: SymbolKind,
+        path: &str,
+        line: u32,
+        ref_count: u32,
+    ) -> SymbolSummary {
         SymbolSummary {
             name: name.to_string(),
             kind,
@@ -516,7 +530,10 @@ mod tests {
             kind: SymbolKind::Function,
             location: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 42, character: 4 },
+                position: Position {
+                    line: 42,
+                    character: 4,
+                },
             },
             end_position: None,
             signature: Some("fn process_data(input: &str) -> Result<String>".to_string()),
@@ -580,7 +597,10 @@ mod tests {
             kind: SymbolKind::Function,
             location: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 10, character: 0 },
+                position: Position {
+                    line: 10,
+                    character: 0,
+                },
             },
             end_position: None,
             signature: None,
@@ -596,7 +616,10 @@ mod tests {
             kind: SymbolKind::Function,
             location: FilePosition {
                 path: "src/main.rs".to_string(),
-                position: Position { line: 20, character: 0 },
+                position: Position {
+                    line: 20,
+                    character: 0,
+                },
             },
             end_position: None,
             signature: None,
@@ -612,7 +635,10 @@ mod tests {
             kind: SymbolKind::Function,
             location: FilePosition {
                 path: "src/util.rs".to_string(),
-                position: Position { line: 30, character: 0 },
+                position: Position {
+                    line: 30,
+                    character: 0,
+                },
             },
             end_position: None,
             signature: None,
@@ -701,7 +727,10 @@ mod tests {
             kind: SymbolKind::Function,
             location: FilePosition {
                 path: "src/a.rs".to_string(),
-                position: Position { line: 1, character: 0 },
+                position: Position {
+                    line: 1,
+                    character: 0,
+                },
             },
             end_position: None,
             signature: None,

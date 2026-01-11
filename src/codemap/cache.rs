@@ -233,11 +233,7 @@ impl GraphCache {
     }
 
     /// Get outgoing edges filtered by kind
-    pub fn get_outgoing_by_kind(
-        &self,
-        node_id: &NodeId,
-        kind: EdgeKind,
-    ) -> Vec<(NodeId, EdgeId)> {
+    pub fn get_outgoing_by_kind(&self, node_id: &NodeId, kind: EdgeKind) -> Vec<(NodeId, EdgeId)> {
         self.outgoing_edges
             .read()
             .get(node_id)
@@ -252,11 +248,7 @@ impl GraphCache {
     }
 
     /// Get incoming edges filtered by kind
-    pub fn get_incoming_by_kind(
-        &self,
-        node_id: &NodeId,
-        kind: EdgeKind,
-    ) -> Vec<(NodeId, EdgeId)> {
+    pub fn get_incoming_by_kind(&self, node_id: &NodeId, kind: EdgeKind) -> Vec<(NodeId, EdgeId)> {
         self.incoming_edges
             .read()
             .get(node_id)

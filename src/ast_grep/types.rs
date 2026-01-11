@@ -206,11 +206,17 @@ mod tests {
             range: AstGrepRange {
                 byte_offset: ByteOffset { start: 0, end: 10 },
                 start: AstGrepPosition { line: 5, column: 3 },
-                end: AstGrepPosition { line: 5, column: 13 },
+                end: AstGrepPosition {
+                    line: 5,
+                    column: 13,
+                },
             },
             file: "/tmp/App.tsx".to_string(),
             lines: "<Button />".to_string(),
-            char_count: CharCount { leading: 0, trailing: 0 },
+            char_count: CharCount {
+                leading: 0,
+                trailing: 0,
+            },
             language: "tsx".to_string(),
             meta_variables: MetaVariables {
                 single: SingleVariable {
@@ -219,7 +225,10 @@ mod tests {
                         range: AstGrepRange {
                             byte_offset: ByteOffset { start: 1, end: 7 },
                             start: AstGrepPosition { line: 5, column: 4 },
-                            end: AstGrepPosition { line: 5, column: 10 },
+                            end: AstGrepPosition {
+                                line: 5,
+                                column: 10,
+                            },
                         },
                     },
                     context: None,
@@ -250,11 +259,17 @@ mod tests {
             range: AstGrepRange {
                 byte_offset: ByteOffset { start: 0, end: 16 },
                 start: AstGrepPosition { line: 2, column: 0 },
-                end: AstGrepPosition { line: 2, column: 16 },
+                end: AstGrepPosition {
+                    line: 2,
+                    column: 16,
+                },
             },
             file: "/tmp/utils.ts".to_string(),
             lines: "function example".to_string(),
-            char_count: CharCount { leading: 0, trailing: 0 },
+            char_count: CharCount {
+                leading: 0,
+                trailing: 0,
+            },
             language: "typescript".to_string(),
             meta_variables: MetaVariables {
                 single: SingleVariable {
@@ -263,7 +278,10 @@ mod tests {
                         range: AstGrepRange {
                             byte_offset: ByteOffset { start: 9, end: 16 },
                             start: AstGrepPosition { line: 2, column: 9 },
-                            end: AstGrepPosition { line: 2, column: 16 },
+                            end: AstGrepPosition {
+                                line: 2,
+                                column: 16,
+                            },
                         },
                     },
                     context: None,
@@ -289,12 +307,21 @@ mod tests {
             text: "someVar".to_string(),
             range: AstGrepRange {
                 byte_offset: ByteOffset { start: 0, end: 7 },
-                start: AstGrepPosition { line: 10, column: 5 },
-                end: AstGrepPosition { line: 10, column: 12 },
+                start: AstGrepPosition {
+                    line: 10,
+                    column: 5,
+                },
+                end: AstGrepPosition {
+                    line: 10,
+                    column: 12,
+                },
             },
             file: "/tmp/vars.ts".to_string(),
             lines: "someVar".to_string(),
-            char_count: CharCount { leading: 0, trailing: 0 },
+            char_count: CharCount {
+                leading: 0,
+                trailing: 0,
+            },
             language: "typescript".to_string(),
             meta_variables: MetaVariables {
                 single: SingleVariable {
@@ -302,8 +329,14 @@ mod tests {
                         text: "someVar".to_string(),
                         range: AstGrepRange {
                             byte_offset: ByteOffset { start: 0, end: 7 },
-                            start: AstGrepPosition { line: 10, column: 5 },
-                            end: AstGrepPosition { line: 10, column: 12 },
+                            start: AstGrepPosition {
+                                line: 10,
+                                column: 5,
+                            },
+                            end: AstGrepPosition {
+                                line: 10,
+                                column: 12,
+                            },
                         },
                     },
                     context: None,

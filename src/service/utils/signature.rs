@@ -56,7 +56,9 @@ pub fn truncate_signature(sig: &str, max_length: Option<usize>) -> String {
 
 /// Extracts signature and documentation from LSP hover contents.
 /// Uses pulldown-cmark for robust markdown parsing.
-pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) -> (Option<String>, Option<String>) {
+pub(crate) fn extract_signature_and_docs(
+    contents: &lsp_types::HoverContents,
+) -> (Option<String>, Option<String>) {
     use super::hover_parser;
     use lsp_types::{HoverContents, MarkedString, MarkupContent};
 
@@ -67,17 +69,16 @@ pub(crate) fn extract_signature_and_docs(contents: &lsp_types::HoverContents) ->
             format!("```{}\n{}\n```", ls.language, ls.value)
         }
         HoverContents::Markup(MarkupContent { value, .. }) => value.clone(),
-        HoverContents::Array(arr) => {
-            arr.iter()
-                .map(|m| match m {
-                    MarkedString::String(s) => s.clone(),
-                    MarkedString::LanguageString(ls) => {
-                        format!("```{}\n{}\n```", ls.language, ls.value)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n")
-        }
+        HoverContents::Array(arr) => arr
+            .iter()
+            .map(|m| match m {
+                MarkedString::String(s) => s.clone(),
+                MarkedString::LanguageString(ls) => {
+                    format!("```{}\n{}\n```", ls.language, ls.value)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n"),
     };
 
     // Parse using pulldown-cmark
@@ -105,7 +106,11 @@ pub(crate) fn extract_signature_from_source(source: &str, symbol_name: &str) -> 
         let trimmed = lines[i].trim();
 
         // Skip comments and blank lines
-        if trimmed.starts_with("//") || trimmed.starts_with("#") || trimmed.starts_with("/*") || trimmed.is_empty() {
+        if trimmed.starts_with("//")
+            || trimmed.starts_with("#")
+            || trimmed.starts_with("/*")
+            || trimmed.is_empty()
+        {
             i += 1;
             continue;
         }
@@ -121,10 +126,14 @@ pub(crate) fn extract_signature_from_source(source: &str, symbol_name: &str) -> 
                     || trimmed.contains("export var "));
 
             // Check for non-arrow signatures (fn, function, class, etc.)
-            let is_standard_sig = trimmed.contains("fn ") || trimmed.contains("function ") ||
-               trimmed.contains("class ") || trimmed.contains("def ") ||
-               trimmed.contains("struct ") || trimmed.contains("enum ") ||
-               trimmed.contains("interface ") || trimmed.contains("type ");
+            let is_standard_sig = trimmed.contains("fn ")
+                || trimmed.contains("function ")
+                || trimmed.contains("class ")
+                || trimmed.contains("def ")
+                || trimmed.contains("struct ")
+                || trimmed.contains("enum ")
+                || trimmed.contains("interface ")
+                || trimmed.contains("type ");
 
             if is_single_line_arrow || is_standard_sig {
                 // Single-line signature: truncate at `{` or `;`
@@ -159,14 +168,21 @@ pub(crate) fn extract_signature_from_source(source: &str, symbol_name: &str) -> 
                     }
                     let next_line = lines[i + j].trim();
                     // Skip comments and blank lines in accumulation
-                    if next_line.starts_with("//") || next_line.starts_with("#") || next_line.starts_with("/*") || next_line.is_empty() {
+                    if next_line.starts_with("//")
+                        || next_line.starts_with("#")
+                        || next_line.starts_with("/*")
+                        || next_line.is_empty()
+                    {
                         continue;
                     }
                     accumulated.push(' ');
                     accumulated.push_str(next_line);
 
                     // Check if we've found the arrow or terminator
-                    if accumulated.contains("=>") || accumulated.contains('{') || accumulated.contains(';') {
+                    if accumulated.contains("=>")
+                        || accumulated.contains('{')
+                        || accumulated.contains(';')
+                    {
                         break;
                     }
                 }
@@ -203,35 +219,32 @@ pub(crate) fn extract_docs_from_source(source: &str) -> Option<String> {
 
         if let Some(doc) = trimmed.strip_prefix("///") {
             docs.push(doc.trim());
-        }
-        else if trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''") {
-            let content = trimmed.trim_start_matches("\"\"\"").trim_start_matches("'''")
-                                .trim_end_matches("\"\"\"").trim_end_matches("'''");
+        } else if trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''") {
+            let content = trimmed
+                .trim_start_matches("\"\"\"")
+                .trim_start_matches("'''")
+                .trim_end_matches("\"\"\"")
+                .trim_end_matches("'''");
             if !content.is_empty() {
                 docs.push(content);
             }
-        }
-        else if let Some(doc) = trimmed.strip_prefix("/**") {
+        } else if let Some(doc) = trimmed.strip_prefix("/**") {
             let content = doc.trim_end_matches("*/").trim();
             if !content.is_empty() {
                 docs.push(content);
             }
-        }
-        else if let Some(doc) = trimmed.strip_prefix("*") {
+        } else if let Some(doc) = trimmed.strip_prefix("*") {
             let content = doc.trim();
             if !content.is_empty() && !content.starts_with("*/") {
                 docs.push(content);
             }
-        }
-        else if let Some(doc) = trimmed.strip_prefix("//") {
+        } else if let Some(doc) = trimmed.strip_prefix("//") {
             docs.push(doc.trim());
-        }
-        else if let Some(doc) = trimmed.strip_prefix("#") {
+        } else if let Some(doc) = trimmed.strip_prefix("#") {
             if !doc.starts_with("!") {
                 docs.push(doc.trim());
             }
-        }
-        else if !trimmed.is_empty() {
+        } else if !trimmed.is_empty() {
             break;
         }
     }
@@ -252,12 +265,13 @@ pub(crate) fn extract_identifier_name_from_hover(contents: &lsp_types::HoverCont
         HoverContents::Scalar(MarkedString::String(s)) => s.clone(),
         HoverContents::Scalar(MarkedString::LanguageString(ls)) => ls.value.clone(),
         HoverContents::Markup(MarkupContent { value, .. }) => value.clone(),
-        HoverContents::Array(arr) => {
-            arr.first().map(|m| match m {
+        HoverContents::Array(arr) => arr
+            .first()
+            .map(|m| match m {
                 MarkedString::String(s) => s.clone(),
                 MarkedString::LanguageString(ls) => ls.value.clone(),
-            }).unwrap_or_default()
-        }
+            })
+            .unwrap_or_default(),
     };
 
     text.split(|c: char| !c.is_alphanumeric() && c != '_')
@@ -324,9 +338,13 @@ async fn compute_symbol_enrichment(
 ) -> SymbolEnrichment {
     let mut enrichment = SymbolEnrichment {
         line_count: Some(
-            symbol.file_range.range.end.line
+            symbol
+                .file_range
+                .range
+                .end
+                .line
                 .saturating_sub(symbol.file_range.range.start.line)
-                .saturating_add(1)
+                .saturating_add(1),
         ),
         exported: detect_exported(&symbol.kind),
         ..Default::default()
@@ -334,7 +352,11 @@ async fn compute_symbol_enrichment(
 
     let hover_position = lsp_types::Position {
         line: symbol.identifier_position.position.line.saturating_sub(1),
-        character: symbol.identifier_position.position.character.saturating_sub(1),
+        character: symbol
+            .identifier_position
+            .position
+            .character
+            .saturating_sub(1),
     };
 
     // Try LSP hover first
@@ -346,19 +368,22 @@ async fn compute_symbol_enrichment(
 
     // Fallback to source-based extraction if needed
     if enrichment.signature.is_none() || enrichment.jsdoc_summary.is_none() {
-        if let Ok(source_code) = manager.read_source_code(
-            file_path,
-            Some(lsp_types::Range::new(
-                lsp_types::Position {
-                    line: symbol.file_range.range.start.line.saturating_sub(1),
-                    character: 0,
-                },
-                lsp_types::Position {
-                    line: symbol.file_range.range.end.line,
-                    character: 0,
-                },
-            )),
-        ).await {
+        if let Ok(source_code) = manager
+            .read_source_code(
+                file_path,
+                Some(lsp_types::Range::new(
+                    lsp_types::Position {
+                        line: symbol.file_range.range.start.line.saturating_sub(1),
+                        character: 0,
+                    },
+                    lsp_types::Position {
+                        line: symbol.file_range.range.end.line,
+                        character: 0,
+                    },
+                )),
+            )
+            .await
+        {
             if enrichment.signature.is_none() {
                 enrichment.signature = extract_signature_from_source(&source_code, &symbol.name);
             }
@@ -376,23 +401,29 @@ async fn compute_symbol_enrichment(
     // Get dependencies
     let position = lsp_types::Position {
         line: symbol.identifier_position.position.line.saturating_sub(1),
-        character: symbol.identifier_position.position.character.saturating_sub(1),
+        character: symbol
+            .identifier_position
+            .position
+            .character
+            .saturating_sub(1),
     };
-    if let Ok(referenced) = manager.find_referenced_symbols(file_path, position, false).await {
+    if let Ok(referenced) = manager
+        .find_referenced_symbols(file_path, position, false)
+        .await
+    {
         let deps: Vec<String> = referenced
             .into_iter()
             .filter_map(|(ast_match, def_response)| {
                 let locations = match def_response {
                     lsp_types::GotoDefinitionResponse::Scalar(loc) => vec![loc],
                     lsp_types::GotoDefinitionResponse::Array(locs) => locs,
-                    lsp_types::GotoDefinitionResponse::Link(links) => {
-                        links.into_iter()
-                            .map(|l| lsp_types::Location {
-                                uri: l.target_uri,
-                                range: l.target_selection_range,
-                            })
-                            .collect()
-                    }
+                    lsp_types::GotoDefinitionResponse::Link(links) => links
+                        .into_iter()
+                        .map(|l| lsp_types::Location {
+                            uri: l.target_uri,
+                            range: l.target_selection_range,
+                        })
+                        .collect(),
                 };
 
                 let has_external_def = locations.iter().any(|loc| {
@@ -408,7 +439,11 @@ async fn compute_symbol_enrichment(
             })
             .collect();
         if !deps.is_empty() {
-            let mut unique_deps: Vec<String> = deps.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect();
+            let mut unique_deps: Vec<String> = deps
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
             unique_deps.sort();
             enrichment.dependencies = Some(unique_deps);
         }
@@ -513,9 +548,7 @@ pub(crate) async fn batch_enrich_symbols(
     // We clone symbols because we can't hold references across await points
     let symbol_data: Vec<(SymbolIndexPath, Symbol)> = symbol_paths
         .iter()
-        .filter_map(|(path, _)| {
-            get_symbol(symbols, path).map(|s| (path.clone(), s.clone()))
-        })
+        .filter_map(|(path, _)| get_symbol(symbols, path).map(|s| (path.clone(), s.clone())))
         .collect();
 
     // Process symbols with bounded concurrency
@@ -581,17 +614,20 @@ pub struct ActiveSignatureInfo {
 ///
 /// Returns the active signature's label (truncated) and the active parameter index.
 /// If no signatures are available, returns None.
-pub fn extract_active_signature(sig_help: &lsp_types::SignatureHelp) -> Option<ActiveSignatureInfo> {
+pub fn extract_active_signature(
+    sig_help: &lsp_types::SignatureHelp,
+) -> Option<ActiveSignatureInfo> {
     if sig_help.signatures.is_empty() {
         return None;
     }
 
     let active_idx = sig_help.active_signature.unwrap_or(0) as usize;
-    let signature = sig_help.signatures.get(active_idx).or_else(|| sig_help.signatures.first())?;
+    let signature = sig_help
+        .signatures
+        .get(active_idx)
+        .or_else(|| sig_help.signatures.first())?;
 
-    let active_param = signature
-        .active_parameter
-        .or(sig_help.active_parameter);
+    let active_param = signature.active_parameter.or(sig_help.active_parameter);
 
     Some(ActiveSignatureInfo {
         label: truncate_signature(&signature.label, None),
@@ -605,16 +641,43 @@ mod tests {
 
     #[test]
     fn test_is_internal_builder_symbol() {
-        assert!(is_internal_builder_symbol("_baseEndpointQuery"), "underscore prefix indicates internal");
-        assert!(is_internal_builder_symbol("providesTags"), "RTK builder function");
-        assert!(is_internal_builder_symbol("invalidatesTags"), "RTK builder function");
-        assert!(is_internal_builder_symbol("query"), "generic builder method");
-        assert!(is_internal_builder_symbol("mutation"), "generic builder method");
-        assert!(is_internal_builder_symbol("endpoints"), "RTK builder config");
+        assert!(
+            is_internal_builder_symbol("_baseEndpointQuery"),
+            "underscore prefix indicates internal"
+        );
+        assert!(
+            is_internal_builder_symbol("providesTags"),
+            "RTK builder function"
+        );
+        assert!(
+            is_internal_builder_symbol("invalidatesTags"),
+            "RTK builder function"
+        );
+        assert!(
+            is_internal_builder_symbol("query"),
+            "generic builder method"
+        );
+        assert!(
+            is_internal_builder_symbol("mutation"),
+            "generic builder method"
+        );
+        assert!(
+            is_internal_builder_symbol("endpoints"),
+            "RTK builder config"
+        );
 
-        assert!(!is_internal_builder_symbol("useGetUserQuery"), "user hook export");
-        assert!(!is_internal_builder_symbol("UserService"), "user service export");
-        assert!(!is_internal_builder_symbol("getUserById"), "user function export");
+        assert!(
+            !is_internal_builder_symbol("useGetUserQuery"),
+            "user hook export"
+        );
+        assert!(
+            !is_internal_builder_symbol("UserService"),
+            "user service export"
+        );
+        assert!(
+            !is_internal_builder_symbol("getUserById"),
+            "user function export"
+        );
     }
 
     #[test]
@@ -676,7 +739,8 @@ mod tests {
         let sig = extract_signature_from_source(source, "filterNavigationByPermissions");
         assert!(sig.is_some(), "arrow function signature must be detected");
         assert!(
-            sig.unwrap().starts_with("export const filterNavigationByPermissions"),
+            sig.unwrap()
+                .starts_with("export const filterNavigationByPermissions"),
             "signature must include export const declaration"
         );
     }
@@ -695,11 +759,21 @@ mod tests {
 
         assert!(sig.is_some(), "Should extract signature");
         let sig = sig.unwrap();
-        assert!(sig.starts_with("pub async fn"), "Should get actual signature, not module name. Got: {}", sig);
-        assert!(sig.contains("initialize_manager"), "Should contain function name");
+        assert!(
+            sig.starts_with("pub async fn"),
+            "Should get actual signature, not module name. Got: {}",
+            sig
+        );
+        assert!(
+            sig.contains("initialize_manager"),
+            "Should contain function name"
+        );
 
         assert!(doc.is_some(), "Should extract docs");
-        assert!(doc.unwrap().contains("Initialize"), "Docs should contain description");
+        assert!(
+            doc.unwrap().contains("Initialize"),
+            "Docs should contain description"
+        );
     }
 
     #[test]
@@ -713,7 +787,10 @@ mod tests {
         });
 
         let (sig, _) = extract_signature_and_docs(&hover);
-        assert!(sig.is_none(), "Single word module name should not be signature");
+        assert!(
+            sig.is_none(),
+            "Single word module name should not be signature"
+        );
     }
 
     #[test]
@@ -723,14 +800,19 @@ mod tests {
         // When multiple code blocks match, prefer the longer/more complete one
         let hover = HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
-            value: "```rust\nFoo\n```\n\n```rust\npub struct Foo {\n    field: String,\n}\n```".to_string(),
+            value: "```rust\nFoo\n```\n\n```rust\npub struct Foo {\n    field: String,\n}\n```"
+                .to_string(),
         });
 
         let (sig, _) = extract_signature_and_docs(&hover);
 
         assert!(sig.is_some(), "Should extract signature");
         let sig = sig.unwrap();
-        assert!(sig.contains("field"), "Should prefer longer signature with field info. Got: {}", sig);
+        assert!(
+            sig.contains("field"),
+            "Should prefer longer signature with field info. Got: {}",
+            sig
+        );
     }
 
     #[test]
@@ -748,7 +830,11 @@ mod tests {
         assert!(sig.is_some(), "Should extract signature");
         let sig = sig.unwrap();
         // First definition-like block is selected
-        assert!(sig.contains("fn example_func"), "Should select first definition. Got: {}", sig);
+        assert!(
+            sig.contains("fn example_func"),
+            "Should select first definition. Got: {}",
+            sig
+        );
     }
 
     #[test]
@@ -861,7 +947,9 @@ mod tests {
 
     mod active_signature_tests {
         use super::*;
-        use lsp_types::{ParameterInformation, ParameterLabel, SignatureHelp, SignatureInformation};
+        use lsp_types::{
+            ParameterInformation, ParameterLabel, SignatureHelp, SignatureInformation,
+        };
 
         fn create_signature_info(label: &str, active_param: Option<u32>) -> SignatureInformation {
             SignatureInformation {

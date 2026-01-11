@@ -38,12 +38,14 @@ pub async fn codemap(
         );
     }
 
-    let edge_kind = edge_type.as_ref().and_then(|e| match e.to_lowercase().as_str() {
-        "defines" => Some(EdgeKind::Defines),
-        "imports" => Some(EdgeKind::Imports),
-        "calls" => Some(EdgeKind::Calls),
-        _ => None,
-    });
+    let edge_kind = edge_type
+        .as_ref()
+        .and_then(|e| match e.to_lowercase().as_str() {
+            "defines" => Some(EdgeKind::Defines),
+            "imports" => Some(EdgeKind::Imports),
+            "calls" => Some(EdgeKind::Calls),
+            _ => None,
+        });
 
     let query = CodemapQuery {
         mode: query_mode,
@@ -199,12 +201,7 @@ mod tests {
                 "calls" => Some(EdgeKind::Calls),
                 _ => None,
             };
-            assert_eq!(
-                edge_kind,
-                None,
-                "negative: '{}' must return None",
-                edge_str
-            );
+            assert_eq!(edge_kind, None, "negative: '{}' must return None", edge_str);
         }
     }
 
@@ -223,7 +220,7 @@ mod tests {
         let codemap_manager = Arc::new(
             CodemapManager::new(&db_path, Arc::new(manager))
                 .await
-                .expect("negative: codemap manager creation must succeed")
+                .expect("negative: codemap manager creation must succeed"),
         );
 
         let invalid_mode = random_invalid_mode();
@@ -268,7 +265,7 @@ mod tests {
         let codemap_manager = Arc::new(
             CodemapManager::new(&db_path, Arc::new(manager))
                 .await
-                .expect("negative: codemap manager creation must succeed")
+                .expect("negative: codemap manager creation must succeed"),
         );
 
         let result = codemap(
@@ -311,7 +308,7 @@ mod tests {
         let codemap_manager = Arc::new(
             CodemapManager::new(&db_path, Arc::new(manager))
                 .await
-                .expect("negative: codemap manager creation must succeed")
+                .expect("negative: codemap manager creation must succeed"),
         );
 
         let result = codemap(
@@ -343,33 +340,21 @@ mod tests {
     fn query_defaults_depth_to_two() {
         let depth: Option<u32> = None;
         let resolved_depth = depth.unwrap_or(2);
-        assert_eq!(
-            resolved_depth,
-            2,
-            "negative: default depth must be 2"
-        );
+        assert_eq!(resolved_depth, 2, "negative: default depth must be 2");
     }
 
     #[test]
     fn query_defaults_limit_to_fifty() {
         let limit: Option<u32> = None;
         let resolved_limit = limit.unwrap_or(50);
-        assert_eq!(
-            resolved_limit,
-            50,
-            "negative: default limit must be 50"
-        );
+        assert_eq!(resolved_limit, 50, "negative: default limit must be 50");
     }
 
     #[test]
     fn query_defaults_offset_to_zero() {
         let offset: Option<u32> = None;
         let resolved_offset = offset.unwrap_or(0);
-        assert_eq!(
-            resolved_offset,
-            0,
-            "negative: default offset must be 0"
-        );
+        assert_eq!(resolved_offset, 0, "negative: default offset must be 0");
     }
 
     #[test]
@@ -386,30 +371,21 @@ mod tests {
     fn query_detail_is_true_when_full() {
         let detail = Some("full".to_string());
         let is_detail = detail.as_deref() == Some("full");
-        assert!(
-            is_detail,
-            "negative: detail must be true when 'full'"
-        );
+        assert!(is_detail, "negative: detail must be true when 'full'");
     }
 
     #[test]
     fn query_detail_is_false_when_summary() {
         let detail = Some("summary".to_string());
         let is_detail = detail.as_deref() == Some("full");
-        assert!(
-            !is_detail,
-            "negative: detail must be false when 'summary'"
-        );
+        assert!(!is_detail, "negative: detail must be false when 'summary'");
     }
 
     #[test]
     fn query_detail_is_false_when_none() {
         let detail: Option<String> = None;
         let is_detail = detail.as_deref() == Some("full");
-        assert!(
-            !is_detail,
-            "negative: detail must be false when None"
-        );
+        assert!(!is_detail, "negative: detail must be false when None");
     }
 
     #[test]

@@ -39,9 +39,9 @@ pub enum NodeType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EdgeKind {
-    Defines,  // File -> Symbol
-    Imports,  // File -> File/Module
-    Calls,    // Symbol -> Symbol
+    Defines, // File -> Symbol
+    Imports, // File -> File/Module
+    Calls,   // Symbol -> Symbol
 }
 
 /// Symbol kind (aligned with LSP SymbolKind)

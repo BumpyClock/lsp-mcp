@@ -50,7 +50,10 @@ mod tests {
 
         let alive = handler.is_alive().await;
 
-        assert!(alive, "expected is_alive to return true for running process");
+        assert!(
+            alive,
+            "expected is_alive to return true for running process"
+        );
     }
 
     #[tokio::test]
@@ -63,10 +66,7 @@ mod tests {
         handler.kill().await.expect("kill should succeed");
         let alive = handler.is_alive().await;
 
-        assert!(
-            !alive,
-            "expected is_alive to return false after kill"
-        );
+        assert!(!alive, "expected is_alive to return false after kill");
     }
 
     #[tokio::test]

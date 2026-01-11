@@ -72,7 +72,11 @@ pub enum SupportedLanguages {
     Python,
     /// TypeScript and JavaScript are handled by the same langserver
     #[serde(rename = "typescript_javascript")]
-    #[strum(serialize = "typescript", serialize = "javascript", serialize = "typescriptjavascript")]
+    #[strum(
+        serialize = "typescript",
+        serialize = "javascript",
+        serialize = "typescriptjavascript"
+    )]
     TypeScriptJavaScript,
     #[serde(rename = "rust")]
     Rust,

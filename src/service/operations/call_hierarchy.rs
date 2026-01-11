@@ -2,9 +2,9 @@
 // ABOUTME: Handles finding callers and callees of functions/methods.
 
 use crate::api_types::{
-    CallHierarchyDirection, CallHierarchyItemInfo, CallHierarchyResponse, CallInfo,
-    FilePosition, IncomingCallInfo, IncomingCallsResponse, OutgoingCallInfo,
-    OutgoingCallsResponse, Position, PrepareCallHierarchyResponse, Range,
+    CallHierarchyDirection, CallHierarchyItemInfo, CallHierarchyResponse, CallInfo, FilePosition,
+    IncomingCallInfo, IncomingCallsResponse, OutgoingCallInfo, OutgoingCallsResponse, Position,
+    PrepareCallHierarchyResponse, Range,
 };
 use crate::lsp::manager::Manager;
 use crate::mcp_response::normalize_kind;
@@ -115,19 +115,28 @@ pub(crate) async fn incoming_calls_impl(
         )
         .await?;
 
-    let item = match items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) }) {
+    let item = match items.and_then(|mut v| {
+        if v.is_empty() {
+            None
+        } else {
+            Some(v.remove(0))
+        }
+    }) {
         Some(item) => item,
         None => {
             debug!("incoming_calls_impl: prepare_call_hierarchy returned no items");
             return Ok(IncomingCallsResponse {
                 raw_response: None,
                 calls: vec![],
-            })
+            });
         }
     };
 
     let calls = manager.incoming_calls(file_path, &item).await?;
-    debug!("incoming_calls_impl: got {} raw calls from LSP", calls.len());
+    debug!(
+        "incoming_calls_impl: got {} raw calls from LSP",
+        calls.len()
+    );
 
     let workspace_files = manager.list_files().await?;
     let workspace_len = workspace_files.len();
@@ -143,20 +152,20 @@ pub(crate) async fn incoming_calls_impl(
             }
             IncomingCallInfo {
                 from,
-            from_ranges: call
-                .from_ranges
-                .into_iter()
-                .map(|r| Range {
-                    start: Position {
-                        line: r.start.line + 1,
-                        character: r.start.character + 1,
-                    },
-                    end: Position {
-                        line: r.end.line + 1,
-                        character: r.end.character + 1,
-                    },
-                })
-                .collect(),
+                from_ranges: call
+                    .from_ranges
+                    .into_iter()
+                    .map(|r| Range {
+                        start: Position {
+                            line: r.start.line + 1,
+                            character: r.start.character + 1,
+                        },
+                        end: Position {
+                            line: r.end.line + 1,
+                            character: r.end.character + 1,
+                        },
+                    })
+                    .collect(),
             }
         })
         .collect();
@@ -191,19 +200,28 @@ pub(crate) async fn outgoing_calls_impl(
         )
         .await?;
 
-    let item = match items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) }) {
+    let item = match items.and_then(|mut v| {
+        if v.is_empty() {
+            None
+        } else {
+            Some(v.remove(0))
+        }
+    }) {
         Some(item) => item,
         None => {
             debug!("outgoing_calls_impl: prepare_call_hierarchy returned no items");
             return Ok(OutgoingCallsResponse {
                 raw_response: None,
                 calls: vec![],
-            })
+            });
         }
     };
 
     let calls = manager.outgoing_calls(file_path, &item).await?;
-    debug!("outgoing_calls_impl: got {} raw calls from LSP", calls.len());
+    debug!(
+        "outgoing_calls_impl: got {} raw calls from LSP",
+        calls.len()
+    );
 
     let workspace_files = manager.list_files().await?;
     let workspace_len = workspace_files.len();
@@ -219,20 +237,20 @@ pub(crate) async fn outgoing_calls_impl(
             }
             OutgoingCallInfo {
                 to,
-            from_ranges: call
-                .from_ranges
-                .into_iter()
-                .map(|r| Range {
-                    start: Position {
-                        line: r.start.line + 1,
-                        character: r.start.character + 1,
-                    },
-                    end: Position {
-                        line: r.end.line + 1,
-                        character: r.end.character + 1,
-                    },
-                })
-                .collect(),
+                from_ranges: call
+                    .from_ranges
+                    .into_iter()
+                    .map(|r| Range {
+                        start: Position {
+                            line: r.start.line + 1,
+                            character: r.start.character + 1,
+                        },
+                        end: Position {
+                            line: r.end.line + 1,
+                            character: r.end.character + 1,
+                        },
+                    })
+                    .collect(),
             }
         })
         .collect();
@@ -279,7 +297,13 @@ pub(crate) async fn call_hierarchy_impl(
         )
         .await?;
 
-    let item = items.and_then(|mut v| if v.is_empty() { None } else { Some(v.remove(0)) });
+    let item = items.and_then(|mut v| {
+        if v.is_empty() {
+            None
+        } else {
+            Some(v.remove(0))
+        }
+    });
     if let Some(ref item) = item {
         debug!("call_hierarchy_impl: got item name={}", item.name);
     } else {
@@ -370,8 +394,9 @@ pub(crate) async fn call_hierarchy_impl(
             calls = filter_outgoing_callables(calls);
 
             if calls.is_empty() {
-                calls = outgoing_calls_from_references(manager, file_path, &position, &workspace_set)
-                    .await;
+                calls =
+                    outgoing_calls_from_references(manager, file_path, &position, &workspace_set)
+                        .await;
                 calls = filter_outgoing_callables(calls);
                 used_fallback = true;
             }
@@ -667,14 +692,13 @@ fn outgoing_call_site_key(call: &CallInfo) -> (String, String, String) {
         parts.join("|")
     };
 
-    (
-        call.item.name.clone(),
-        call.item.kind.clone(),
-        ranges_key,
-    )
+    (call.item.name.clone(), call.item.kind.clone(), ranges_key)
 }
 
-fn should_replace_call_item(current: &CallHierarchyItemInfo, candidate: &CallHierarchyItemInfo) -> bool {
+fn should_replace_call_item(
+    current: &CallHierarchyItemInfo,
+    candidate: &CallHierarchyItemInfo,
+) -> bool {
     let current_external = current.external == Some(true);
     let candidate_external = candidate.external == Some(true);
     if current_external != candidate_external {
@@ -741,7 +765,9 @@ fn is_external_call(path: &str, workspace_files: &HashSet<String>) -> bool {
     // Normalize the incoming path for comparison
     let normalized_path = normalize_path_for_comparison(path);
     // Check if any workspace file matches after normalization
-    !workspace_files.iter().any(|f| normalize_path_for_comparison(f) == normalized_path)
+    !workspace_files
+        .iter()
+        .any(|f| normalize_path_for_comparison(f) == normalized_path)
 }
 
 #[cfg(test)]
@@ -770,8 +796,14 @@ mod tests {
                 external,
             },
             call_ranges: vec![Range {
-                start: Position { line: line + 2, character: 5 },
-                end: Position { line: line + 2, character: 20 },
+                start: Position {
+                    line: line + 2,
+                    character: 5,
+                },
+                end: Position {
+                    line: line + 2,
+                    character: 20,
+                },
             }],
             call_snippets: None,
         }
@@ -799,21 +831,37 @@ mod tests {
         let calls = vec![call1, call2, call3];
         let result = dedupe_calls(calls);
 
-        assert_eq!(result.len(), 2, "duplicate entries at same file:line must be merged");
+        assert_eq!(
+            result.len(),
+            2,
+            "duplicate entries at same file:line must be merged"
+        );
     }
 
     #[test]
     fn dedupe_calls_merges_call_ranges_from_duplicates() {
         let mut call1 = make_call_info("src/lib.rs", 10, "foo", None);
         call1.call_ranges = vec![Range {
-            start: Position { line: 12, character: 5 },
-            end: Position { line: 12, character: 10 },
+            start: Position {
+                line: 12,
+                character: 5,
+            },
+            end: Position {
+                line: 12,
+                character: 10,
+            },
         }];
 
         let mut call2 = make_call_info("src/lib.rs", 10, "foo", None);
         call2.call_ranges = vec![Range {
-            start: Position { line: 15, character: 5 },
-            end: Position { line: 15, character: 10 },
+            start: Position {
+                line: 15,
+                character: 5,
+            },
+            end: Position {
+                line: 15,
+                character: 10,
+            },
         }];
 
         let calls = vec![call1, call2];
@@ -831,14 +879,26 @@ mod tests {
     fn dedupe_calls_avoids_duplicate_ranges_within_merged_entry() {
         let mut call1 = make_call_info("src/lib.rs", 10, "foo", None);
         call1.call_ranges = vec![Range {
-            start: Position { line: 12, character: 5 },
-            end: Position { line: 12, character: 10 },
+            start: Position {
+                line: 12,
+                character: 5,
+            },
+            end: Position {
+                line: 12,
+                character: 10,
+            },
         }];
 
         let mut call2 = make_call_info("src/lib.rs", 10, "foo", None);
         call2.call_ranges = vec![Range {
-            start: Position { line: 12, character: 5 },
-            end: Position { line: 12, character: 10 },
+            start: Position {
+                line: 12,
+                character: 5,
+            },
+            end: Position {
+                line: 12,
+                character: 10,
+            },
         }];
 
         let calls = vec![call1, call2];
@@ -867,12 +927,22 @@ mod tests {
     #[test]
     fn dedupe_outgoing_calls_by_call_site_merges_duplicate_definitions() {
         let mut call1 = make_call_info("node_modules/lib.dom.d.ts", 10, "setTimeout", Some(true));
-        let mut call2 =
-            make_call_info("node_modules/@types/node/timers.d.ts", 20, "setTimeout", Some(true));
+        let mut call2 = make_call_info(
+            "node_modules/@types/node/timers.d.ts",
+            20,
+            "setTimeout",
+            Some(true),
+        );
 
         let shared_range = Range {
-            start: Position { line: 50, character: 2 },
-            end: Position { line: 50, character: 12 },
+            start: Position {
+                line: 50,
+                character: 2,
+            },
+            end: Position {
+                line: 50,
+                character: 12,
+            },
         };
         call1.call_ranges = vec![shared_range.clone()];
         call2.call_ranges = vec![shared_range];
@@ -890,26 +960,38 @@ mod tests {
     #[test]
     fn dedupe_outgoing_calls_by_call_site_keeps_distinct_call_sites() {
         let mut call1 = make_call_info("node_modules/lib.dom.d.ts", 10, "setTimeout", Some(true));
-        let mut call2 =
-            make_call_info("node_modules/@types/node/timers.d.ts", 20, "setTimeout", Some(true));
+        let mut call2 = make_call_info(
+            "node_modules/@types/node/timers.d.ts",
+            20,
+            "setTimeout",
+            Some(true),
+        );
 
         call1.call_ranges = vec![Range {
-            start: Position { line: 50, character: 2 },
-            end: Position { line: 50, character: 12 },
+            start: Position {
+                line: 50,
+                character: 2,
+            },
+            end: Position {
+                line: 50,
+                character: 12,
+            },
         }];
         call2.call_ranges = vec![Range {
-            start: Position { line: 80, character: 6 },
-            end: Position { line: 80, character: 16 },
+            start: Position {
+                line: 80,
+                character: 6,
+            },
+            end: Position {
+                line: 80,
+                character: 16,
+            },
         }];
 
         let calls = vec![call1, call2];
         let result = dedupe_outgoing_calls_by_call_site(calls);
 
-        assert_eq!(
-            result.len(),
-            2,
-            "distinct call sites must remain separate"
-        );
+        assert_eq!(result.len(), 2, "distinct call sites must remain separate");
     }
 
     #[test]
@@ -1000,7 +1082,10 @@ mod tests {
 
     #[test]
     fn normalize_path_for_comparison_strips_leading_dot_slash() {
-        assert_eq!(normalize_path_for_comparison("./src/main.rs"), "src/main.rs");
+        assert_eq!(
+            normalize_path_for_comparison("./src/main.rs"),
+            "src/main.rs"
+        );
         assert_eq!(normalize_path_for_comparison("src/main.rs"), "src/main.rs");
     }
 
@@ -1016,7 +1101,10 @@ mod tests {
 
         // Path with leading ./ should match workspace file without it
         let result = is_external_call("./src/lib.rs", &workspace_files);
-        assert!(!result, "path with leading ./ must match workspace file without it");
+        assert!(
+            !result,
+            "path with leading ./ must match workspace file without it"
+        );
     }
 
     #[test]
@@ -1041,7 +1129,7 @@ mod tests {
             &format!("src/{}_file.rs", unicode),
             random_line + 10,
             &format!("prop_{}", random_irregular_string()),
-            None
+            None,
         );
         property_call.item.kind = "property".to_string();
 
@@ -1049,7 +1137,7 @@ mod tests {
             &format!("lib/{}_mod.rs", random_irregular_string()),
             random_line + 20,
             &format!("field_{}", unicode),
-            None
+            None,
         );
         field_call.item.kind = "field".to_string();
 
@@ -1059,10 +1147,20 @@ mod tests {
         let calls = vec![callable, property_call, field_call, method_call];
         let result = filter_outgoing_callables(calls);
 
-        assert_eq!(result.len(), 2, "negative: property and field kinds must be filtered");
+        assert_eq!(
+            result.len(),
+            2,
+            "negative: property and field kinds must be filtered"
+        );
         for call in &result {
-            assert_ne!(call.item.kind, "property", "negative: property kind must not remain");
-            assert_ne!(call.item.kind, "field", "negative: field kind must not remain");
+            assert_ne!(
+                call.item.kind, "property",
+                "negative: property kind must not remain"
+            );
+            assert_ne!(
+                call.item.kind, "field",
+                "negative: field kind must not remain"
+            );
         }
     }
 

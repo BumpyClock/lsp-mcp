@@ -13,10 +13,17 @@ impl ToMarkdown for DiagnosticsResponse {
             return output;
         }
 
-        output.push_str(&format!("Summary: {}\n\n", format_severity_summary(&self.by_severity)));
+        output.push_str(&format!(
+            "Summary: {}\n\n",
+            format_severity_summary(&self.by_severity)
+        ));
 
         for file in &self.files {
-            let issue_word = if file.diagnostics.len() == 1 { "issue" } else { "issues" };
+            let issue_word = if file.diagnostics.len() == 1 {
+                "issue"
+            } else {
+                "issues"
+            };
             output.push_str(&format!(
                 "{} ({} {})\n",
                 file.path,
@@ -43,7 +50,11 @@ fn format_severity_summary(counts: &SeverityCounts) -> String {
     }
 
     if counts.warning > 0 {
-        let word = if counts.warning == 1 { "warning" } else { "warnings" };
+        let word = if counts.warning == 1 {
+            "warning"
+        } else {
+            "warnings"
+        };
         parts.push(format!("{} {}", counts.warning, word));
     }
 
@@ -73,22 +84,27 @@ fn format_diagnostic(diag: &Diagnostic) -> String {
         None => "Unknown",
     };
 
-    let position = format!("Line {}:{}", diag.range.start.line, diag.range.start.character);
+    let position = format!(
+        "Line {}:{}",
+        diag.range.start.line, diag.range.start.character
+    );
 
-    let code_or_source = diag.code.as_ref()
+    let code_or_source = diag
+        .code
+        .as_ref()
         .or(diag.source.as_ref())
         .map(|s| format!(" [{}]", s))
         .unwrap_or_default();
 
-    let quick_fix = if diag.has_quick_fix { " [quick-fix]" } else { "" };
+    let quick_fix = if diag.has_quick_fix {
+        " [quick-fix]"
+    } else {
+        ""
+    };
 
     format!(
         "  {} {} - `{}`{}{}\n",
-        severity_str,
-        position,
-        diag.message,
-        code_or_source,
-        quick_fix
+        severity_str, position, diag.message, code_or_source, quick_fix
     )
 }
 
@@ -170,11 +186,51 @@ mod tests {
             files: vec![FileDiagnostics {
                 path: "src/main.rs".to_string(),
                 diagnostics: vec![
-                    make_diagnostic(line, 1, Some(DiagnosticSeverity::Error), None, None, "e1", false),
-                    make_diagnostic(line + 1, 1, Some(DiagnosticSeverity::Error), None, None, "e2", false),
-                    make_diagnostic(line + 2, 1, Some(DiagnosticSeverity::Warning), None, None, "w1", false),
-                    make_diagnostic(line + 3, 1, Some(DiagnosticSeverity::Warning), None, None, "w2", false),
-                    make_diagnostic(line + 4, 1, Some(DiagnosticSeverity::Information), None, None, "i1", false),
+                    make_diagnostic(
+                        line,
+                        1,
+                        Some(DiagnosticSeverity::Error),
+                        None,
+                        None,
+                        "e1",
+                        false,
+                    ),
+                    make_diagnostic(
+                        line + 1,
+                        1,
+                        Some(DiagnosticSeverity::Error),
+                        None,
+                        None,
+                        "e2",
+                        false,
+                    ),
+                    make_diagnostic(
+                        line + 2,
+                        1,
+                        Some(DiagnosticSeverity::Warning),
+                        None,
+                        None,
+                        "w1",
+                        false,
+                    ),
+                    make_diagnostic(
+                        line + 3,
+                        1,
+                        Some(DiagnosticSeverity::Warning),
+                        None,
+                        None,
+                        "w2",
+                        false,
+                    ),
+                    make_diagnostic(
+                        line + 4,
+                        1,
+                        Some(DiagnosticSeverity::Information),
+                        None,
+                        None,
+                        "i1",
+                        false,
+                    ),
                 ],
             }],
         };
@@ -256,19 +312,83 @@ mod tests {
                 FileDiagnostics {
                     path: "src/main.ts".to_string(),
                     diagnostics: vec![
-                        make_diagnostic(line, 1, Some(DiagnosticSeverity::Error), None, None, "e1", false),
-                        make_diagnostic(line + 1, 1, Some(DiagnosticSeverity::Error), None, None, "e2", false),
-                        make_diagnostic(line + 2, 1, Some(DiagnosticSeverity::Warning), None, None, "w1", false),
-                        make_diagnostic(line + 3, 1, Some(DiagnosticSeverity::Warning), None, None, "w2", false),
-                        make_diagnostic(line + 4, 1, Some(DiagnosticSeverity::Warning), None, None, "w3", false),
+                        make_diagnostic(
+                            line,
+                            1,
+                            Some(DiagnosticSeverity::Error),
+                            None,
+                            None,
+                            "e1",
+                            false,
+                        ),
+                        make_diagnostic(
+                            line + 1,
+                            1,
+                            Some(DiagnosticSeverity::Error),
+                            None,
+                            None,
+                            "e2",
+                            false,
+                        ),
+                        make_diagnostic(
+                            line + 2,
+                            1,
+                            Some(DiagnosticSeverity::Warning),
+                            None,
+                            None,
+                            "w1",
+                            false,
+                        ),
+                        make_diagnostic(
+                            line + 3,
+                            1,
+                            Some(DiagnosticSeverity::Warning),
+                            None,
+                            None,
+                            "w2",
+                            false,
+                        ),
+                        make_diagnostic(
+                            line + 4,
+                            1,
+                            Some(DiagnosticSeverity::Warning),
+                            None,
+                            None,
+                            "w3",
+                            false,
+                        ),
                     ],
                 },
                 FileDiagnostics {
                     path: "src/utils.ts".to_string(),
                     diagnostics: vec![
-                        make_diagnostic(line, 1, Some(DiagnosticSeverity::Error), None, None, "e3", false),
-                        make_diagnostic(line + 1, 1, Some(DiagnosticSeverity::Warning), None, None, "w4", false),
-                        make_diagnostic(line + 2, 1, Some(DiagnosticSeverity::Warning), None, None, "w5", false),
+                        make_diagnostic(
+                            line,
+                            1,
+                            Some(DiagnosticSeverity::Error),
+                            None,
+                            None,
+                            "e3",
+                            false,
+                        ),
+                        make_diagnostic(
+                            line + 1,
+                            1,
+                            Some(DiagnosticSeverity::Warning),
+                            None,
+                            None,
+                            "w4",
+                            false,
+                        ),
+                        make_diagnostic(
+                            line + 2,
+                            1,
+                            Some(DiagnosticSeverity::Warning),
+                            None,
+                            None,
+                            "w5",
+                            false,
+                        ),
                     ],
                 },
             ],
@@ -566,10 +686,42 @@ mod tests {
             files: vec![FileDiagnostics {
                 path: "src/all.rs".to_string(),
                 diagnostics: vec![
-                    make_diagnostic(1, 1, Some(DiagnosticSeverity::Error), None, None, "err", false),
-                    make_diagnostic(2, 1, Some(DiagnosticSeverity::Warning), None, None, "warn", false),
-                    make_diagnostic(3, 1, Some(DiagnosticSeverity::Information), None, None, "info", false),
-                    make_diagnostic(4, 1, Some(DiagnosticSeverity::Hint), None, None, "hint", false),
+                    make_diagnostic(
+                        1,
+                        1,
+                        Some(DiagnosticSeverity::Error),
+                        None,
+                        None,
+                        "err",
+                        false,
+                    ),
+                    make_diagnostic(
+                        2,
+                        1,
+                        Some(DiagnosticSeverity::Warning),
+                        None,
+                        None,
+                        "warn",
+                        false,
+                    ),
+                    make_diagnostic(
+                        3,
+                        1,
+                        Some(DiagnosticSeverity::Information),
+                        None,
+                        None,
+                        "info",
+                        false,
+                    ),
+                    make_diagnostic(
+                        4,
+                        1,
+                        Some(DiagnosticSeverity::Hint),
+                        None,
+                        None,
+                        "hint",
+                        false,
+                    ),
                 ],
             }],
         };
@@ -607,8 +759,24 @@ mod tests {
             files: vec![FileDiagnostics {
                 path: "src/main.rs".to_string(),
                 diagnostics: vec![
-                    make_diagnostic(10, 1, Some(DiagnosticSeverity::Error), None, None, "first", false),
-                    make_diagnostic(20, 1, Some(DiagnosticSeverity::Error), None, None, "second", false),
+                    make_diagnostic(
+                        10,
+                        1,
+                        Some(DiagnosticSeverity::Error),
+                        None,
+                        None,
+                        "first",
+                        false,
+                    ),
+                    make_diagnostic(
+                        20,
+                        1,
+                        Some(DiagnosticSeverity::Error),
+                        None,
+                        None,
+                        "second",
+                        false,
+                    ),
                 ],
             }],
         };

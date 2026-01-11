@@ -270,7 +270,10 @@ mod tests {
         assert!(result.is_err());
 
         let err = result.unwrap_err();
-        assert!(matches!(err, PathNormalizationError::OutsideWorkspace { .. }));
+        assert!(matches!(
+            err,
+            PathNormalizationError::OutsideWorkspace { .. }
+        ));
 
         unset_thread_local_mount_dir();
     }
@@ -339,7 +342,10 @@ mod tests {
 
         let abs_path = temp.path().join("src/lib.rs");
         let result = absolute_path_to_relative_path_string(&abs_path);
-        assert_eq!(result, "src/lib.rs", "must handle mount dir without trailing slash");
+        assert_eq!(
+            result, "src/lib.rs",
+            "must handle mount dir without trailing slash"
+        );
 
         unset_thread_local_mount_dir();
     }
@@ -351,7 +357,10 @@ mod tests {
 
         let outside_path = PathBuf::from("/etc/passwd");
         let result = absolute_path_to_relative_path_string(&outside_path);
-        assert_eq!(result, "/etc/passwd", "paths outside workspace must be returned as-is");
+        assert_eq!(
+            result, "/etc/passwd",
+            "paths outside workspace must be returned as-is"
+        );
 
         unset_thread_local_mount_dir();
     }

@@ -154,10 +154,7 @@ mod tests {
         let outgoing = CallHierarchyDirection::Outgoing;
 
         assert_eq!(incoming1, incoming2, "same variants must be equal");
-        assert_ne!(
-            incoming1, outgoing,
-            "different variants must not be equal"
-        );
+        assert_ne!(incoming1, outgoing, "different variants must not be equal");
     }
 
     #[test]
@@ -223,18 +220,33 @@ mod tests {
                     kind: "function".to_string(),
                     location: FilePosition {
                         path: "src/caller.rs".to_string(),
-                        position: Position { line: 5, character: 1 },
+                        position: Position {
+                            line: 5,
+                            character: 1,
+                        },
                     },
                     range: Range {
-                        start: Position { line: 5, character: 1 },
-                        end: Position { line: 10, character: 1 },
+                        start: Position {
+                            line: 5,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 10,
+                            character: 1,
+                        },
                     },
                     detail: None,
                     external: None,
                 },
                 call_ranges: vec![Range {
-                    start: Position { line: 7, character: 5 },
-                    end: Position { line: 7, character: 20 },
+                    start: Position {
+                        line: 7,
+                        character: 5,
+                    },
+                    end: Position {
+                        line: 7,
+                        character: 20,
+                    },
                 }],
                 call_snippets: None,
             }],
@@ -250,7 +262,11 @@ mod tests {
             json.get("raw_response").is_none(),
             "raw_response must be skipped when None"
         );
-        assert_eq!(json["calls"].as_array().unwrap().len(), 1, "must have one call");
+        assert_eq!(
+            json["calls"].as_array().unwrap().len(),
+            1,
+            "must have one call"
+        );
     }
 
     #[test]
@@ -315,27 +331,54 @@ mod tests {
                 kind: "method".to_string(),
                 location: FilePosition {
                     path: "src/lib.rs".to_string(),
-                    position: Position { line: 100, character: 10 },
+                    position: Position {
+                        line: 100,
+                        character: 10,
+                    },
                 },
                 range: Range {
-                    start: Position { line: 100, character: 1 },
-                    end: Position { line: 110, character: 1 },
+                    start: Position {
+                        line: 100,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 110,
+                        character: 1,
+                    },
                 },
                 detail: None,
                 external: None,
             },
             call_ranges: vec![
                 Range {
-                    start: Position { line: 102, character: 5 },
-                    end: Position { line: 102, character: 20 },
+                    start: Position {
+                        line: 102,
+                        character: 5,
+                    },
+                    end: Position {
+                        line: 102,
+                        character: 20,
+                    },
                 },
                 Range {
-                    start: Position { line: 105, character: 5 },
-                    end: Position { line: 105, character: 20 },
+                    start: Position {
+                        line: 105,
+                        character: 5,
+                    },
+                    end: Position {
+                        line: 105,
+                        character: 20,
+                    },
                 },
                 Range {
-                    start: Position { line: 108, character: 5 },
-                    end: Position { line: 108, character: 20 },
+                    start: Position {
+                        line: 108,
+                        character: 5,
+                    },
+                    end: Position {
+                        line: 108,
+                        character: 20,
+                    },
                 },
             ],
             call_snippets: None,
@@ -344,10 +387,6 @@ mod tests {
         let json = serde_json::to_value(&call_info).expect("failed to serialize");
         let call_ranges = json["call_ranges"].as_array().unwrap();
 
-        assert_eq!(
-            call_ranges.len(),
-            3,
-            "must serialize all three call ranges"
-        );
+        assert_eq!(call_ranges.len(), 3, "must serialize all three call ranges");
     }
 }

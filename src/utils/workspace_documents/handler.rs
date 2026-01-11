@@ -57,12 +57,16 @@ impl WorkspaceDocumentsHandler {
 
         // Eagerly populate cache with workspace files before wrapping in Arc<RwLock>
         let mut initial_cache = HashMap::new();
-        let initial_files =
-            search_files(&root_path, include_patterns.clone(), exclude_patterns.clone(), true)
-                .unwrap_or_else(|err| {
-                    error!("Error searching files during init: {}", err);
-                    Vec::new()
-                });
+        let initial_files = search_files(
+            &root_path,
+            include_patterns.clone(),
+            exclude_patterns.clone(),
+            true,
+        )
+        .unwrap_or_else(|err| {
+            error!("Error searching files during init: {}", err);
+            Vec::new()
+        });
         for file_path in initial_files {
             initial_cache.insert(file_path, None);
         }

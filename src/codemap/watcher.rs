@@ -96,7 +96,10 @@ impl CodemapWatcher {
 
             match debouncer_result {
                 Ok(mut debouncer) => {
-                    if let Err(e) = debouncer.watcher().watch(&workspace_for_watcher, RecursiveMode::Recursive) {
+                    if let Err(e) = debouncer
+                        .watcher()
+                        .watch(&workspace_for_watcher, RecursiveMode::Recursive)
+                    {
                         warn!(error = %e, "Failed to watch workspace");
                         return;
                     }
@@ -116,13 +119,8 @@ impl CodemapWatcher {
 
         // Spawn batch processor
         tokio::spawn(async move {
-            Self::run_batch_processor(
-                workspace_for_processor,
-                manager,
-                change_rx,
-                shutdown_rx,
-            )
-            .await;
+            Self::run_batch_processor(workspace_for_processor, manager, change_rx, shutdown_rx)
+                .await;
         });
     }
 
@@ -189,10 +187,7 @@ impl CodemapWatcher {
     }
 
     /// Check if a file should be watched (static version for use in callback).
-    fn should_watch_file_static(
-        path: &PathBuf,
-        workspace_root: &PathBuf,
-    ) -> bool {
+    fn should_watch_file_static(path: &PathBuf, workspace_root: &PathBuf) -> bool {
         let relative_path = path
             .strip_prefix(workspace_root)
             .unwrap_or(path)

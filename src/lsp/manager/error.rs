@@ -24,7 +24,11 @@ impl fmt::Display for LspManagerError {
                 write!(f, "LSP client not found for {:?}", lang)
             }
             LspManagerError::LspClientInitializing(lang) => {
-                write!(f, "The {:?} language server is still initializing, please try again shortly", lang)
+                write!(
+                    f,
+                    "The {:?} language server is still initializing, please try again shortly",
+                    lang
+                )
             }
             LspManagerError::InternalError(msg) => write!(f, "Internal error: {}", msg),
             LspManagerError::UnsupportedFileType(path) => {

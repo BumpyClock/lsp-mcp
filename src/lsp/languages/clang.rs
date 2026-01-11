@@ -6,10 +6,10 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
+use crate::lsp::client::LspClientConfig;
 use crate::lsp::{ExpectedMessageKey, JsonRpc, Process};
 use crate::utils::file_utils::{search_directories, search_files};
 use crate::utils::workspace_documents::DidOpenConfiguration;
-use crate::lsp::client::LspClientConfig;
 use crate::{
     lsp::{DiagnosticsStore, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
     utils::workspace_documents::{

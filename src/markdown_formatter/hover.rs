@@ -121,7 +121,9 @@ mod tests {
     fn create_hover_response_with_array(items: Vec<&str>) -> HoverResponse {
         HoverResponse {
             raw_response: None,
-            contents: Some(HoverContents::Array(items.into_iter().map(String::from).collect())),
+            contents: Some(HoverContents::Array(
+                items.into_iter().map(String::from).collect(),
+            )),
             range: None,
             definitions: Vec::new(),
             active_signature: None,
@@ -211,12 +213,8 @@ mod tests {
 
     #[test]
     fn it_includes_definition_location_with_path_and_line() {
-        let response = create_hover_response_with_definition(
-            "Some documentation",
-            "src/lib.rs",
-            42,
-            None,
-        );
+        let response =
+            create_hover_response_with_definition("Some documentation", "src/lib.rs", 42, None);
 
         let markdown = response.to_markdown();
 
@@ -354,12 +352,8 @@ mod tests {
 
     #[test]
     fn it_includes_definition_section_header() {
-        let response = create_hover_response_with_definition(
-            "Some content",
-            "src/main.rs",
-            100,
-            None,
-        );
+        let response =
+            create_hover_response_with_definition("Some content", "src/main.rs", 100, None);
 
         let markdown = response.to_markdown();
 
@@ -392,12 +386,7 @@ mod tests {
 
     #[test]
     fn it_formats_definition_with_colon_line_separator() {
-        let response = create_hover_response_with_definition(
-            "Docs",
-            "path/to/file.ts",
-            256,
-            None,
-        );
+        let response = create_hover_response_with_definition("Docs", "path/to/file.ts", 256, None);
 
         let markdown = response.to_markdown();
 
@@ -531,10 +520,7 @@ mod tests {
         #[test]
         fn it_uses_double_newline_separator_between_results() {
             let batch = HoverBatchResponse {
-                results: vec![
-                    create_success_item("First"),
-                    create_success_item("Second"),
-                ],
+                results: vec![create_success_item("First"), create_success_item("Second")],
             };
 
             let markdown = batch.to_markdown();

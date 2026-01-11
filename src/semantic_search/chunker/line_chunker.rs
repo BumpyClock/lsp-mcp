@@ -107,7 +107,9 @@ mod tests {
             .unwrap();
 
         assert!(!chunks.is_empty());
-        assert!(chunks.iter().all(|c| c.symbol_kind.as_deref() == Some("lines")));
+        assert!(chunks
+            .iter()
+            .all(|c| c.symbol_kind.as_deref() == Some("lines")));
     }
 
     #[test]

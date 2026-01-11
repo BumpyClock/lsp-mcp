@@ -52,7 +52,8 @@ struct EnrichmentInput {
 struct EnrichmentRequest {
     model: String,
     messages: Vec<ChatMessage>,
-    temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -91,6 +92,14 @@ struct PromptInput<'a> {
     items: Vec<PromptItem<'a>>,
     summary_max_chars: usize,
     max_tags: usize,
+}
+
+fn temperature_for_model(model: &str) -> Option<f32> {
+    if model.starts_with("gpt-5-") {
+        None
+    } else {
+        Some(0.0)
+    }
 }
 
 #[derive(Serialize)]
@@ -199,8 +208,10 @@ impl EnrichmentManager {
         if !pending.is_empty() {
             let batch_size = self.config.batch_size.max(1);
             let max_concurrency = self.config.max_concurrency.max(1);
-            let batches: Vec<Vec<EnrichmentInput>> =
-                pending.chunks(batch_size).map(|chunk| chunk.to_vec()).collect();
+            let batches: Vec<Vec<EnrichmentInput>> = pending
+                .chunks(batch_size)
+                .map(|chunk| chunk.to_vec())
+                .collect();
 
             let mut results = HashMap::new();
             let responses = stream::iter(batches.into_iter())
@@ -275,7 +286,7 @@ impl EnrichmentManager {
                     content: prompt,
                 },
             ],
-            temperature: 0.0,
+            temperature: temperature_for_model(&self.model),
         };
 
         let timeout_duration = Duration::from_millis(self.config.timeout_ms.max(1));
@@ -319,7 +330,11 @@ impl EnrichmentManager {
             .map(|choice| choice.message.content)
             .unwrap_or_default();
 
-        parse_enrichment_response(&content, self.config.summary_max_chars, self.config.max_tags)
+        parse_enrichment_response(
+            &content,
+            self.config.summary_max_chars,
+            self.config.max_tags,
+        )
     }
 }
 
@@ -371,8 +386,7 @@ fn build_prompt(batch: &[EnrichmentInput], summary_max_chars: usize, max_tags: u
         max_tags,
     };
 
-    let input_json =
-        serde_json::to_string(&input).unwrap_or_else(|_| "{\"items\":[]}".to_string());
+    let input_json = serde_json::to_string(&input).unwrap_or_else(|_| "{\"items\":[]}".to_string());
     format!(
         "Generate summaries and tags for the input items\n{}\n",
         input_json
@@ -384,8 +398,9 @@ fn parse_enrichment_response(
     summary_max_chars: usize,
     max_tags: usize,
 ) -> Result<HashMap<String, EnrichmentData>, EnrichmentError> {
-    let parsed: EnrichmentResponse = serde_json::from_str(content)
-        .map_err(|e| EnrichmentError::ApiError(format!("Failed to parse enrichment response: {}", e)))?;
+    let parsed: EnrichmentResponse = serde_json::from_str(content).map_err(|e| {
+        EnrichmentError::ApiError(format!("Failed to parse enrichment response: {}", e))
+    })?;
     let mut results = HashMap::new();
 
     for item in parsed.items {

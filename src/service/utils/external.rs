@@ -26,8 +26,7 @@ impl ExternalInfo {
             return None;
         }
 
-        let package = parse_pnpm_package_info(path)
-            .or_else(|| parse_standard_package_info(path));
+        let package = parse_pnpm_package_info(path).or_else(|| parse_standard_package_info(path));
 
         Some(ExternalInfo {
             external: true,
@@ -62,7 +61,9 @@ pub(crate) fn parse_pnpm_package_info(path: &str) -> Option<PackageInfo> {
 
     let version_segment = package_segment.split('_').next()?;
     let at_pos = version_segment.rfind('@')?;
-    if at_pos == 0 { return None; }
+    if at_pos == 0 {
+        return None;
+    }
     let version = &version_segment[at_pos + 1..];
 
     Some(PackageInfo {
@@ -79,7 +80,9 @@ pub(crate) fn parse_standard_package_info(path: &str) -> Option<PackageInfo> {
 
     let (name, _rest) = if after_nm.starts_with('@') {
         let first_slash = after_nm.find('/')?;
-        let second_slash = after_nm[first_slash + 1..].find('/').map(|p| p + first_slash + 1)?;
+        let second_slash = after_nm[first_slash + 1..]
+            .find('/')
+            .map(|p| p + first_slash + 1)?;
         (&after_nm[..second_slash], &after_nm[second_slash..])
     } else {
         let slash_pos = after_nm.find('/')?;

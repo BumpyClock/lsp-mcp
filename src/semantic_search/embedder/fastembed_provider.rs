@@ -4,15 +4,15 @@
 use super::{EmbedderError, EmbeddingProvider};
 use async_trait::async_trait;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
-#[cfg(feature = "ort-coreml")]
-use ort::execution_providers::CoreMLExecutionProvider;
-use ort::execution_providers::{CPUExecutionProvider, ExecutionProviderDispatch};
 #[cfg(feature = "ort-cuda")]
 use ort::execution_providers::CUDAExecutionProvider;
+#[cfg(feature = "ort-coreml")]
+use ort::execution_providers::CoreMLExecutionProvider;
 #[cfg(feature = "ort-directml")]
 use ort::execution_providers::DirectMLExecutionProvider;
 #[cfg(feature = "ort-rocm")]
 use ort::execution_providers::ROCmExecutionProvider;
+use ort::execution_providers::{CPUExecutionProvider, ExecutionProviderDispatch};
 use parking_lot::RwLock;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -45,10 +45,7 @@ impl FastEmbedProvider {
         let expected_dim = TextEmbedding::get_model_info(&model_enum)
             .map(|info| info.dim)
             .map_err(|e| {
-                EmbedderError::ConfigError(format!(
-                    "Failed to read fastembed model info: {}",
-                    e
-                ))
+                EmbedderError::ConfigError(format!("Failed to read fastembed model info: {}", e))
             })?;
         if dimension != expected_dim {
             return Err(EmbedderError::ConfigError(format!(

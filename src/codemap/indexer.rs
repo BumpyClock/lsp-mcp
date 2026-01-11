@@ -1,10 +1,10 @@
 // ABOUTME: Codemap indexer for extracting symbols and edges from codebase.
 // ABOUTME: Leverages LSP operations and ast-grep fallbacks for edge collection.
 
+use crate::api_types::{FilePosition, FileRange, Position, Range, Symbol};
 use crate::codemap::store::{CodemapStore, CodemapStoreError};
 use crate::codemap::types::*;
 use crate::lsp::manager::Manager;
-use crate::api_types::{Symbol, FilePosition, Position, FileRange, Range};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -58,7 +58,6 @@ pub struct CodemapIndexer {
     workspace_files: Arc<RwLock<HashSet<String>>>,
 }
 
-
 impl CodemapIndexer {
     pub fn new(store: Arc<CodemapStore>, manager: Arc<Manager>) -> Self {
         Self {
@@ -80,7 +79,10 @@ impl CodemapIndexer {
         *self.state.write().await = IndexerState::Indexing { progress: 0.0 };
 
         // Get all workspace files
-        let files = self.manager.list_files().await
+        let files = self
+            .manager
+            .list_files()
+            .await
             .map_err(|e| IndexerError::LspError(e.to_string()))?;
 
         let total = files.len();
@@ -215,7 +217,9 @@ impl CodemapIndexer {
         }
 
         // Update file version
-        self.store.set_file_version(path, &file_node.content_hash, file_version).await?;
+        self.store
+            .set_file_version(path, &file_node.content_hash, file_version)
+            .await?;
 
         Ok(FileIndexStats {
             symbols: symbol_count,
@@ -233,11 +237,18 @@ impl CodemapIndexer {
     }
 
     /// Extract symbols from a file using LSP documentSymbol
-    async fn extract_symbols(&self, path: &str, file_version: u64) -> Result<Vec<SymbolNode>, IndexerError> {
+    async fn extract_symbols(
+        &self,
+        path: &str,
+        file_version: u64,
+    ) -> Result<Vec<SymbolNode>, IndexerError> {
         let now = current_timestamp();
 
         // Try LSP first
-        let lsp_symbols = self.manager.document_symbol(path).await
+        let lsp_symbols = self
+            .manager
+            .document_symbol(path)
+            .await
             .map_err(|e| IndexerError::LspError(e.to_string()))?;
 
         if let Some(symbols) = lsp_symbols {
@@ -245,37 +256,40 @@ impl CodemapIndexer {
             let api_symbols = match symbols {
                 lsp_types::DocumentSymbolResponse::Flat(symbol_info) => {
                     // Convert SymbolInformation to Symbol
-                    symbol_info.iter().map(|si| Symbol {
-                        name: si.name.clone(),
-                        kind: format!("{:?}", si.kind),
-                        identifier_position: FilePosition {
-                            path: path.to_string(),
-                            position: Position {
-                                line: si.location.range.start.line + 1,
-                                character: si.location.range.start.character + 1,
-                            },
-                        },
-                        file_range: FileRange {
-                            path: path.to_string(),
-                            range: Range {
-                                start: Position {
+                    symbol_info
+                        .iter()
+                        .map(|si| Symbol {
+                            name: si.name.clone(),
+                            kind: format!("{:?}", si.kind),
+                            identifier_position: FilePosition {
+                                path: path.to_string(),
+                                position: Position {
                                     line: si.location.range.start.line + 1,
                                     character: si.location.range.start.character + 1,
                                 },
-                                end: Position {
-                                    line: si.location.range.end.line + 1,
-                                    character: si.location.range.end.character + 1,
+                            },
+                            file_range: FileRange {
+                                path: path.to_string(),
+                                range: Range {
+                                    start: Position {
+                                        line: si.location.range.start.line + 1,
+                                        character: si.location.range.start.character + 1,
+                                    },
+                                    end: Position {
+                                        line: si.location.range.end.line + 1,
+                                        character: si.location.range.end.character + 1,
+                                    },
                                 },
                             },
-                        },
-                        signature: None,
-                        exported: None,
-                        jsdoc_summary: None,
-                        dependencies: None,
-                        line_count: None,
-                        children: None,
-                        snippet: None,
-                    }).collect()
+                            signature: None,
+                            exported: None,
+                            jsdoc_summary: None,
+                            dependencies: None,
+                            line_count: None,
+                            children: None,
+                            snippet: None,
+                        })
+                        .collect()
                 }
                 lsp_types::DocumentSymbolResponse::Nested(document_symbols) => {
                     self.flatten_document_symbols(path, &document_symbols)
@@ -289,7 +303,11 @@ impl CodemapIndexer {
     }
 
     /// Flatten nested DocumentSymbols into a flat Symbol list
-    fn flatten_document_symbols(&self, path: &str, symbols: &[lsp_types::DocumentSymbol]) -> Vec<Symbol> {
+    fn flatten_document_symbols(
+        &self,
+        path: &str,
+        symbols: &[lsp_types::DocumentSymbol],
+    ) -> Vec<Symbol> {
         let mut result = Vec::new();
         for symbol in symbols {
             let api_symbol = Symbol {
@@ -345,28 +363,35 @@ impl CodemapIndexer {
         file_version: u64,
         now: i64,
     ) -> Vec<SymbolNode> {
-        symbols.iter().map(|symbol| {
-            let pos = &symbol.identifier_position;
-            SymbolNode {
-                id: NodeId::for_symbol(path, pos.position.line, pos.position.character),
-                name: symbol.name.clone(),
-                kind: parse_symbol_kind(&symbol.kind),
-                location: pos.clone(),
-                end_position: Some(FilePosition {
-                    path: symbol.file_range.path.clone(),
-                    position: symbol.file_range.range.end.clone(),
-                }),
-                signature: symbol.signature.clone(),
-                container_name: None,
-                file_version,
-                indexed_at: now,
-                is_public_api: symbol.exported.unwrap_or(false),
-            }
-        }).collect()
+        symbols
+            .iter()
+            .map(|symbol| {
+                let pos = &symbol.identifier_position;
+                SymbolNode {
+                    id: NodeId::for_symbol(path, pos.position.line, pos.position.character),
+                    name: symbol.name.clone(),
+                    kind: parse_symbol_kind(&symbol.kind),
+                    location: pos.clone(),
+                    end_position: Some(FilePosition {
+                        path: symbol.file_range.path.clone(),
+                        position: symbol.file_range.range.end.clone(),
+                    }),
+                    signature: symbol.signature.clone(),
+                    container_name: None,
+                    file_version,
+                    indexed_at: now,
+                    is_public_api: symbol.exported.unwrap_or(false),
+                }
+            })
+            .collect()
     }
 
     /// Extract calls from a callable symbol using call hierarchy
-    async fn extract_calls(&self, symbol: &SymbolNode, file_version: u64) -> Result<Vec<CallsEdge>, IndexerError> {
+    async fn extract_calls(
+        &self,
+        symbol: &SymbolNode,
+        file_version: u64,
+    ) -> Result<Vec<CallsEdge>, IndexerError> {
         let now = current_timestamp();
         let mut calls = Vec::new();
 
@@ -376,7 +401,8 @@ impl CodemapIndexer {
             character: symbol.location.position.character.saturating_sub(1),
         };
 
-        let items = self.manager
+        let items = self
+            .manager
             .prepare_call_hierarchy(&symbol.location.path, lsp_position)
             .await
             .map_err(|e| IndexerError::LspError(e.to_string()))?;
@@ -384,7 +410,8 @@ impl CodemapIndexer {
         if let Some(hierarchy_items) = items {
             for item in hierarchy_items {
                 // Get outgoing calls
-                let outgoing = self.manager
+                let outgoing = self
+                    .manager
                     .outgoing_calls(&symbol.location.path, &item)
                     .await
                     .map_err(|e| IndexerError::LspError(e.to_string()))?;
@@ -392,7 +419,8 @@ impl CodemapIndexer {
                 for call in outgoing {
                     // Create callee NodeId
                     let callee_uri = &call.to.uri;
-                    let callee_path = crate::utils::file_utils::uri_to_relative_path_string(callee_uri);
+                    let callee_path =
+                        crate::utils::file_utils::uri_to_relative_path_string(callee_uri);
                     let callee_position = call.to.selection_range.start;
 
                     let callee_id = NodeId::for_symbol(
@@ -401,7 +429,8 @@ impl CodemapIndexer {
                         callee_position.character + 1,
                     );
 
-                    let call_sites: Vec<CallSite> = call.from_ranges
+                    let call_sites: Vec<CallSite> = call
+                        .from_ranges
                         .iter()
                         .map(|r| CallSite {
                             line: r.start.line + 1,
@@ -410,7 +439,8 @@ impl CodemapIndexer {
                         })
                         .collect();
 
-                    let is_cross_package = self.is_cross_package(&symbol.location.path, &callee_path);
+                    let is_cross_package =
+                        self.is_cross_package(&symbol.location.path, &callee_path);
 
                     let edge = CallsEdge {
                         id: EdgeId::new(&symbol.id, &callee_id, EdgeKind::Calls),
@@ -435,17 +465,22 @@ impl CodemapIndexer {
     }
 
     /// Extract imports from a file
-    async fn extract_imports(&self, _path: &str, _file_id: &NodeId, _file_version: u64) -> Result<Vec<ImportsEdge>, IndexerError> {
+    async fn extract_imports(
+        &self,
+        _path: &str,
+        _file_id: &NodeId,
+        _file_version: u64,
+    ) -> Result<Vec<ImportsEdge>, IndexerError> {
         // This would use ast-grep to parse import statements
         // For now, return empty - will implement with ast-grep patterns
         Ok(Vec::new())
     }
 
     fn is_external_path(&self, path: &str) -> bool {
-        path.contains("node_modules") ||
-        path.contains(".cargo/registry") ||
-        path.contains("vendor/") ||
-        path.contains("site-packages")
+        path.contains("node_modules")
+            || path.contains(".cargo/registry")
+            || path.contains("vendor/")
+            || path.contains("site-packages")
     }
 
     fn is_cross_package(&self, from_path: &str, to_path: &str) -> bool {
@@ -511,7 +546,8 @@ fn detect_language(path: &str) -> String {
         "rb" => "ruby",
         "php" => "php",
         _ => "unknown",
-    }.to_string()
+    }
+    .to_string()
 }
 
 fn parse_symbol_kind(kind: &str) -> SymbolKind {

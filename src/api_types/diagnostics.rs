@@ -211,8 +211,14 @@ mod tests {
                     path: "src/main.rs".to_string(),
                     diagnostics: vec![Diagnostic {
                         range: Range {
-                            start: Position { line: 1, character: 0 },
-                            end: Position { line: 1, character: 10 },
+                            start: Position {
+                                line: 1,
+                                character: 0,
+                            },
+                            end: Position {
+                                line: 1,
+                                character: 10,
+                            },
                         },
                         severity: Some(DiagnosticSeverity::Error),
                         code: Some("E0001".to_string()),
@@ -225,8 +231,14 @@ mod tests {
                     path: "src/lib.rs".to_string(),
                     diagnostics: vec![Diagnostic {
                         range: Range {
-                            start: Position { line: 5, character: 0 },
-                            end: Position { line: 5, character: 20 },
+                            start: Position {
+                                line: 5,
+                                character: 0,
+                            },
+                            end: Position {
+                                line: 5,
+                                character: 20,
+                            },
                         },
                         severity: Some(DiagnosticSeverity::Warning),
                         code: None,
@@ -290,16 +302,14 @@ mod tests {
             files: vec![],
         };
 
-        let json = serde_json::to_value(&response).expect("failed to serialize diagnostics response");
+        let json =
+            serde_json::to_value(&response).expect("failed to serialize diagnostics response");
 
         assert!(
             json.get("by_severity").is_some(),
             "by_severity field must be present in serialized output"
         );
-        assert_eq!(
-            json["by_severity"]["error"], 2,
-            "error count must match"
-        );
+        assert_eq!(json["by_severity"]["error"], 2, "error count must match");
         assert_eq!(
             json["by_severity"]["warning"], 1,
             "warning count must match"
@@ -310,8 +320,14 @@ mod tests {
     fn test_diagnostic_has_quick_fix_field_serializes() {
         let diag_with_fix = Diagnostic {
             range: Range {
-                start: Position { line: 1, character: 1 },
-                end: Position { line: 1, character: 10 },
+                start: Position {
+                    line: 1,
+                    character: 1,
+                },
+                end: Position {
+                    line: 1,
+                    character: 10,
+                },
             },
             severity: Some(DiagnosticSeverity::Error),
             code: Some("E0001".to_string()),
@@ -322,8 +338,14 @@ mod tests {
 
         let diag_without_fix = Diagnostic {
             range: Range {
-                start: Position { line: 2, character: 1 },
-                end: Position { line: 2, character: 15 },
+                start: Position {
+                    line: 2,
+                    character: 1,
+                },
+                end: Position {
+                    line: 2,
+                    character: 15,
+                },
             },
             severity: Some(DiagnosticSeverity::Warning),
             code: None,

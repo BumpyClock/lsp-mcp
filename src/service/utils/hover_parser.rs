@@ -168,9 +168,8 @@ fn is_definition_block(content: &str) -> bool {
 /// Checks if code block is a variable assignment (usage example).
 fn is_variable_assignment(content: &str) -> bool {
     let trimmed = content.trim();
-    let is_var = trimmed.starts_with("const ")
-        || trimmed.starts_with("let ")
-        || trimmed.starts_with("var ");
+    let is_var =
+        trimmed.starts_with("const ") || trimmed.starts_with("let ") || trimmed.starts_with("var ");
     is_var && trimmed.contains('=')
 }
 
@@ -522,10 +521,6 @@ const navItem: NavItem = {
             "Expected interface definition, got: {}",
             sig
         );
-        assert!(
-            !sig.contains("const navItem"),
-            "Should not return example"
-        );
+        assert!(!sig.contains("const navItem"), "Should not return example");
     }
-
 }

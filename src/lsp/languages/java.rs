@@ -1,6 +1,6 @@
-use std::{error::Error, path::Path, process::Stdio};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::{error::Error, path::Path, process::Stdio};
 
 use async_trait::async_trait;
 use glob::glob;
@@ -11,7 +11,10 @@ use tokio::{process::Command, sync::broadcast::Receiver};
 
 use crate::lsp::client::LspClientConfig;
 use crate::{
-    lsp::{DiagnosticsStore, ExpectedMessageKey, JsonRpcHandler, LspClient, PendingRequests, ProcessHandler},
+    lsp::{
+        DiagnosticsStore, ExpectedMessageKey, JsonRpcHandler, LspClient, PendingRequests,
+        ProcessHandler,
+    },
     utils::workspace_documents::{
         DidOpenConfiguration, WorkspaceDocumentsHandler, DEFAULT_EXCLUDE_PATTERNS,
         JAVA_FILE_PATTERNS, JAVA_ROOT_FILES,

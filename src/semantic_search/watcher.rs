@@ -109,7 +109,11 @@ impl SemanticWatcher {
                             }
 
                             // Skip if not a matching file
-                            if !Self::should_index_file_static(path, &workspace_for_callback, &config_ref) {
+                            if !Self::should_index_file_static(
+                                path,
+                                &workspace_for_callback,
+                                &config_ref,
+                            ) {
                                 continue;
                             }
 
@@ -125,7 +129,10 @@ impl SemanticWatcher {
 
             match debouncer_result {
                 Ok(mut debouncer) => {
-                    if let Err(e) = debouncer.watcher().watch(&workspace_for_watcher, RecursiveMode::Recursive) {
+                    if let Err(e) = debouncer
+                        .watcher()
+                        .watch(&workspace_for_watcher, RecursiveMode::Recursive)
+                    {
                         warn!(error = %e, "Failed to watch workspace");
                         return;
                     }

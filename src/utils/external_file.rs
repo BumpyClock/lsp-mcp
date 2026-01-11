@@ -89,7 +89,10 @@ mod tests {
 
         let path_inside = temp.path().join("src/main.rs");
         let result = is_external_path(path_inside.to_str().unwrap());
-        assert!(!result, "Absolute path inside workspace should not be external");
+        assert!(
+            !result,
+            "Absolute path inside workspace should not be external"
+        );
 
         unset_thread_local_mount_dir();
     }
@@ -112,7 +115,11 @@ mod tests {
 
         let absolute = "/usr/lib/something.so";
         let result = resolve_file_path(absolute);
-        assert_eq!(result, PathBuf::from(absolute), "Absolute path should be returned unchanged");
+        assert_eq!(
+            result,
+            PathBuf::from(absolute),
+            "Absolute path should be returned unchanged"
+        );
 
         unset_thread_local_mount_dir();
     }
@@ -125,7 +132,10 @@ mod tests {
         let relative = "src/lib.rs";
         let result = resolve_file_path(relative);
         let expected = temp.path().join(relative);
-        assert_eq!(result, expected, "Relative path should be joined with mount dir");
+        assert_eq!(
+            result, expected,
+            "Relative path should be joined with mount dir"
+        );
 
         unset_thread_local_mount_dir();
     }
@@ -184,7 +194,11 @@ mod tests {
 
         let result = read_file_range(file_path.to_str().unwrap(), 1, 3).await;
         assert!(result.is_ok(), "Should successfully read line range");
-        assert_eq!(result.unwrap(), "line1\nline2\nline3", "Should return lines 1-3");
+        assert_eq!(
+            result.unwrap(),
+            "line1\nline2\nline3",
+            "Should return lines 1-3"
+        );
 
         unset_thread_local_mount_dir();
     }
@@ -215,7 +229,11 @@ mod tests {
 
         let result = read_file_range(file_path.to_str().unwrap(), 1, 100).await;
         assert!(result.is_ok(), "Should handle end beyond file length");
-        assert_eq!(result.unwrap(), "line1\nline2", "Should clamp to actual file length");
+        assert_eq!(
+            result.unwrap(),
+            "line1\nline2",
+            "Should clamp to actual file length"
+        );
 
         unset_thread_local_mount_dir();
     }

@@ -169,7 +169,9 @@ impl SemanticSearchManager {
             Ok(p) => p,
             Err(e) => {
                 let msg = format!("Failed to create embedding provider: {}", e);
-                *self.state.write().await = SemanticSearchState::Error { message: msg.clone() };
+                *self.state.write().await = SemanticSearchState::Error {
+                    message: msg.clone(),
+                };
                 return Err(SemanticSearchError::EmbeddingError(msg));
             }
         };
@@ -182,7 +184,9 @@ impl SemanticSearchManager {
             Ok(s) => Arc::new(s),
             Err(e) => {
                 let msg = format!("Failed to create vector store: {}", e);
-                *self.state.write().await = SemanticSearchState::Error { message: msg.clone() };
+                *self.state.write().await = SemanticSearchState::Error {
+                    message: msg.clone(),
+                };
                 return Err(SemanticSearchError::IndexError(msg));
             }
         };
@@ -200,7 +204,9 @@ impl SemanticSearchManager {
                 self.last_dimension_mismatch = Some((stored, dimension));
                 if let Err(e) = store.reset_index().await {
                     let msg = format!("Failed to reset semantic index: {}", e);
-                    *self.state.write().await = SemanticSearchState::Error { message: msg.clone() };
+                    *self.state.write().await = SemanticSearchState::Error {
+                        message: msg.clone(),
+                    };
                     return Err(SemanticSearchError::IndexError(msg));
                 }
             }
@@ -235,10 +241,7 @@ impl SemanticSearchManager {
         let completed_at = store.get_index_completed_at().await?;
         let mut requires_rebuild =
             self.force_rebuild_flag || index_state != IndexState::Ready || completed_at.is_none();
-        if !self.force_rebuild_flag
-            && index_state == IndexState::Ready
-            && completed_at.is_some()
-        {
+        if !self.force_rebuild_flag && index_state == IndexState::Ready && completed_at.is_some() {
             let missing_files = store.files_missing_vectors().await?;
             if missing_files.is_empty() {
                 let stats = store.stats().await?;
@@ -329,7 +332,9 @@ impl SemanticSearchManager {
         if requires_rebuild {
             if let Err(e) = store.reset_index().await {
                 let msg = format!("Failed to reset semantic index: {}", e);
-                *self.state.write().await = SemanticSearchState::Error { message: msg.clone() };
+                *self.state.write().await = SemanticSearchState::Error {
+                    message: msg.clone(),
+                };
                 return Err(SemanticSearchError::IndexError(msg));
             }
         }
@@ -354,7 +359,12 @@ impl SemanticSearchManager {
 
         tokio::spawn(async move {
             match indexer_clone
-                .run_initial_scan(store_clone.clone(), processor_clone, state.clone(), shutdown_rx)
+                .run_initial_scan(
+                    store_clone.clone(),
+                    processor_clone,
+                    state.clone(),
+                    shutdown_rx,
+                )
                 .await
             {
                 Ok(chunk_count) => {
@@ -420,12 +430,12 @@ impl SemanticSearchManager {
             Arc::new(BatchProcessor::new(provider, batch_config))
         };
 
-            let chunk_config = ChunkConfig::from_index_config(
-                self.config.min_chunk_chars,
-                self.config.max_chunk_chars,
-                self.config.max_function_chunk_chars,
-                self.config.chunk_overlap_chars,
-            );
+        let chunk_config = ChunkConfig::from_index_config(
+            self.config.min_chunk_chars,
+            self.config.max_chunk_chars,
+            self.config.max_function_chunk_chars,
+            self.config.chunk_overlap_chars,
+        );
 
         let watcher = SemanticWatcher::new(
             self.config.clone(),
@@ -526,12 +536,12 @@ impl SemanticSearchManager {
 
     pub async fn health_snapshot(&self) -> SemanticSearchHealthSnapshot {
         let (embedder_provider, embedder_model, embedder_dimension) = match &self.config.embedder {
-            EmbedderConfig::OpenAI { model, dimension, .. } => {
-                ("openai".to_string(), Some(model.clone()), *dimension)
-            }
-            EmbedderConfig::FastEmbed { model, dimension, .. } => {
-                ("fastembed".to_string(), Some(model.clone()), *dimension)
-            }
+            EmbedderConfig::OpenAI {
+                model, dimension, ..
+            } => ("openai".to_string(), Some(model.clone()), *dimension),
+            EmbedderConfig::FastEmbed {
+                model, dimension, ..
+            } => ("fastembed".to_string(), Some(model.clone()), *dimension),
         };
 
         let stored_dimension = match &self.store {

@@ -3,7 +3,9 @@
 
 use crate::api_types::{CallHierarchyDirection, Position};
 use crate::config::OutputMode;
-use crate::mcp_response::{format_response, tool_result_error, tool_result_from_error, tool_result_success};
+use crate::mcp_response::{
+    format_response, tool_result_error, tool_result_from_error, tool_result_success,
+};
 use crate::service::LspService;
 use rmcp::model::CallToolResult;
 
@@ -77,7 +79,10 @@ mod tests {
 
     #[test]
     fn resolve_internal_only_defaults_to_true() {
-        assert!(resolve_internal_only(None), "default must exclude externals");
+        assert!(
+            resolve_internal_only(None),
+            "default must exclude externals"
+        );
     }
 
     #[test]
@@ -111,8 +116,7 @@ mod tests {
         let explicit: u32 = rng.random_range(0..10);
         let resolved = resolve_context_lines(Some(explicit));
         assert_eq!(
-            resolved,
-            explicit,
+            resolved, explicit,
             "negative: explicit context_lines value must be preserved"
         );
     }

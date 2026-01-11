@@ -144,9 +144,18 @@ mod tests {
         let json = serde_json::to_string(&stat).unwrap();
         let parsed: ToolStat = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(parsed.total_calls, 150, "Total calls should match after serialization");
-        assert_eq!(parsed.success_count, 145, "Success count should match after serialization");
-        assert_eq!(parsed.failure_count, 5, "Failure count should match after serialization");
+        assert_eq!(
+            parsed.total_calls, 150,
+            "Total calls should match after serialization"
+        );
+        assert_eq!(
+            parsed.success_count, 145,
+            "Success count should match after serialization"
+        );
+        assert_eq!(
+            parsed.failure_count, 5,
+            "Failure count should match after serialization"
+        );
     }
 
     #[test]
@@ -154,18 +163,27 @@ mod tests {
         let stat = ToolStat::default();
 
         assert_eq!(stat.total_calls, 0, "Default total calls should be zero");
-        assert_eq!(stat.success_count, 0, "Default success count should be zero");
-        assert_eq!(stat.failure_count, 0, "Default failure count should be zero");
+        assert_eq!(
+            stat.success_count, 0,
+            "Default success count should be zero"
+        );
+        assert_eq!(
+            stat.failure_count, 0,
+            "Default failure count should be zero"
+        );
     }
 
     #[test]
     fn tool_stats_file_serializes_with_version_and_timestamp() {
         let mut tools = HashMap::new();
-        tools.insert("hover".to_string(), ToolStat {
-            total_calls: 150,
-            success_count: 145,
-            failure_count: 5,
-        });
+        tools.insert(
+            "hover".to_string(),
+            ToolStat {
+                total_calls: 150,
+                success_count: 145,
+                failure_count: 5,
+            },
+        );
 
         let timestamp = Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap();
         let stats_file = ToolStatsFile {
@@ -177,8 +195,14 @@ mod tests {
         let json = serde_json::to_string(&stats_file).unwrap();
         let parsed: ToolStatsFile = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(parsed.version, 1, "Version should be preserved in serialization");
-        assert_eq!(parsed.last_updated, timestamp, "Timestamp should be preserved in serialization");
+        assert_eq!(
+            parsed.version, 1,
+            "Version should be preserved in serialization"
+        );
+        assert_eq!(
+            parsed.last_updated, timestamp,
+            "Timestamp should be preserved in serialization"
+        );
         assert_eq!(parsed.tools.len(), 1, "Tools map should have one entry");
 
         let hover_stat = parsed.tools.get("hover").unwrap();
@@ -206,8 +230,14 @@ mod tests {
 
         let hover_stat = parsed.tools.get("hover").unwrap();
         assert_eq!(hover_stat.total_calls, 150, "Total calls should match JSON");
-        assert_eq!(hover_stat.success_count, 145, "Success count should match JSON");
-        assert_eq!(hover_stat.failure_count, 5, "Failure count should match JSON");
+        assert_eq!(
+            hover_stat.success_count, 145,
+            "Success count should match JSON"
+        );
+        assert_eq!(
+            hover_stat.failure_count, 5,
+            "Failure count should match JSON"
+        );
     }
 
     #[tokio::test]
@@ -221,11 +251,22 @@ mod tests {
 
         let local_cache = store.local_cache.lock();
         assert_eq!(local_cache.version, 1, "Local cache should have version 1");
-        assert_eq!(local_cache.tools.len(), 0, "Local cache should start with no tool stats");
+        assert_eq!(
+            local_cache.tools.len(),
+            0,
+            "Local cache should start with no tool stats"
+        );
 
         let global_cache = store.global_cache.lock();
-        assert_eq!(global_cache.version, 1, "Global cache should have version 1");
-        assert_eq!(global_cache.tools.len(), 0, "Global cache should start with no tool stats");
+        assert_eq!(
+            global_cache.version, 1,
+            "Global cache should have version 1"
+        );
+        assert_eq!(
+            global_cache.tools.len(),
+            0,
+            "Global cache should start with no tool stats"
+        );
     }
 
     #[tokio::test]
@@ -243,11 +284,14 @@ mod tests {
             last_updated: Utc::now(),
             tools: {
                 let mut map = HashMap::new();
-                map.insert("hover".to_string(), ToolStat {
-                    total_calls: 42,
-                    success_count: 40,
-                    failure_count: 2,
-                });
+                map.insert(
+                    "hover".to_string(),
+                    ToolStat {
+                        total_calls: 42,
+                        success_count: 40,
+                        failure_count: 2,
+                    },
+                );
                 map
             },
         };
@@ -260,9 +304,18 @@ mod tests {
 
         let local_cache = store.local_cache.lock();
         let hover_stat = local_cache.tools.get("hover").unwrap();
-        assert_eq!(hover_stat.total_calls, 42, "Should load existing local stats");
-        assert_eq!(hover_stat.success_count, 40, "Should load existing success count");
-        assert_eq!(hover_stat.failure_count, 2, "Should load existing failure count");
+        assert_eq!(
+            hover_stat.total_calls, 42,
+            "Should load existing local stats"
+        );
+        assert_eq!(
+            hover_stat.success_count, 40,
+            "Should load existing success count"
+        );
+        assert_eq!(
+            hover_stat.failure_count, 2,
+            "Should load existing failure count"
+        );
     }
 
     #[tokio::test]
@@ -278,9 +331,18 @@ mod tests {
 
         let local_cache = store.local_cache.lock();
         let hover_stat = local_cache.tools.get("hover").unwrap();
-        assert_eq!(hover_stat.total_calls, 1, "Total calls should be incremented");
-        assert_eq!(hover_stat.success_count, 1, "Success count should be incremented");
-        assert_eq!(hover_stat.failure_count, 0, "Failure count should remain zero");
+        assert_eq!(
+            hover_stat.total_calls, 1,
+            "Total calls should be incremented"
+        );
+        assert_eq!(
+            hover_stat.success_count, 1,
+            "Success count should be incremented"
+        );
+        assert_eq!(
+            hover_stat.failure_count, 0,
+            "Failure count should remain zero"
+        );
     }
 
     #[tokio::test]
@@ -296,9 +358,18 @@ mod tests {
 
         let local_cache = store.local_cache.lock();
         let hover_stat = local_cache.tools.get("hover").unwrap();
-        assert_eq!(hover_stat.total_calls, 1, "Total calls should be incremented");
-        assert_eq!(hover_stat.success_count, 0, "Success count should remain zero");
-        assert_eq!(hover_stat.failure_count, 1, "Failure count should be incremented");
+        assert_eq!(
+            hover_stat.total_calls, 1,
+            "Total calls should be incremented"
+        );
+        assert_eq!(
+            hover_stat.success_count, 0,
+            "Success count should remain zero"
+        );
+        assert_eq!(
+            hover_stat.failure_count, 1,
+            "Failure count should be incremented"
+        );
     }
 
     #[tokio::test]
@@ -320,7 +391,10 @@ mod tests {
 
         let global_cache = store.global_cache.lock();
         let global_hover = global_cache.tools.get("hover").unwrap();
-        assert_eq!(global_hover.total_calls, 1, "Global cache should be updated");
+        assert_eq!(
+            global_hover.total_calls, 1,
+            "Global cache should be updated"
+        );
     }
 
     #[tokio::test]
@@ -340,7 +414,10 @@ mod tests {
         let persisted: ToolStatsFile = serde_json::from_str(&json_content).unwrap();
 
         let hover_stat = persisted.tools.get("hover").unwrap();
-        assert_eq!(hover_stat.total_calls, 1, "Stats should be persisted to local file");
+        assert_eq!(
+            hover_stat.total_calls, 1,
+            "Stats should be persisted to local file"
+        );
     }
 
     #[tokio::test]
@@ -357,6 +434,9 @@ mod tests {
 
         let global_cache = store.global_cache.lock();
         let global_hover = global_cache.tools.get("hover").unwrap();
-        assert_eq!(global_hover.total_calls, 1, "Global cache should have stats after record_call");
+        assert_eq!(
+            global_hover.total_calls, 1,
+            "Global cache should have stats after record_call"
+        );
     }
 }

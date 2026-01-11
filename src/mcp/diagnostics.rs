@@ -5,12 +5,14 @@ use crate::api_types::{HealthResponse, SemanticSearchHealth};
 use crate::config::{DebugConfig, OutputMode};
 use crate::logging::session_log_path;
 use crate::mcp_response::{format_error, format_response, tool_result_error, tool_result_success};
+use crate::semantic_search::{
+    SemanticSearchHealthSnapshot, SemanticSearchManager, SemanticSearchState,
+};
 use crate::service::LspService;
-use crate::semantic_search::{SemanticSearchHealthSnapshot, SemanticSearchManager, SemanticSearchState};
 use crate::session::try_session_id;
 use rmcp::model::CallToolResult;
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub async fn get_diagnostics(
@@ -42,8 +44,8 @@ pub async fn health(
         None
     };
 
-    let log_file = session_log_path(debug_config, workspace_root)
-        .map(|p| p.to_string_lossy().to_string());
+    let log_file =
+        session_log_path(debug_config, workspace_root).map(|p| p.to_string_lossy().to_string());
 
     let semantic_search = match semantic_search_manager {
         Some(manager) => {

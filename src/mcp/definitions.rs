@@ -63,10 +63,8 @@ pub async fn find_definition(
         Ok(mut response) => {
             // Always include siblings (max 5)
             if let Some(ref mut related) = response.related {
-                related.sibling_exports = filter_sibling_exports(
-                    std::mem::take(&mut related.sibling_exports),
-                    5,
-                );
+                related.sibling_exports =
+                    filter_sibling_exports(std::mem::take(&mut related.sibling_exports), 5);
             }
 
             let markdown = format_response(&response, output_mode);
@@ -118,8 +116,7 @@ mod tests {
         let explicit: u32 = rng.random_range(0..10);
         let resolved = resolve_context_lines(Some(explicit));
         assert_eq!(
-            resolved,
-            explicit,
+            resolved, explicit,
             "negative: explicit context_lines value must be preserved"
         );
     }

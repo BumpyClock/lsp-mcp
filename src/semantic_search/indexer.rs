@@ -2,8 +2,8 @@
 // ABOUTME: Handles chunking, batching, and progress tracking during indexing.
 
 use super::chunker::{create_chunker, ChunkConfig, CodeChunk};
-use super::enrichment::EnrichmentManager;
 use super::embedder::BatchProcessor;
+use super::enrichment::EnrichmentManager;
 use super::manager::SemanticSearchState;
 use super::vector_store::{HnswVectorStore, IndexEntry, VectorStore};
 use crate::config::SemanticSearchConfig;
@@ -144,11 +144,7 @@ impl Indexer {
                 Ok(chunks) => {
                     if chunks.is_empty() {
                         store
-                            .upsert_file_hash(
-                                &relative_path,
-                                &content_hash,
-                                Utc::now().timestamp(),
-                            )
+                            .upsert_file_hash(&relative_path, &content_hash, Utc::now().timestamp())
                             .await?;
                     } else {
                         pending_chunks.extend(chunks);
@@ -245,9 +241,7 @@ impl Indexer {
                 .to_string_lossy();
 
             // Check exclude patterns first
-            let excluded = exclude_patterns
-                .iter()
-                .any(|p| p.matches(&relative_path));
+            let excluded = exclude_patterns.iter().any(|p| p.matches(&relative_path));
             if excluded {
                 continue;
             }

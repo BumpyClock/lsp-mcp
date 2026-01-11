@@ -89,13 +89,12 @@ impl BatchProcessor {
 
                     sleep(Duration::from_millis(wait_ms)).await;
 
-                    backoff_ms = ((backoff_ms as f64) * self.config.retry.backoff_multiplier) as u64;
+                    backoff_ms =
+                        ((backoff_ms as f64) * self.config.retry.backoff_multiplier) as u64;
                     backoff_ms = backoff_ms.min(self.config.retry.max_backoff_ms);
                     attempt += 1;
                 }
-                Err(EmbedderError::ApiError(msg))
-                    if attempt < self.config.retry.max_retries =>
-                {
+                Err(EmbedderError::ApiError(msg)) if attempt < self.config.retry.max_retries => {
                     warn!(
                         provider = %self.provider.name(),
                         error = %msg,
@@ -107,7 +106,8 @@ impl BatchProcessor {
 
                     sleep(Duration::from_millis(backoff_ms)).await;
 
-                    backoff_ms = ((backoff_ms as f64) * self.config.retry.backoff_multiplier) as u64;
+                    backoff_ms =
+                        ((backoff_ms as f64) * self.config.retry.backoff_multiplier) as u64;
                     backoff_ms = backoff_ms.min(self.config.retry.max_backoff_ms);
                     attempt += 1;
                 }

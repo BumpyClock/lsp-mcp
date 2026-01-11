@@ -48,7 +48,9 @@ pub fn extract_range(content: &str, range: Range) -> Result<String, Box<dyn Erro
                 (0, true) => {
                     let start_char = range.start.character.min(line_len as u32) as usize;
                     let end_char = range.end.character.min(line_len as u32) as usize;
-                    trimmed_line[..line_len].get(start_char..end_char).unwrap_or("")
+                    trimmed_line[..line_len]
+                        .get(start_char..end_char)
+                        .unwrap_or("")
                 }
                 (0, false) => {
                     let start_char = range.start.character.min(line_len as u32) as usize;

@@ -337,10 +337,7 @@ impl AstGrepClient {
                 range: def_range.clone(),
                 file: file_name.to_string(),
                 lines: lines_text,
-                char_count: CharCount {
-                    leading,
-                    trailing,
-                },
+                char_count: CharCount { leading, trailing },
                 language: lang.name().to_string(),
                 meta_variables: MetaVariables {
                     single: SingleVariable {
@@ -445,7 +442,8 @@ fn range_contains_position(range: &AstGrepRange, position: &lsp_types::Position)
 
     (start.line < position.line
         || (start.line == position.line && start.column <= position.character))
-        && (end.line > position.line || (end.line == position.line && end.column >= position.character))
+        && (end.line > position.line
+            || (end.line == position.line && end.column >= position.character))
 }
 
 fn range_span_score(range: &AstGrepRange) -> u64 {
@@ -568,8 +566,7 @@ mod tests {
             character: 2,
         };
 
-        let selected =
-            select_symbol_match(vec![outer, inner], &position).expect("expected match");
+        let selected = select_symbol_match(vec![outer, inner], &position).expect("expected match");
 
         assert_eq!(selected.meta_variables.single.name.text, "inner");
     }
@@ -655,7 +652,10 @@ mod tests {
         let result = client.get_file_symbols(test_file).await;
         std::fs::remove_file(test_file).ok();
 
-        assert!(result.is_err(), "Should return error for unsupported extension");
+        assert!(
+            result.is_err(),
+            "Should return error for unsupported extension"
+        );
     }
 
     #[tokio::test]
@@ -700,7 +700,9 @@ mod tests {
             line: 40,
             character: 10,
         };
-        let result = client.get_symbol_and_references(test_file, &position, false).await;
+        let result = client
+            .get_symbol_and_references(test_file, &position, false)
+            .await;
 
         assert!(
             result.is_ok(),
@@ -708,10 +710,7 @@ mod tests {
             result.err()
         );
         let (symbol, _references) = result.unwrap();
-        assert!(
-            !symbol.text.is_empty(),
-            "Symbol should have non-empty text"
-        );
+        assert!(!symbol.text.is_empty(), "Symbol should have non-empty text");
     }
 
     #[tokio::test]

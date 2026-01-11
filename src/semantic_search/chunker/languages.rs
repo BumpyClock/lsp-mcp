@@ -112,7 +112,11 @@ pub fn get_node_kinds(extension: &str) -> NodeKinds {
         },
         "php" => NodeKinds {
             function_kinds: &["function_definition", "method_declaration"],
-            type_kinds: &["class_declaration", "interface_declaration", "trait_declaration"],
+            type_kinds: &[
+                "class_declaration",
+                "interface_declaration",
+                "trait_declaration",
+            ],
             impl_kinds: &["declaration_list"],
             constant_kinds: &["property_declaration", "const_declaration"],
         },

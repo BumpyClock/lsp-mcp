@@ -2,7 +2,9 @@
 // ABOUTME: Provides efficient approximate nearest neighbor search.
 
 use super::metadata::MetadataStore;
-use super::types::{EnrichmentData, IndexEntry, IndexState, IndexStats, SearchOptions, SearchResult};
+use super::types::{
+    EnrichmentData, IndexEntry, IndexState, IndexStats, SearchOptions, SearchResult,
+};
 use super::{VectorStore, VectorStoreError};
 use async_trait::async_trait;
 use hnsw_rs::api::AnnT;
@@ -280,10 +282,7 @@ impl HnswVectorStore {
         Ok(())
     }
 
-    async fn get_hnsw_ids_for_prefix(
-        &self,
-        prefix: &str,
-    ) -> Result<Vec<usize>, VectorStoreError> {
+    async fn get_hnsw_ids_for_prefix(&self, prefix: &str) -> Result<Vec<usize>, VectorStoreError> {
         self.metadata.get_hnsw_ids_by_path_prefix(prefix).await
     }
 }

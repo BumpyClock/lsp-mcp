@@ -142,7 +142,11 @@ impl QueryRegistry {
             QueryType::Identifier,
             PYTHON_IDENTIFIER,
         )?;
-        add_query(ProgrammingLanguage::Go, QueryType::Identifier, GO_IDENTIFIER)?;
+        add_query(
+            ProgrammingLanguage::Go,
+            QueryType::Identifier,
+            GO_IDENTIFIER,
+        )?;
         add_query(
             ProgrammingLanguage::Java,
             QueryType::Identifier,
@@ -180,7 +184,11 @@ impl QueryRegistry {
             QueryType::Reference,
             TYPESCRIPT_REFERENCE,
         )?;
-        add_query(ProgrammingLanguage::Tsx, QueryType::Reference, TSX_REFERENCE)?;
+        add_query(
+            ProgrammingLanguage::Tsx,
+            QueryType::Reference,
+            TSX_REFERENCE,
+        )?;
         add_query(
             ProgrammingLanguage::JavaScript,
             QueryType::Reference,
@@ -202,7 +210,11 @@ impl QueryRegistry {
             QueryType::Reference,
             CSHARP_REFERENCE,
         )?;
-        add_query(ProgrammingLanguage::Cpp, QueryType::Reference, CPP_REFERENCE)?;
+        add_query(
+            ProgrammingLanguage::Cpp,
+            QueryType::Reference,
+            CPP_REFERENCE,
+        )?;
         add_query(
             ProgrammingLanguage::Php,
             QueryType::Reference,

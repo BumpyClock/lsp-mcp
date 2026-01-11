@@ -120,8 +120,14 @@ mod tests {
             file_range: FileRange {
                 path: "test.rs".to_string(),
                 range: Range {
-                    start: Position { line: 1, character: 1 },
-                    end: Position { line: 1, character: 10 },
+                    start: Position {
+                        line: 1,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 1,
+                        character: 10,
+                    },
                 },
             },
             kind: Some("function".to_string()),
@@ -141,8 +147,14 @@ mod tests {
             file_range: FileRange {
                 path: "test.rs".to_string(),
                 range: Range {
-                    start: Position { line: 5, character: 3 },
-                    end: Position { line: 5, character: 17 },
+                    start: Position {
+                        line: 5,
+                        character: 3,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 17,
+                    },
                 },
             },
             kind: None,
@@ -162,8 +174,14 @@ mod tests {
             file_range: FileRange {
                 path: "module.py".to_string(),
                 range: Range {
-                    start: Position { line: 10, character: 6 },
-                    end: Position { line: 10, character: 14 },
+                    start: Position {
+                        line: 10,
+                        character: 6,
+                    },
+                    end: Position {
+                        line: 10,
+                        character: 14,
+                    },
                 },
             },
             kind: Some("class".to_string()),
@@ -185,8 +203,14 @@ mod tests {
             file_range: FileRange {
                 path: "script.js".to_string(),
                 range: Range {
-                    start: Position { line: 2, character: 4 },
-                    end: Position { line: 2, character: 12 },
+                    start: Position {
+                        line: 2,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 2,
+                        character: 12,
+                    },
                 },
             },
             kind: None,
@@ -209,10 +233,7 @@ mod tests {
             related.implements.is_empty(),
             "default implements must be empty"
         );
-        assert!(
-            related.extends.is_empty(),
-            "default extends must be empty"
-        );
+        assert!(related.extends.is_empty(), "default extends must be empty");
         assert!(
             related.used_by_types.is_empty(),
             "default used_by_types must be empty"
@@ -253,13 +274,22 @@ mod tests {
             kind: "function".to_string(),
             identifier_position: FilePosition {
                 path: "module.rs".to_string(),
-                position: Position { line: 20, character: 4 },
+                position: Position {
+                    line: 20,
+                    character: 4,
+                },
             },
             file_range: FileRange {
                 path: "module.rs".to_string(),
                 range: Range {
-                    start: Position { line: 20, character: 1 },
-                    end: Position { line: 25, character: 1 },
+                    start: Position {
+                        line: 20,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 25,
+                        character: 1,
+                    },
                 },
             },
             ..Default::default()
@@ -288,8 +318,14 @@ mod tests {
             range: FileRange {
                 path: "test.rs".to_string(),
                 range: Range {
-                    start: Position { line: 9, character: 1 },
-                    end: Position { line: 11, character: 1 },
+                    start: Position {
+                        line: 9,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 11,
+                        character: 1,
+                    },
                 },
             },
             source_code: "fn foo\tbar() {\n    bar()\n}".to_string(),
@@ -300,13 +336,22 @@ mod tests {
             kind: "function".to_string(),
             identifier_position: FilePosition {
                 path: "test.rs".to_string(),
-                position: Position { line: 10, character: 4 },
+                position: Position {
+                    line: 10,
+                    character: 4,
+                },
             },
             file_range: FileRange {
                 path: "test.rs".to_string(),
                 range: Range {
-                    start: Position { line: 10, character: 1 },
-                    end: Position { line: 12, character: 1 },
+                    start: Position {
+                        line: 10,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 12,
+                        character: 1,
+                    },
                 },
             },
             snippet: Some(snippet),
@@ -335,13 +380,22 @@ mod tests {
             kind: "variable".to_string(),
             identifier_position: FilePosition {
                 path: "test.rs".to_string(),
-                position: Position { line: 5, character: 5 },
+                position: Position {
+                    line: 5,
+                    character: 5,
+                },
             },
             file_range: FileRange {
                 path: "test.rs".to_string(),
                 range: Range {
-                    start: Position { line: 5, character: 1 },
-                    end: Position { line: 5, character: 20 },
+                    start: Position {
+                        line: 5,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 20,
+                    },
                 },
             },
             snippet: None,

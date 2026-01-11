@@ -33,17 +33,15 @@ pub(crate) async fn find_identifier_at_position(
 
     // If multiple identifiers on same line, pick the closest one by character position
     if !same_line_matches.is_empty() {
-        let closest_on_line = same_line_matches
-            .into_iter()
-            .min_by_key(|id| {
-                let start_diff = (id.file_range.range.start.character as i32
-                    - position.position.character as i32)
-                    .abs();
-                let end_diff = (id.file_range.range.end.character as i32
-                    - position.position.character as i32)
-                    .abs();
-                start_diff.min(end_diff)
-            });
+        let closest_on_line = same_line_matches.into_iter().min_by_key(|id| {
+            let start_diff = (id.file_range.range.start.character as i32
+                - position.position.character as i32)
+                .abs();
+            let end_diff = (id.file_range.range.end.character as i32
+                - position.position.character as i32)
+                .abs();
+            start_diff.min(end_diff)
+        });
 
         if let Some(best_match) = closest_on_line {
             return Ok(best_match.clone().with_kind_defaulted());
@@ -68,7 +66,10 @@ pub(crate) async fn find_identifier_at_position(
                 .abs();
             let end_distance = end_line_diff * 100 + end_char_diff;
 
-            (id.clone().with_kind_defaulted(), (start_distance.min(end_distance)) as f64)
+            (
+                id.clone().with_kind_defaulted(),
+                (start_distance.min(end_distance)) as f64,
+            )
         })
         .collect();
 

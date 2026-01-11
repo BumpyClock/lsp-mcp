@@ -174,17 +174,14 @@ fn lexical_score(terms: &[String], matched: &[String]) -> f32 {
 fn compile_exclude_patterns(patterns: &[String]) -> Result<Vec<Pattern>, String> {
     let mut compiled = Vec::new();
     for pattern in patterns {
-        let glob = Pattern::new(pattern).map_err(|_| {
-            format!("Invalid exclude pattern: {}", pattern)
-        })?;
+        let glob =
+            Pattern::new(pattern).map_err(|_| format!("Invalid exclude pattern: {}", pattern))?;
         compiled.push(glob);
     }
     Ok(compiled)
 }
 
-fn dedupe_by_file(
-    results: Vec<SemanticSearchDisplayResult>,
-) -> Vec<SemanticSearchDisplayResult> {
+fn dedupe_by_file(results: Vec<SemanticSearchDisplayResult>) -> Vec<SemanticSearchDisplayResult> {
     let mut best: HashMap<String, SemanticSearchDisplayResult> = HashMap::new();
 
     for result in results {

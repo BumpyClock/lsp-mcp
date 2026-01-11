@@ -9,21 +9,21 @@ use std::path::Path;
 use std::sync::Arc;
 
 pub mod api_types;
+mod ast_grep;
 pub mod codemap;
 pub mod config;
-pub mod lsp;
 pub mod logging;
+pub mod lsp;
 pub mod markdown_formatter;
 pub mod mcp;
 pub mod mcp_response;
 pub mod semantic_search;
-pub mod session;
 pub mod service;
+pub mod session;
+pub mod shared;
 pub mod stats;
 pub mod tool_registry;
-mod ast_grep;
 mod utils;
-pub mod shared;
 
 #[cfg(test)]
 mod test_utils;
@@ -56,7 +56,9 @@ pub async fn initialize_manager_with_workspace_root(
     );
 
     let mut manager = Manager::new(workspace_path).await?;
-    manager.start_langservers(workspace_path, Some(&config)).await?;
+    manager
+        .start_langservers(workspace_path, Some(&config))
+        .await?;
     Ok((Arc::new(manager), config))
 }
 
@@ -89,6 +91,8 @@ pub async fn initialize_manager_with_workspace_root_async(
     );
 
     let manager = Arc::new(Manager::new(workspace_path).await?);
-    manager.start_langservers_async(workspace_path, Some(config.clone())).await;
+    manager
+        .start_langservers_async(workspace_path, Some(config.clone()))
+        .await;
     Ok((manager, config))
 }

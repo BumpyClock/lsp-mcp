@@ -225,7 +225,10 @@ mod tests {
         let config = result.expect("Expected config to load");
 
         assert_eq!(config.tools.preset, ToolPreset::Standard);
-        assert!(config.tools.enable.contains(&"findReferencedSymbols".to_string()));
+        assert!(config
+            .tools
+            .enable
+            .contains(&"findReferencedSymbols".to_string()));
         assert!(config.tools.disable.contains(&"callHierarchy".to_string()));
     }
 
@@ -419,8 +422,14 @@ mod tests {
         let merged = global.merge(project);
 
         assert_eq!(merged.binaries.len(), 2);
-        assert_eq!(merged.get_binary("rust"), Some(&"/global/rust-analyzer".to_string()));
-        assert_eq!(merged.get_binary("python"), Some(&"/project/jedi".to_string()));
+        assert_eq!(
+            merged.get_binary("rust"),
+            Some(&"/global/rust-analyzer".to_string())
+        );
+        assert_eq!(
+            merged.get_binary("python"),
+            Some(&"/project/jedi".to_string())
+        );
     }
 
     #[test]
@@ -440,7 +449,10 @@ mod tests {
 
         let merged = global.merge(project);
 
-        assert_eq!(merged.get_binary("rust"), Some(&"/project/rust-analyzer".to_string()));
+        assert_eq!(
+            merged.get_binary("rust"),
+            Some(&"/project/rust-analyzer".to_string())
+        );
     }
 
     #[test]
@@ -685,7 +697,8 @@ mod tests {
     #[test]
     fn it_parses_debug_config_from_config_file() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let config_content = r#"{"debug": {"enabled": true, "log_level": "trace", "log_dir": ".custom/logs"}}"#;
+        let config_content =
+            r#"{"debug": {"enabled": true, "log_level": "trace", "log_dir": ".custom/logs"}}"#;
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 

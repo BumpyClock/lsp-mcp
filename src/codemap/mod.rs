@@ -9,7 +9,7 @@ pub mod types;
 pub mod watcher;
 
 pub use cache::{GraphCache, TraversalDirection};
-pub use indexer::{CodemapIndexer, IndexerError, IndexerState, IndexStats};
+pub use indexer::{CodemapIndexer, IndexStats, IndexerError, IndexerState};
 pub use query::{execute_query, QueryError};
 pub use store::{CodemapStore, CodemapStoreError};
 pub use types::*;
@@ -57,10 +57,7 @@ pub struct CodemapManager {
 
 impl CodemapManager {
     /// Create a new codemap manager
-    pub async fn new(
-        db_path: &Path,
-        manager: Arc<Manager>,
-    ) -> Result<Self, CodemapError> {
+    pub async fn new(db_path: &Path, manager: Arc<Manager>) -> Result<Self, CodemapError> {
         info!("Initializing codemap manager");
 
         let store = Arc::new(CodemapStore::new(db_path).await?);
@@ -94,8 +91,10 @@ impl CodemapManager {
         // Run full index
         self.set_state(CodemapState::Indexing { progress: 0.0 });
         let stats = self.indexer.full_index().await?;
-        info!("Codemap indexed {} files, {} symbols, {} edges",
-              stats.files, stats.symbols, stats.edges);
+        info!(
+            "Codemap indexed {} files, {} symbols, {} edges",
+            stats.files, stats.symbols, stats.edges
+        );
 
         // Load into cache
         self.load_cache().await?;
@@ -146,8 +145,10 @@ impl CodemapManager {
 
         match self.indexer.index_file(path).await {
             Ok(stats) => {
-                info!("Updated codemap for {}: {} symbols, {} edges",
-                      path, stats.symbols, stats.edges);
+                info!(
+                    "Updated codemap for {}: {} symbols, {} edges",
+                    path, stats.symbols, stats.edges
+                );
 
                 // Reload affected data into cache
                 let symbols = self.store.get_symbols_in_file(path).await?;

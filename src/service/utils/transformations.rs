@@ -2,8 +2,8 @@
 // ABOUTME: Converts LSP types to domain types for API responses.
 
 use crate::api_types::{
-    CallHierarchyItemInfo, CodeContext, FilePosition, HoverContents, Position, Range,
-    WorkspaceSymbolInfo, Symbol,
+    CallHierarchyItemInfo, CodeContext, FilePosition, HoverContents, Position, Range, Symbol,
+    WorkspaceSymbolInfo,
 };
 use crate::mcp_response::normalize_kind;
 use crate::service::types::response::{McpDefinitionLocation, McpReferenceLocation};
@@ -146,7 +146,9 @@ pub(crate) fn workspace_symbol_info_from_lsp(
     }
 }
 
-pub(crate) fn call_hierarchy_item_to_info(item: &lsp_types::CallHierarchyItem) -> CallHierarchyItemInfo {
+pub(crate) fn call_hierarchy_item_to_info(
+    item: &lsp_types::CallHierarchyItem,
+) -> CallHierarchyItemInfo {
     CallHierarchyItemInfo {
         name: item.name.clone(),
         kind: normalize_kind(&format!("{:?}", item.kind)),
@@ -263,12 +265,24 @@ mod tests {
     fn test_definition_locations_uses_selection_range_for_links() {
         let uri = Url::from_file_path("/tmp/test.rs").expect("Expected file path url");
         let target_range = LspRange {
-            start: LspPosition { line: 10, character: 1 },
-            end: LspPosition { line: 12, character: 1 },
+            start: LspPosition {
+                line: 10,
+                character: 1,
+            },
+            end: LspPosition {
+                line: 12,
+                character: 1,
+            },
         };
         let selection_range = LspRange {
-            start: LspPosition { line: 20, character: 2 },
-            end: LspPosition { line: 20, character: 8 },
+            start: LspPosition {
+                line: 20,
+                character: 2,
+            },
+            end: LspPosition {
+                line: 20,
+                character: 8,
+            },
         };
         let link = LocationLink {
             origin_selection_range: None,
@@ -288,12 +302,24 @@ mod tests {
     fn test_definition_locations_lsp_uses_selection_range_for_links() {
         let uri = Url::from_file_path("/tmp/test.rs").expect("Expected file path url");
         let target_range = LspRange {
-            start: LspPosition { line: 3, character: 1 },
-            end: LspPosition { line: 4, character: 1 },
+            start: LspPosition {
+                line: 3,
+                character: 1,
+            },
+            end: LspPosition {
+                line: 4,
+                character: 1,
+            },
         };
         let selection_range = LspRange {
-            start: LspPosition { line: 8, character: 4 },
-            end: LspPosition { line: 8, character: 9 },
+            start: LspPosition {
+                line: 8,
+                character: 4,
+            },
+            end: LspPosition {
+                line: 8,
+                character: 9,
+            },
         };
         let link = LocationLink {
             origin_selection_range: None,

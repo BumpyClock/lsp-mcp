@@ -8,10 +8,7 @@ impl ToMarkdown for McpListFilesResponse {
     fn to_markdown(&self) -> String {
         let mut output = String::new();
 
-        output.push_str(&format!(
-            "Workspace Files ({} total)\n\n",
-            self.files.len()
-        ));
+        output.push_str(&format!("Workspace Files ({} total)\n\n", self.files.len()));
 
         for file in &self.files {
             output.push_str(&format!("  {}\n", file));
@@ -42,11 +39,7 @@ pub struct SourceCodeResponse {
 
 impl SourceCodeResponse {
     fn detect_language(&self) -> &'static str {
-        let extension = self
-            .path
-            .rsplit('.')
-            .next()
-            .unwrap_or("");
+        let extension = self.path.rsplit('.').next().unwrap_or("");
 
         match extension {
             "ts" | "tsx" => "typescript",

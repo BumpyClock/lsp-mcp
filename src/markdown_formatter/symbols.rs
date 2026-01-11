@@ -1,9 +1,9 @@
 // ABOUTME: Markdown formatter for symbol response types.
 // ABOUTME: Converts Symbol, WorkspaceSymbolResponse, and McpIdentifierResponse to readable markdown.
 
+use super::{escape_inline_code, ToMarkdown};
 use crate::api_types::{Symbol, WorkspaceSymbolResponse};
 use crate::service::types::response::{McpIdentifierResponse, McpSymbolsResponse};
-use super::{escape_inline_code, ToMarkdown};
 
 impl ToMarkdown for McpSymbolsResponse {
     fn to_markdown(&self) -> String {
@@ -16,7 +16,10 @@ impl ToMarkdown for McpSymbolsResponse {
         }
 
         if self.truncated {
-            output.push_str(&format!("\n[Showing {} of more, truncated]", self.symbols.len()));
+            output.push_str(&format!(
+                "\n[Showing {} of more, truncated]",
+                self.symbols.len()
+            ));
         } else {
             output.push_str(&format!("\n[Total: {} symbols]", symbol_count));
         }
@@ -35,7 +38,9 @@ impl ToMarkdown for WorkspaceSymbolResponse {
             let is_external = symbol.location.path.contains("node_modules");
             let external_marker = if is_external { " [external]" } else { "" };
 
-            let container_prefix = symbol.container_name.as_ref()
+            let container_prefix = symbol
+                .container_name
+                .as_ref()
                 .map(|c| format!("{}.", c))
                 .unwrap_or_default();
 
@@ -69,7 +74,11 @@ impl ToMarkdown for WorkspaceSymbolResponse {
 impl ToMarkdown for McpIdentifierResponse {
     fn to_markdown(&self) -> String {
         let count = self.identifiers.len();
-        let result_word = if count == 1 { "identifier" } else { "identifiers" };
+        let result_word = if count == 1 {
+            "identifier"
+        } else {
+            "identifiers"
+        };
         let mut output = format!("Identifiers ({} {})\n\n", count, result_word);
 
         for identifier in &self.identifiers {
@@ -161,14 +170,20 @@ fn format_snippet(source_code: &str, indent: &str, output: &mut String) {
         }
         output.push_str(&format!("{}```\n", indent));
     } else if !source_code.is_empty() {
-        output.push_str(&format!("{}  `{}`\n", indent, escape_inline_code(source_code)));
+        output.push_str(&format!(
+            "{}  `{}`\n",
+            indent,
+            escape_inline_code(source_code)
+        ));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api_types::{FilePosition, FileRange, Identifier, Position, Range, WorkspaceSymbolInfo};
+    use crate::api_types::{
+        FilePosition, FileRange, Identifier, Position, Range, WorkspaceSymbolInfo,
+    };
     use rand::Rng;
 
     fn random_line() -> u32 {
@@ -188,7 +203,10 @@ mod tests {
                 path: "src/test.ts".to_string(),
                 range: Range {
                     start: Position { line, character: 0 },
-                    end: Position { line: line + 5, character: 0 },
+                    end: Position {
+                        line: line + 5,
+                        character: 0,
+                    },
                 },
             },
             signature,
@@ -223,15 +241,27 @@ mod tests {
         }
     }
 
-    fn create_identifier(name: &str, kind: Option<&str>, path: &str, start_line: u32, end_line: u32) -> Identifier {
+    fn create_identifier(
+        name: &str,
+        kind: Option<&str>,
+        path: &str,
+        start_line: u32,
+        end_line: u32,
+    ) -> Identifier {
         Identifier {
             name: name.to_string(),
             kind: kind.map(|k| k.to_string()),
             file_range: FileRange {
                 path: path.to_string(),
                 range: Range {
-                    start: Position { line: start_line, character: 0 },
-                    end: Position { line: end_line, character: 0 },
+                    start: Position {
+                        line: start_line,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: end_line,
+                        character: 0,
+                    },
                 },
             },
         }
@@ -288,11 +318,17 @@ mod tests {
     #[test]
     fn mcp_symbols_response_includes_signature_when_present() {
         let line = random_line();
-        let signature = "export async function myFunction(arg: string): Promise<Result>".to_string();
+        let signature =
+            "export async function myFunction(arg: string): Promise<Result>".to_string();
         let response = McpSymbolsResponse {
             path: "src/app.ts".to_string(),
             mtime: "2025-01-01T00:00:00Z".to_string(),
-            symbols: vec![create_symbol("myFunction", "function", line, Some(signature.clone()))],
+            symbols: vec![create_symbol(
+                "myFunction",
+                "function",
+                line,
+                Some(signature.clone()),
+            )],
             limit: 100,
             offset: 0,
             truncated: false,
@@ -336,13 +372,22 @@ mod tests {
             kind: "class".to_string(),
             identifier_position: FilePosition {
                 path: "src/app.ts".to_string(),
-                position: Position { line: 10, character: 0 },
+                position: Position {
+                    line: 10,
+                    character: 0,
+                },
             },
             file_range: FileRange {
                 path: "src/app.ts".to_string(),
                 range: Range {
-                    start: Position { line: 10, character: 0 },
-                    end: Position { line: 30, character: 0 },
+                    start: Position {
+                        line: 10,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 30,
+                        character: 0,
+                    },
                 },
             },
             signature: None,
@@ -405,7 +450,13 @@ mod tests {
     fn workspace_symbol_response_contains_query_placeholder_in_header() {
         let response = WorkspaceSymbolResponse {
             raw_response: None,
-            symbols: vec![create_workspace_symbol("store", "variable", "src/app/store.ts", 22, None)],
+            symbols: vec![create_workspace_symbol(
+                "store",
+                "variable",
+                "src/app/store.ts",
+                22,
+                None,
+            )],
             limit: 100,
             offset: 0,
             truncated: false,
@@ -428,7 +479,13 @@ mod tests {
         let line = random_line();
         let response = WorkspaceSymbolResponse {
             raw_response: None,
-            symbols: vec![create_workspace_symbol("myStore", "variable", "src/stores/main.ts", line, None)],
+            symbols: vec![create_workspace_symbol(
+                "myStore",
+                "variable",
+                "src/stores/main.ts",
+                line,
+                None,
+            )],
             limit: 100,
             offset: 0,
             truncated: false,
@@ -458,9 +515,13 @@ mod tests {
     fn workspace_symbol_response_marks_external_symbols() {
         let response = WorkspaceSymbolResponse {
             raw_response: None,
-            symbols: vec![
-                create_workspace_symbol("configureStore", "function", "node_modules/@reduxjs/toolkit/dist/index.d.mts", 1847, None),
-            ],
+            symbols: vec![create_workspace_symbol(
+                "configureStore",
+                "function",
+                "node_modules/@reduxjs/toolkit/dist/index.d.mts",
+                1847,
+                None,
+            )],
             limit: 100,
             offset: 0,
             truncated: false,
@@ -479,7 +540,13 @@ mod tests {
         let signature = "export const store: Store<RootState>".to_string();
         let response = WorkspaceSymbolResponse {
             raw_response: None,
-            symbols: vec![create_workspace_symbol("store", "variable", "src/app/store.ts", 22, Some(signature.clone()))],
+            symbols: vec![create_workspace_symbol(
+                "store",
+                "variable",
+                "src/app/store.ts",
+                22,
+                Some(signature.clone()),
+            )],
             limit: 100,
             offset: 0,
             truncated: false,
@@ -602,13 +669,22 @@ mod tests {
             kind: "method".to_string(),
             identifier_position: FilePosition {
                 path: "src/app.ts".to_string(),
-                position: Position { line: 25, character: 0 },
+                position: Position {
+                    line: 25,
+                    character: 0,
+                },
             },
             file_range: FileRange {
                 path: "src/app.ts".to_string(),
                 range: Range {
-                    start: Position { line: 25, character: 0 },
-                    end: Position { line: 28, character: 0 },
+                    start: Position {
+                        line: 25,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 28,
+                        character: 0,
+                    },
                 },
             },
             signature: None,
@@ -625,13 +701,22 @@ mod tests {
             kind: "class".to_string(),
             identifier_position: FilePosition {
                 path: "src/app.ts".to_string(),
-                position: Position { line: 20, character: 0 },
+                position: Position {
+                    line: 20,
+                    character: 0,
+                },
             },
             file_range: FileRange {
                 path: "src/app.ts".to_string(),
                 range: Range {
-                    start: Position { line: 20, character: 0 },
-                    end: Position { line: 30, character: 0 },
+                    start: Position {
+                        line: 20,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 30,
+                        character: 0,
+                    },
                 },
             },
             signature: None,
@@ -648,13 +733,22 @@ mod tests {
             kind: "class".to_string(),
             identifier_position: FilePosition {
                 path: "src/app.ts".to_string(),
-                position: Position { line: 10, character: 0 },
+                position: Position {
+                    line: 10,
+                    character: 0,
+                },
             },
             file_range: FileRange {
                 path: "src/app.ts".to_string(),
                 range: Range {
-                    start: Position { line: 10, character: 0 },
-                    end: Position { line: 40, character: 0 },
+                    start: Position {
+                        line: 10,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 40,
+                        character: 0,
+                    },
                 },
             },
             signature: None,
@@ -695,7 +789,13 @@ mod tests {
     fn mcp_identifier_response_formats_single_identifier() {
         let line = random_line();
         let response = McpIdentifierResponse {
-            identifiers: vec![create_identifier("myVar", Some("variable"), "src/app.ts", line, line)],
+            identifiers: vec![create_identifier(
+                "myVar",
+                Some("variable"),
+                "src/app.ts",
+                line,
+                line,
+            )],
             limit: 100,
             offset: 0,
             truncated: false,
@@ -740,7 +840,13 @@ mod tests {
     #[test]
     fn mcp_identifier_response_shows_range_for_multiline() {
         let response = McpIdentifierResponse {
-            identifiers: vec![create_identifier("myFunc", Some("function"), "src/app.ts", 10, 20)],
+            identifiers: vec![create_identifier(
+                "myFunc",
+                Some("function"),
+                "src/app.ts",
+                10,
+                20,
+            )],
             limit: 100,
             offset: 0,
             truncated: false,
@@ -757,7 +863,13 @@ mod tests {
     #[test]
     fn mcp_identifier_response_uses_default_kind_when_none() {
         let response = McpIdentifierResponse {
-            identifiers: vec![create_identifier("unknownThing", None, "src/app.ts", 10, 10)],
+            identifiers: vec![create_identifier(
+                "unknownThing",
+                None,
+                "src/app.ts",
+                10,
+                10,
+            )],
             limit: 100,
             offset: 0,
             truncated: false,
@@ -774,7 +886,13 @@ mod tests {
     #[test]
     fn mcp_identifier_response_shows_truncation() {
         let response = McpIdentifierResponse {
-            identifiers: vec![create_identifier("var1", Some("variable"), "src/app.ts", 10, 10)],
+            identifiers: vec![create_identifier(
+                "var1",
+                Some("variable"),
+                "src/app.ts",
+                10,
+                10,
+            )],
             limit: 1,
             offset: 0,
             truncated: true,
@@ -843,8 +961,14 @@ mod tests {
             range: FileRange {
                 path: "src/test.ts".to_string(),
                 range: Range {
-                    start: Position { line: 9, character: 1 },
-                    end: Position { line: 11, character: 1 },
+                    start: Position {
+                        line: 9,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 11,
+                        character: 1,
+                    },
                 },
             },
             source_code: "function foo\tbar() {\n  return 42;\n}".to_string(),
@@ -882,14 +1006,21 @@ mod tests {
             range: FileRange {
                 path: "src/lib.rs".to_string(),
                 range: Range {
-                    start: Position { line: 9, character: 1 },
-                    end: Position { line: 11, character: 1 },
+                    start: Position {
+                        line: 9,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 11,
+                        character: 1,
+                    },
                 },
             },
             source_code: "pub fn example\tvalue() -> i32".to_string(),
         };
 
-        let mut symbol = create_workspace_symbol("example\tvalue", "function", "src/lib.rs", 10, None);
+        let mut symbol =
+            create_workspace_symbol("example\tvalue", "function", "src/lib.rs", 10, None);
         symbol.snippet = Some(snippet);
 
         let response = WorkspaceSymbolResponse {

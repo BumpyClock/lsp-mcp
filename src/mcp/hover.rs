@@ -26,7 +26,12 @@ pub async fn hover(
             character: req.character,
         };
         match service
-            .hover(&req.path, pos, output_mode == OutputMode::Verbose, include_def)
+            .hover(
+                &req.path,
+                pos,
+                output_mode == OutputMode::Verbose,
+                include_def,
+            )
             .await
         {
             Ok(response) => results.push(HoverBatchItem::Success(response)),

@@ -61,7 +61,9 @@ pub trait EmbeddingProvider: Send + Sync {
 }
 
 /// Create an embedding provider from configuration.
-pub async fn create_provider(config: &EmbedderConfig) -> Result<Arc<dyn EmbeddingProvider>, EmbedderError> {
+pub async fn create_provider(
+    config: &EmbedderConfig,
+) -> Result<Arc<dyn EmbeddingProvider>, EmbedderError> {
     match config {
         EmbedderConfig::OpenAI {
             model,

@@ -94,8 +94,7 @@ mod tests {
         let explicit = rng.random_range(0..2) == 1;
         let resolved = resolve_exact(Some(explicit));
         assert_eq!(
-            resolved,
-            explicit,
+            resolved, explicit,
             "negative: explicit exact value must be preserved"
         );
     }
@@ -115,8 +114,7 @@ mod tests {
         let explicit: u32 = rng.random_range(0..10);
         let resolved = resolve_context_lines(Some(explicit));
         assert_eq!(
-            resolved,
-            explicit,
+            resolved, explicit,
             "negative: explicit context_lines value must be preserved"
         );
     }

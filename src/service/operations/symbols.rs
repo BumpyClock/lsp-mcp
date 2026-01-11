@@ -6,7 +6,9 @@ use crate::api_types::{
 };
 use crate::ast_grep::types::AstGrepMatch;
 use crate::lsp::manager::Manager;
-use crate::utils::file_utils::{absolute_path_to_relative_path_string, uri_to_relative_path_string};
+use crate::utils::file_utils::{
+    absolute_path_to_relative_path_string, uri_to_relative_path_string,
+};
 use log::debug;
 use lsp_types::{Position as LspPosition, Range as LspRange};
 use std::collections::HashSet;
@@ -132,7 +134,8 @@ pub(crate) async fn workspace_symbol_impl(
     if filtered_symbols.is_empty() {
         debug!("workspace_symbol_impl: falling back to ast-grep symbol scan");
         let workspace_files_vec: Vec<String> = workspace_set.into_iter().collect();
-        filtered_symbols = workspace_symbol_fallback(manager, &workspace_files_vec, query, exact).await;
+        filtered_symbols =
+            workspace_symbol_fallback(manager, &workspace_files_vec, query, exact).await;
         debug!(
             "workspace_symbol_impl: fallback returned {} symbols",
             filtered_symbols.len()
@@ -150,8 +153,12 @@ pub(crate) async fn workspace_symbol_impl(
     }
 
     for symbol in &mut filtered_symbols {
-        if let Some(line) =
-            read_symbol_line(manager, &symbol.location.path, symbol.location.position.line).await
+        if let Some(line) = read_symbol_line(
+            manager,
+            &symbol.location.path,
+            symbol.location.position.line,
+        )
+        .await
         {
             if is_reexport_line(&line) && !symbol.kind.contains("re-export") {
                 symbol.kind = format!("{} (re-export)", symbol.kind);
@@ -207,7 +214,10 @@ async fn attach_snippets_to_workspace_symbols(
             },
         };
 
-        match manager.read_source_code(&symbol.location.path, Some(lsp_range)).await {
+        match manager
+            .read_source_code(&symbol.location.path, Some(lsp_range))
+            .await
+        {
             Ok(source_code) => {
                 symbol.snippet = Some(CodeContext {
                     range: FileRange {
@@ -227,7 +237,10 @@ async fn attach_snippets_to_workspace_symbols(
                 });
             }
             Err(e) => {
-                debug!("Failed to read snippet for workspace symbol {}: {}", symbol.name, e);
+                debug!(
+                    "Failed to read snippet for workspace symbol {}: {}",
+                    symbol.name, e
+                );
             }
         }
     }
@@ -235,9 +248,8 @@ async fn attach_snippets_to_workspace_symbols(
 
 fn workspace_symbol_info_from_ast_match(ast_match: &AstGrepMatch) -> WorkspaceSymbolInfo {
     let identifier_range = ast_match.get_identifier_range();
-    let path = absolute_path_to_relative_path_string(&std::path::PathBuf::from(
-        ast_match.file.clone(),
-    ));
+    let path =
+        absolute_path_to_relative_path_string(&std::path::PathBuf::from(ast_match.file.clone()));
     WorkspaceSymbolInfo {
         name: ast_match.meta_variables.single.name.text.clone(),
         kind: ast_match.rule_id.clone(),
@@ -283,10 +295,7 @@ async fn read_symbol_line(manager: &Manager, path: &str, line: u32) -> Option<St
         line: line.saturating_sub(1),
         character: 0,
     };
-    let end = LspPosition {
-        line,
-        character: 0,
-    };
+    let end = LspPosition { line, character: 0 };
     manager
         .read_source_code(path, Some(LspRange::new(start, end)))
         .await
@@ -413,7 +422,12 @@ mod tests {
         value
     }
 
-    fn make_ast_match(file_path: &str, name: &str, start_line: u32, start_col: u32) -> AstGrepMatch {
+    fn make_ast_match(
+        file_path: &str,
+        name: &str,
+        start_line: u32,
+        start_col: u32,
+    ) -> AstGrepMatch {
         let range = AstGrepRange {
             byte_offset: ByteOffset { start: 0, end: 0 },
             start: AstGrepPosition {
@@ -430,7 +444,10 @@ mod tests {
             range: range.clone(),
             file: file_path.to_string(),
             lines: random_irregular_string(),
-            char_count: CharCount { leading: 0, trailing: 0 },
+            char_count: CharCount {
+                leading: 0,
+                trailing: 0,
+            },
             language: "typescript".to_string(),
             meta_variables: MetaVariables {
                 single: SingleVariable {
@@ -497,15 +514,8 @@ mod tests {
 
         assert_eq!(info.name, name, "negative: name mismatch");
         assert_eq!(info.kind, "function", "negative: kind mismatch");
-        assert_eq!(
-            info.location.path,
-            "src/main.ts",
-            "negative: path mismatch"
-        );
-        assert_eq!(
-            info.location.position.line, 4,
-            "negative: line mismatch"
-        );
+        assert_eq!(info.location.path, "src/main.ts", "negative: path mismatch");
+        assert_eq!(info.location.position.line, 4, "negative: line mismatch");
         assert_eq!(
             info.location.position.character, 6,
             "negative: character mismatch"
@@ -540,7 +550,10 @@ mod tests {
             kind: "function".to_string(),
             location: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 1, character: 1 },
+                position: Position {
+                    line: 1,
+                    character: 1,
+                },
             },
             container_name: None,
             match_kind: None,
@@ -572,7 +585,10 @@ mod tests {
             kind: "function".to_string(),
             location: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 1, character: 1 },
+                position: Position {
+                    line: 1,
+                    character: 1,
+                },
             },
             container_name: None,
             match_kind: None,
@@ -595,7 +611,10 @@ mod tests {
             kind: "function".to_string(),
             location: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 1, character: 1 },
+                position: Position {
+                    line: 1,
+                    character: 1,
+                },
             },
             container_name: None,
             match_kind: None,
@@ -627,7 +646,10 @@ mod tests {
             kind: "function".to_string(),
             location: FilePosition {
                 path: "src/api.ts".to_string(),
-                position: Position { line: 5, character: 10 },
+                position: Position {
+                    line: 5,
+                    character: 10,
+                },
             },
             container_name: None,
             match_kind: Some("exact".to_string()),
@@ -640,7 +662,10 @@ mod tests {
             kind: "function (re-export)".to_string(),
             location: FilePosition {
                 path: "src/index.ts".to_string(),
-                position: Position { line: 2, character: 15 },
+                position: Position {
+                    line: 2,
+                    character: 15,
+                },
             },
             container_name: None,
             match_kind: Some("exact".to_string()),
@@ -671,7 +696,10 @@ mod tests {
             kind: "function".to_string(),
             location: FilePosition {
                 path: "src/util.ts".to_string(),
-                position: Position { line: 3, character: 8 },
+                position: Position {
+                    line: 3,
+                    character: 8,
+                },
             },
             container_name: None,
             match_kind: Some("exact".to_string()),
@@ -684,7 +712,10 @@ mod tests {
             kind: "function".to_string(),
             location: FilePosition {
                 path: "src/helpers.ts".to_string(),
-                position: Position { line: 10, character: 5 },
+                position: Position {
+                    line: 10,
+                    character: 5,
+                },
             },
             container_name: None,
             match_kind: Some("exact".to_string()),

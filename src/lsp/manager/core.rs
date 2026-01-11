@@ -14,8 +14,7 @@ use crate::utils::file_utils::{absolute_path_to_relative_path_string, detect_lan
 use crate::utils::workspace_documents::{DidOpenConfiguration, WorkspaceDocuments};
 use log::{debug, error, info, warn};
 use lsp_types::{
-    DocumentSymbolResponse, GotoDefinitionResponse, Location, Position, Range, SelectionRange,
-    Url,
+    DocumentSymbolResponse, GotoDefinitionResponse, Location, Position, Range, SelectionRange, Url,
 };
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult, DebouncedEvent};
@@ -142,31 +141,26 @@ impl Manager {
             .await;
 
             match client_result {
-                Ok(mut client) => {
-                    match client.initialize(workspace_path.to_string()).await {
-                        Ok(_) => {
-                            debug!("Setting up workspace for {:?}", lsp);
-                            if let Err(e) = client.setup_workspace(workspace_path).await {
-                                warn!(
-                                    "Failed to setup workspace for {:?}: {}. Skipping",
-                                    lsp, e
-                                );
-                                continue;
-                            }
-                            self.lsp_clients
-                                .write()
-                                .await
-                                .insert(lsp, Arc::new(Mutex::new(client)));
-                            started_count += 1;
+                Ok(mut client) => match client.initialize(workspace_path.to_string()).await {
+                    Ok(_) => {
+                        debug!("Setting up workspace for {:?}", lsp);
+                        if let Err(e) = client.setup_workspace(workspace_path).await {
+                            warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
+                            continue;
                         }
-                        Err(e) => {
-                            warn!(
-                                "Failed to initialize {:?} language server: {}. Skipping",
-                                lsp, e
-                            );
-                        }
+                        self.lsp_clients
+                            .write()
+                            .await
+                            .insert(lsp, Arc::new(Mutex::new(client)));
+                        started_count += 1;
                     }
-                }
+                    Err(e) => {
+                        warn!(
+                            "Failed to initialize {:?} language server: {}. Skipping",
+                            lsp, e
+                        );
+                    }
+                },
                 Err(e) => {
                     warn!("Failed to start {:?} language server: {}. Skipping", lsp, e);
                 }
@@ -185,7 +179,11 @@ impl Manager {
     /// background tasks for each language server. Language servers become available
     /// as they complete initialization. Check `pending_languages()` or `is_language_pending()`
     /// to determine initialization status.
-    pub async fn start_langservers_async(&self, workspace_path: &str, config: Option<LspMcpConfig>) {
+    pub async fn start_langservers_async(
+        &self,
+        workspace_path: &str,
+        config: Option<LspMcpConfig>,
+    ) {
         let lsps: Vec<SupportedLanguages> = match &config {
             Some(cfg) => cfg
                 .languages
@@ -222,10 +220,7 @@ impl Manager {
                         Ok(_) => {
                             debug!("Setting up workspace for {:?}", lsp);
                             if let Err(e) = client.setup_workspace(&ws_path).await {
-                                warn!(
-                                    "Failed to setup workspace for {:?}: {}. Skipping",
-                                    lsp, e
-                                );
+                                warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
                                 pending_clients.lock().await.remove(&lsp);
                                 return;
                             }
@@ -315,10 +310,7 @@ impl Manager {
             .text_document_selection_range(full_path_str, positions)
             .await
             .map_err(|e| {
-                LspManagerError::InternalError(format!(
-                    "Selection range retrieval failed: {}",
-                    e
-                ))
+                LspManagerError::InternalError(format!("Selection range retrieval failed: {}", e))
             })
     }
 
@@ -785,9 +777,9 @@ impl Manager {
         match file_path {
             Some(path) => {
                 let full_path = get_mount_dir().join(path);
-                let full_path_str = full_path
-                    .to_str()
-                    .ok_or_else(|| LspManagerError::InternalError("Invalid file path".to_string()))?;
+                let full_path_str = full_path.to_str().ok_or_else(|| {
+                    LspManagerError::InternalError("Invalid file path".to_string())
+                })?;
 
                 let lsp_type = detect_language(full_path_str).map_err(|e| {
                     LspManagerError::InternalError(format!("Language detection failed: {}", e))

@@ -4,7 +4,7 @@
 use crate::api_types::SupportedLanguages;
 use crate::lsp::client::LspClient;
 use crate::lsp::languages::{
-    ClangdClient, CSharpClient, GoplsClient, JdtlsClient, JediClient, PhpactorClient, RubyClient,
+    CSharpClient, ClangdClient, GoplsClient, JdtlsClient, JediClient, PhpactorClient, RubyClient,
     RustAnalyzerClient, TypeScriptLanguageClient,
 };
 use crate::utils::workspace_documents::{
@@ -21,13 +21,23 @@ pub type LspClientFactory = fn(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>>;
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+>;
 
 fn create_python_client(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+> {
     let workspace_path = workspace_path.to_string();
     let binary = binary.map(|s| s.to_string());
     Box::pin(async move {
@@ -41,7 +51,12 @@ fn create_typescript_client(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+> {
     let workspace_path = workspace_path.to_string();
     let binary = binary.map(|s| s.to_string());
     Box::pin(async move {
@@ -55,7 +70,12 @@ fn create_rust_client(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+> {
     let workspace_path = workspace_path.to_string();
     let binary = binary.map(|s| s.to_string());
     Box::pin(async move {
@@ -69,7 +89,12 @@ fn create_cpp_client(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+> {
     let workspace_path = workspace_path.to_string();
     let binary = binary.map(|s| s.to_string());
     Box::pin(async move {
@@ -83,7 +108,12 @@ fn create_csharp_client(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+> {
     let workspace_path = workspace_path.to_string();
     let binary = binary.map(|s| s.to_string());
     Box::pin(async move {
@@ -97,7 +127,12 @@ fn create_java_client(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+> {
     let workspace_path = workspace_path.to_string();
     let binary = binary.map(|s| s.to_string());
     Box::pin(async move {
@@ -111,7 +146,12 @@ fn create_golang_client(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+> {
     let workspace_path = workspace_path.to_string();
     let binary = binary.map(|s| s.to_string());
     Box::pin(async move {
@@ -125,7 +165,12 @@ fn create_php_client(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+> {
     let workspace_path = workspace_path.to_string();
     let binary = binary.map(|s| s.to_string());
     Box::pin(async move {
@@ -139,7 +184,12 @@ fn create_ruby_client(
     workspace_path: &str,
     events_rx: Receiver<DebouncedEvent>,
     binary: Option<&str>,
-) -> Pin<Box<dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>> + Send>> {
+) -> Pin<
+    Box<
+        dyn Future<Output = Result<Box<dyn LspClient>, Box<dyn std::error::Error + Send + Sync>>>
+            + Send,
+    >,
+> {
     let workspace_path = workspace_path.to_string();
     let binary = binary.map(|s| s.to_string());
     Box::pin(async move {
@@ -278,8 +328,8 @@ mod tests {
 
     #[test]
     fn extension_lookup_returns_correct_language_for_python() {
-        let metadata = LanguageMetadata::from_extension("py")
-            .expect("py extension must map to a language");
+        let metadata =
+            LanguageMetadata::from_extension("py").expect("py extension must map to a language");
         assert_eq!(
             metadata.id,
             SupportedLanguages::Python,
@@ -289,8 +339,8 @@ mod tests {
 
     #[test]
     fn extension_lookup_returns_correct_language_for_typescript() {
-        let metadata = LanguageMetadata::from_extension("ts")
-            .expect("ts extension must map to a language");
+        let metadata =
+            LanguageMetadata::from_extension("ts").expect("ts extension must map to a language");
         assert_eq!(
             metadata.id,
             SupportedLanguages::TypeScriptJavaScript,
@@ -300,8 +350,8 @@ mod tests {
 
     #[test]
     fn extension_lookup_returns_correct_language_for_rust() {
-        let metadata = LanguageMetadata::from_extension("rs")
-            .expect("rs extension must map to a language");
+        let metadata =
+            LanguageMetadata::from_extension("rs").expect("rs extension must map to a language");
         assert_eq!(
             metadata.id,
             SupportedLanguages::Rust,
@@ -325,15 +375,15 @@ mod tests {
 
     #[test]
     fn get_returns_correct_metadata_for_golang() {
-        let metadata = LanguageMetadata::get(SupportedLanguages::Golang)
-            .expect("Golang must be in registry");
+        let metadata =
+            LanguageMetadata::get(SupportedLanguages::Golang).expect("Golang must be in registry");
         assert_eq!(metadata.name, "Go", "Golang display name must be 'Go'");
     }
 
     #[test]
     fn cpp_metadata_has_correct_extensions() {
-        let metadata = LanguageMetadata::get(SupportedLanguages::CPP)
-            .expect("CPP must be in registry");
+        let metadata =
+            LanguageMetadata::get(SupportedLanguages::CPP).expect("CPP must be in registry");
         let expected_extensions = ["cpp", "cc", "c", "cxx", "h", "hpp", "hxx", "hh"];
         for ext in expected_extensions {
             assert!(
@@ -375,8 +425,8 @@ mod tests {
 
     #[test]
     fn ruby_metadata_has_erb_extension() {
-        let metadata = LanguageMetadata::get(SupportedLanguages::Ruby)
-            .expect("Ruby must be in registry");
+        let metadata =
+            LanguageMetadata::get(SupportedLanguages::Ruby).expect("Ruby must be in registry");
         assert!(
             metadata.extensions.contains(&"erb"),
             "Ruby extensions must contain erb"

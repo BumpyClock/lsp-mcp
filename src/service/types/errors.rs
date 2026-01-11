@@ -48,7 +48,9 @@ impl ServiceError {
                 "Try workspaceSymbol to see possible matches".to_string(),
                 "If multiple symbols share the same name, pass 'path' to disambiguate".to_string(),
             ],
-            ServiceError::Lsp(_) | ServiceError::Serialization(_) | ServiceError::InvalidPath(_) => vec![],
+            ServiceError::Lsp(_)
+            | ServiceError::Serialization(_)
+            | ServiceError::InvalidPath(_) => vec![],
         }
     }
 }
@@ -102,11 +104,11 @@ impl PositionError {
     pub fn suggestions(&self) -> Vec<String> {
         match self {
             PositionError::IdentifierNotFound { closest } => {
-                let mut suggestions = vec![
-                    "Use documentSymbol to see available symbols in this file".to_string(),
-                ];
+                let mut suggestions =
+                    vec!["Use documentSymbol to see available symbols in this file".to_string()];
                 if !closest.is_empty() {
-                    let names: Vec<&str> = closest.iter().take(3).map(|id| id.name.as_str()).collect();
+                    let names: Vec<&str> =
+                        closest.iter().take(3).map(|id| id.name.as_str()).collect();
                     suggestions.push(format!("Nearby identifiers: {}", names.join(", ")));
                 }
                 suggestions
@@ -138,9 +140,8 @@ impl CallHierarchyError {
     pub fn suggestions(&self) -> Vec<String> {
         match self {
             CallHierarchyError::NoItemAtPosition { nearby_callables } => {
-                let mut suggestions = vec![
-                    "Position must be on a function or method name".to_string(),
-                ];
+                let mut suggestions =
+                    vec!["Position must be on a function or method name".to_string()];
                 if !nearby_callables.is_empty() {
                     let names: Vec<&str> = nearby_callables
                         .iter()

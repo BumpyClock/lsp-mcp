@@ -6,7 +6,9 @@ use crate::api_types::{
 };
 use crate::lsp::manager::Manager;
 use crate::utils::file_utils::uri_to_relative_path_string;
-use lsp_types::{DocumentSymbolResponse, GotoDefinitionResponse, Location, Position as LspPosition};
+use lsp_types::{
+    DocumentSymbolResponse, GotoDefinitionResponse, Location, Position as LspPosition,
+};
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::debug;
@@ -131,15 +133,13 @@ pub(crate) async fn fetch_definition_locations_impl(
     let locations = match definitions {
         GotoDefinitionResponse::Scalar(loc) => vec![loc],
         GotoDefinitionResponse::Array(locs) => locs,
-        GotoDefinitionResponse::Link(links) => {
-            links
-                .into_iter()
-                .map(|l| Location {
-                    uri: l.target_uri,
-                    range: l.target_selection_range,
-                })
-                .collect()
-        }
+        GotoDefinitionResponse::Link(links) => links
+            .into_iter()
+            .map(|l| Location {
+                uri: l.target_uri,
+                range: l.target_selection_range,
+            })
+            .collect(),
     };
 
     // Convert LSP locations to DefinitionLocation
@@ -198,10 +198,8 @@ pub(crate) async fn fetch_definition_locations_impl(
                 .collect();
 
             // Merge with existing definitions, deduplicating by (path, line)
-            let mut existing_keys: HashSet<(String, u32)> = result
-                .iter()
-                .map(|d| (d.path.clone(), d.line))
-                .collect();
+            let mut existing_keys: HashSet<(String, u32)> =
+                result.iter().map(|d| (d.path.clone(), d.line)).collect();
 
             for loc in additional_locations {
                 let key = (loc.path.clone(), loc.line);
@@ -306,11 +304,7 @@ async fn find_nearby_symbols(
     nearby.sort_by_key(|(distance, _)| *distance);
 
     // Take up to limit symbols
-    nearby
-        .into_iter()
-        .take(limit)
-        .map(|(_, sym)| sym)
-        .collect()
+    nearby.into_iter().take(limit).map(|(_, sym)| sym).collect()
 }
 
 /// Recursively collects symbols within the line range.

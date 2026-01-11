@@ -12,12 +12,11 @@ use async_trait::async_trait;
 use log::{debug, error, warn};
 use lsp_types::{
     ClientCapabilities, CodeActionContext, CodeActionOrCommand, CodeActionParams,
-    DidOpenTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse,
-    GotoDefinitionParams, GotoDefinitionResponse, InitializeParams, InitializeResult, Location,
-    PartialResultParams, Position, PublishDiagnosticsParams, Range, ReferenceContext,
-    ReferenceParams, SelectionRange, SelectionRangeParams, SignatureHelp, SignatureHelpParams,
-    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
-    WorkDoneProgressParams, WorkspaceFolder,
+    DidOpenTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
+    GotoDefinitionResponse, InitializeParams, InitializeResult, Location, PartialResultParams,
+    Position, PublishDiagnosticsParams, Range, ReferenceContext, ReferenceParams, SelectionRange,
+    SelectionRangeParams, SignatureHelp, SignatureHelpParams, TextDocumentIdentifier,
+    TextDocumentItem, TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -113,7 +112,8 @@ pub trait LspClient: Send {
                         if let Ok(message) = json_rpc.parse_message(&raw_response) {
                             if let Some(id) = message.id {
                                 debug!("Received response for request {}", id);
-                                if let Ok(Some(sender)) = pending_requests.remove_request(id).await {
+                                if let Ok(Some(sender)) = pending_requests.remove_request(id).await
+                                {
                                     if sender.send(message.clone()).is_err() {
                                         error!("Failed to send response for request {}", id);
                                     }
@@ -156,7 +156,10 @@ pub trait LspClient: Send {
                     }
                     Err(e) => {
                         let reason = e.to_string();
-                        error!("LSP process communication failed: {}. Response listener exiting.", reason);
+                        error!(
+                            "LSP process communication failed: {}. Response listener exiting.",
+                            reason
+                        );
                         process.report_unhealthy(reason.clone());
                         pending_requests
                             .fail_all_requests(format!("LSP process died: {}", reason))
@@ -635,10 +638,7 @@ pub trait LspClient: Send {
         debug!("Requesting outgoing calls for {}", item.name);
         debug!(
             "outgoing_calls CallHierarchyItem: name={}, kind={:?}, uri={}, data={:?}",
-            item.name,
-            item.kind,
-            item.uri,
-            item.data
+            item.name, item.kind, item.uri, item.data
         );
 
         let params = lsp_types::CallHierarchyOutgoingCallsParams {

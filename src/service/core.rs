@@ -107,8 +107,13 @@ impl LspService {
         include_raw_response: bool,
     ) -> Result<ImplementationResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        definitions::find_implementation_impl(&self.manager, &file_path, position, include_raw_response)
-            .await
+        definitions::find_implementation_impl(
+            &self.manager,
+            &file_path,
+            position,
+            include_raw_response,
+        )
+        .await
     }
 
     /// Finds all references to the symbol at the given position.
@@ -165,7 +170,8 @@ impl LspService {
         offset: Option<u32>,
     ) -> Result<McpIdentifierResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        symbols::find_identifier_impl(&self.manager, &file_path, name, position, limit, offset).await
+        symbols::find_identifier_impl(&self.manager, &file_path, name, position, limit, offset)
+            .await
     }
 
     /// Lists all files tracked by the workspace.
@@ -231,8 +237,14 @@ impl LspService {
         include_definition: bool,
     ) -> Result<HoverResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        hover::hover_impl(&self.manager, &file_path, position, include_raw_response, include_definition)
-            .await
+        hover::hover_impl(
+            &self.manager,
+            &file_path,
+            position,
+            include_raw_response,
+            include_definition,
+        )
+        .await
     }
 
     /// Searches for symbols across the workspace.
@@ -264,8 +276,7 @@ impl LspService {
         file_path: &str,
     ) -> Result<SymbolDefinitionResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        definitions::get_symbol_definition_impl(&self.manager, symbol_name, &file_path)
-            .await
+        definitions::get_symbol_definition_impl(&self.manager, symbol_name, &file_path).await
     }
 
     /// Prepares the call hierarchy at the given position.
@@ -276,8 +287,13 @@ impl LspService {
         include_raw_response: bool,
     ) -> Result<PrepareCallHierarchyResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        call_hierarchy::prepare_call_hierarchy_impl(&self.manager, &file_path, position, include_raw_response)
-            .await
+        call_hierarchy::prepare_call_hierarchy_impl(
+            &self.manager,
+            &file_path,
+            position,
+            include_raw_response,
+        )
+        .await
     }
 
     /// Gets incoming calls (callers) for the function at the given position.
@@ -288,8 +304,13 @@ impl LspService {
         include_raw_response: bool,
     ) -> Result<IncomingCallsResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        call_hierarchy::incoming_calls_impl(&self.manager, &file_path, position, include_raw_response)
-            .await
+        call_hierarchy::incoming_calls_impl(
+            &self.manager,
+            &file_path,
+            position,
+            include_raw_response,
+        )
+        .await
     }
 
     /// Gets outgoing calls (callees) for the function at the given position.
@@ -300,8 +321,13 @@ impl LspService {
         include_raw_response: bool,
     ) -> Result<OutgoingCallsResponse, ServiceError> {
         let file_path = normalize_file_path(file_path)?;
-        call_hierarchy::outgoing_calls_impl(&self.manager, &file_path, position, include_raw_response)
-            .await
+        call_hierarchy::outgoing_calls_impl(
+            &self.manager,
+            &file_path,
+            position,
+            include_raw_response,
+        )
+        .await
     }
 
     /// Unified method for call hierarchy traversal in either direction.
@@ -331,7 +357,10 @@ impl LspService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api_types::RelatedSymbols;
     use crate::api_types::WorkspaceSymbolInfo;
+    use crate::api_types::{set_thread_local_mount_dir, unset_thread_local_mount_dir};
+    use crate::api_types::{CodeContext, FilePosition, FileRange, Identifier, Symbol};
     use crate::service::operations::references::{group_references_by_file, is_import_line};
     use crate::service::operations::symbols::match_kind_and_score;
     use crate::service::types::errors::CallHierarchyError;
@@ -341,26 +370,23 @@ mod tests {
         TypeCounts,
     };
     use crate::service::utils::external::{parse_pnpm_package_info, ExternalInfo, PackageInfo};
+    use crate::service::utils::pagination::paginate_items;
     use crate::service::utils::signature::{
-        batch_hover_for_signatures, filter_sibling_exports, is_internal_builder_symbol, truncate_signature,
-        DEFAULT_MAX_SIGNATURE_LENGTH,
+        batch_hover_for_signatures, filter_sibling_exports, is_internal_builder_symbol,
+        truncate_signature, DEFAULT_MAX_SIGNATURE_LENGTH,
     };
     use crate::service::utils::transformations::{
         call_hierarchy_item_to_info, definition_item_from_location, reference_item_from_location,
         workspace_symbol_info_from_lsp,
     };
-    use crate::api_types::{CodeContext, FilePosition, FileRange, Identifier, Symbol};
-    use crate::api_types::{set_thread_local_mount_dir, unset_thread_local_mount_dir};
     use lsp_types::{
         CallHierarchyItem, Location, Position as LspPosition, Range as LspRange, SymbolInformation,
         SymbolKind, Url,
     };
-    use crate::api_types::RelatedSymbols;
     use rand::{distr::Alphanumeric, Rng};
     use std::path::PathBuf;
     use std::thread;
     use tempfile::TempDir;
-    use crate::service::utils::pagination::paginate_items;
 
     fn random_irregular_string() -> String {
         let mut rng = rand::rng();
@@ -528,13 +554,17 @@ mod tests {
         let mut attempts_remaining = 3;
         let mut results = tokio::join!(service.health(), service.health());
         while attempts_remaining > 0
-            && (results.0.values().any(|status| *status == LspStatus::Ready) || results.0 != results.1)
+            && (results.0.values().any(|status| *status == LspStatus::Ready)
+                || results.0 != results.1)
         {
             attempts_remaining -= 1;
             results = tokio::join!(service.health(), service.health());
         }
 
-        let all_unavailable = results.0.values().all(|status| *status == LspStatus::Unavailable);
+        let all_unavailable = results
+            .0
+            .values()
+            .all(|status| *status == LspStatus::Unavailable);
         let consistent = results.0 == results.1;
         assert!(
             all_unavailable && consistent,
@@ -562,7 +592,9 @@ mod tests {
         let irregular_left = format!("ñ{}", random_left);
         let irregular_right = format!("ñ{}", random_right);
         let workspace_left = temp_left.path().join(format!("workspace_{}", random_left));
-        let workspace_right = temp_right.path().join(format!("workspace_{}", random_right));
+        let workspace_right = temp_right
+            .path()
+            .join(format!("workspace_{}", random_right));
         tokio::fs::create_dir_all(&workspace_left).await?;
         tokio::fs::create_dir_all(&workspace_right).await?;
         let file_left = workspace_left.join(format!("sample_{}.py", random_left));
@@ -625,8 +657,7 @@ mod tests {
         let end = std::cmp::min(start.saturating_add(limit as usize), expected_items.len());
         let expected_slice = expected_items[start..end].to_vec();
         assert_eq!(
-            actual_items,
-            expected_slice,
+            actual_items, expected_slice,
             "negative: paginated items mismatch"
         );
         assert_eq!(pagination.limit, limit, "negative: limit mismatch");
@@ -746,11 +777,13 @@ mod tests {
         });
         assert_eq!(response.path, expected_path, "negative: path mismatch");
         assert_eq!(
-            response.position.line, start_line + 1,
+            response.position.line,
+            start_line + 1,
             "negative: line mismatch"
         );
         assert_eq!(
-            response.position.character, start_char + 1,
+            response.position.character,
+            start_char + 1,
             "negative: character mismatch"
         );
         assert_eq!(
@@ -766,10 +799,7 @@ mod tests {
             response.signature, expected_signature,
             "negative: signature mismatch"
         );
-        assert_eq!(
-            response.doc, expected_jsdoc,
-            "negative: doc mismatch"
-        );
+        assert_eq!(response.doc, expected_jsdoc, "negative: doc mismatch");
         assert_eq!(
             response.snippet,
             Some(snippet),
@@ -822,23 +852,28 @@ mod tests {
         let response = retry_with(|| {
             let location = location.clone();
             let snippet = snippet.clone();
-            let handle =
-                thread::spawn(move || {
-                    Some(reference_item_from_location(
-                        &location,
-                        Some(snippet),
-                        ReferenceType::Call,
-                    ))
-                });
+            let handle = thread::spawn(move || {
+                Some(reference_item_from_location(
+                    &location,
+                    Some(snippet),
+                    ReferenceType::Call,
+                ))
+            });
             handle.join().ok().flatten()
         });
-        assert_eq!(response.path, Some(expected_path), "negative: path mismatch");
         assert_eq!(
-            response.position.line, start_line + 1,
+            response.path,
+            Some(expected_path),
+            "negative: path mismatch"
+        );
+        assert_eq!(
+            response.position.line,
+            start_line + 1,
             "negative: line mismatch"
         );
         assert_eq!(
-            response.position.character, start_char + 1,
+            response.position.character,
+            start_char + 1,
             "negative: character mismatch"
         );
         assert_eq!(
@@ -866,7 +901,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_definitions_in_file_includes_mtime_and_path() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_definitions_in_file_includes_mtime_and_path(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = TempDir::new()?;
         let workspace_root = temp_dir.path();
 
@@ -882,8 +918,11 @@ mod tests {
 
         assert_eq!(response.path, "test.rs");
         assert!(!response.mtime.is_empty());
-        assert!(chrono::DateTime::parse_from_rfc3339(&response.mtime).is_ok(),
-            "mtime should be valid RFC3339: {}", response.mtime);
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(&response.mtime).is_ok(),
+            "mtime should be valid RFC3339: {}",
+            response.mtime
+        );
         assert_eq!(response.limit, 200);
         assert_eq!(response.offset, 0);
         assert!(!response.truncated);
@@ -914,26 +953,41 @@ fn internal_helper() {
             .definitions_in_file("test.rs", true, false, None, None, 1)
             .await?;
 
-        let pub_fn = response.symbols.iter()
+        let pub_fn = response
+            .symbols
+            .iter()
             .find(|s| s.name == "example")
             .expect("Should find 'example' function");
 
-        assert!(pub_fn.line_count.is_some(), "line_count should be populated");
+        assert!(
+            pub_fn.line_count.is_some(),
+            "line_count should be populated"
+        );
         let line_count = pub_fn.line_count.unwrap();
-        assert!(line_count >= 3, "Function should span at least 3 lines, got {}", line_count);
+        assert!(
+            line_count >= 3,
+            "Function should span at least 3 lines, got {}",
+            line_count
+        );
         assert!(pub_fn.exported.is_some(), "exported should be populated");
 
-        let internal_fn = response.symbols.iter()
+        let internal_fn = response
+            .symbols
+            .iter()
             .find(|s| s.name == "internal_helper")
             .expect("Should find 'internal_helper' function");
 
-        assert!(internal_fn.line_count.is_some(), "line_count should be populated for all symbols");
+        assert!(
+            internal_fn.line_count.is_some(),
+            "line_count should be populated for all symbols"
+        );
 
         Ok(())
     }
 
     #[test]
-    fn test_normalize_file_path_converts_absolute_paths_to_relative() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_normalize_file_path_converts_absolute_paths_to_relative(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir = TempDir::new()?;
         let workspace_root = temp_dir.path();
         set_thread_local_mount_dir(workspace_root);
@@ -966,30 +1020,57 @@ fn internal_helper() {
         let refs = vec![
             McpReferenceLocation {
                 path: Some("src/main.rs".to_string()),
-                position: Position { line: 1, character: 5 },
+                position: Position {
+                    line: 1,
+                    character: 5,
+                },
                 symbol_range: Range {
-                    start: Position { line: 1, character: 5 },
-                    end: Position { line: 1, character: 9 },
+                    start: Position {
+                        line: 1,
+                        character: 5,
+                    },
+                    end: Position {
+                        line: 1,
+                        character: 9,
+                    },
                 },
                 snippet: None,
                 reference_type: ReferenceType::Call,
             },
             McpReferenceLocation {
                 path: Some("src/lib.rs".to_string()),
-                position: Position { line: 2, character: 10 },
+                position: Position {
+                    line: 2,
+                    character: 10,
+                },
                 symbol_range: Range {
-                    start: Position { line: 2, character: 10 },
-                    end: Position { line: 2, character: 14 },
+                    start: Position {
+                        line: 2,
+                        character: 10,
+                    },
+                    end: Position {
+                        line: 2,
+                        character: 14,
+                    },
                 },
                 snippet: None,
                 reference_type: ReferenceType::Call,
             },
             McpReferenceLocation {
                 path: Some("src/main.rs".to_string()),
-                position: Position { line: 5, character: 3 },
+                position: Position {
+                    line: 5,
+                    character: 3,
+                },
                 symbol_range: Range {
-                    start: Position { line: 5, character: 3 },
-                    end: Position { line: 5, character: 7 },
+                    start: Position {
+                        line: 5,
+                        character: 3,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 7,
+                    },
                 },
                 snippet: None,
                 reference_type: ReferenceType::Call,
@@ -1039,8 +1120,14 @@ fn internal_helper() {
             range: FileRange {
                 path: "src/main.rs".to_string(),
                 range: Range {
-                    start: Position { line: 10, character: 5 },
-                    end: Position { line: 12, character: 10 },
+                    start: Position {
+                        line: 10,
+                        character: 5,
+                    },
+                    end: Position {
+                        line: 12,
+                        character: 10,
+                    },
                 },
             },
             source_code: "fn example() {}".to_string(),
@@ -1053,8 +1140,14 @@ fn internal_helper() {
                 file_range: FileRange {
                     path: "test.rs".to_string(),
                     range: Range {
-                        start: Position { line: 1, character: 1 },
-                        end: Position { line: 1, character: 5 },
+                        start: Position {
+                            line: 1,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 1,
+                            character: 5,
+                        },
                     },
                 },
                 kind: Some("function".to_string()),
@@ -1068,18 +1161,25 @@ fn internal_helper() {
                 crate::service::types::response::FileGroup {
                     path: "src/main.rs".to_string(),
                     count: 10,
-                    refs: vec![
-                        McpReferenceLocation {
-                            path: None, // Path omitted since FileGroup provides it
-                            position: Position { line: 10, character: 5 },
-                            symbol_range: Range {
-                                start: Position { line: 10, character: 5 },
-                                end: Position { line: 10, character: 9 },
-                            },
-                            snippet: Some(snippet.clone()),
-                            reference_type: ReferenceType::Call,
+                    refs: vec![McpReferenceLocation {
+                        path: None, // Path omitted since FileGroup provides it
+                        position: Position {
+                            line: 10,
+                            character: 5,
                         },
-                    ],
+                        symbol_range: Range {
+                            start: Position {
+                                line: 10,
+                                character: 5,
+                            },
+                            end: Position {
+                                line: 10,
+                                character: 9,
+                            },
+                        },
+                        snippet: Some(snippet.clone()),
+                        reference_type: ReferenceType::Call,
+                    }],
                 },
                 crate::service::types::response::FileGroup {
                     path: "src/lib.rs".to_string(),
@@ -1130,8 +1230,14 @@ fn internal_helper() {
                 file_range: FileRange {
                     path: "src/lib.rs".to_string(),
                     range: Range {
-                        start: Position { line: 1, character: 1 },
-                        end: Position { line: 1, character: 8 },
+                        start: Position {
+                            line: 1,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 1,
+                            character: 8,
+                        },
                     },
                 },
                 kind: Some("function".to_string()),
@@ -1144,7 +1250,10 @@ fn internal_helper() {
 
         assert!(response.related.is_some(), "related field must be present");
         let related = response.related.unwrap();
-        assert!(related.sibling_exports.is_empty(), "default sibling_exports must be empty");
+        assert!(
+            related.sibling_exports.is_empty(),
+            "default sibling_exports must be empty"
+        );
     }
 
     #[test]
@@ -1154,13 +1263,22 @@ fn internal_helper() {
             kind: "function".to_string(),
             identifier_position: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 20, character: 4 },
+                position: Position {
+                    line: 20,
+                    character: 4,
+                },
             },
             file_range: FileRange {
                 path: "src/lib.rs".to_string(),
                 range: Range {
-                    start: Position { line: 20, character: 1 },
-                    end: Position { line: 25, character: 1 },
+                    start: Position {
+                        line: 20,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 25,
+                        character: 1,
+                    },
                 },
             },
             ..Default::default()
@@ -1180,8 +1298,14 @@ fn internal_helper() {
                 file_range: FileRange {
                     path: "src/lib.rs".to_string(),
                     range: Range {
-                        start: Position { line: 1, character: 1 },
-                        end: Position { line: 1, character: 8 },
+                        start: Position {
+                            line: 1,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 1,
+                            character: 8,
+                        },
                     },
                 },
                 kind: Some("function".to_string()),
@@ -1193,8 +1317,15 @@ fn internal_helper() {
         };
 
         let related = response.related.expect("related field must be present");
-        assert_eq!(related.sibling_exports.len(), 1, "sibling_exports must have one entry");
-        assert_eq!(related.sibling_exports[0].name, "helper_fn", "sibling name must match");
+        assert_eq!(
+            related.sibling_exports.len(),
+            1,
+            "sibling_exports must have one entry"
+        );
+        assert_eq!(
+            related.sibling_exports[0].name, "helper_fn",
+            "sibling name must match"
+        );
     }
 
     #[test]
@@ -1208,8 +1339,14 @@ fn internal_helper() {
                 file_range: FileRange {
                     path: "test.rs".to_string(),
                     range: Range {
-                        start: Position { line: 1, character: 1 },
-                        end: Position { line: 1, character: 5 },
+                        start: Position {
+                            line: 1,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 1,
+                            character: 5,
+                        },
                     },
                 },
                 kind: Some("identifier".to_string()),
@@ -1221,29 +1358,41 @@ fn internal_helper() {
         };
 
         let json = serde_json::to_value(&response).expect("serialization failed");
-        assert!(json.get("related").is_none(), "None related must be skipped in serialization");
+        assert!(
+            json.get("related").is_none(),
+            "None related must be skipped in serialization"
+        );
     }
 
     #[test]
     fn it_creates_position_error_with_suggestions() {
-        let closest = vec![
-            Identifier {
-                name: "my_function".to_string(),
-                file_range: FileRange {
-                    path: "test.rs".to_string(),
-                    range: Range {
-                        start: Position { line: 5, character: 1 },
-                        end: Position { line: 5, character: 12 },
+        let closest = vec![Identifier {
+            name: "my_function".to_string(),
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position {
+                        line: 5,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 12,
                     },
                 },
-                kind: Some("function".to_string()),
             },
-        ];
+            kind: Some("function".to_string()),
+        }];
 
-        let error = PositionError::IdentifierNotFound { closest: closest.clone() };
+        let error = PositionError::IdentifierNotFound {
+            closest: closest.clone(),
+        };
         let suggestions = error.suggestions();
 
-        assert!(!suggestions.is_empty(), "negative: IdentifierNotFound should provide suggestions");
+        assert!(
+            !suggestions.is_empty(),
+            "negative: IdentifierNotFound should provide suggestions"
+        );
         assert!(
             suggestions.iter().any(|s| s.contains("documentSymbol")),
             "negative: suggestions should mention documentSymbol tool"
@@ -1258,8 +1407,14 @@ fn internal_helper() {
                 file_range: FileRange {
                     path: "test.rs".to_string(),
                     range: Range {
-                        start: Position { line: 10, character: 1 },
-                        end: Position { line: 10, character: 10 },
+                        start: Position {
+                            line: 10,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 10,
+                            character: 10,
+                        },
                     },
                 },
                 kind: Some("function".to_string()),
@@ -1269,15 +1424,23 @@ fn internal_helper() {
                 file_range: FileRange {
                     path: "test.rs".to_string(),
                     range: Range {
-                        start: Position { line: 15, character: 1 },
-                        end: Position { line: 15, character: 11 },
+                        start: Position {
+                            line: 15,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 15,
+                            character: 11,
+                        },
                     },
                 },
                 kind: Some("function".to_string()),
             },
         ];
 
-        let error = PositionError::IdentifierNotFound { closest: closest.clone() };
+        let error = PositionError::IdentifierNotFound {
+            closest: closest.clone(),
+        };
         let suggestions = error.suggestions();
 
         assert!(
@@ -1288,57 +1451,80 @@ fn internal_helper() {
 
     #[test]
     fn it_creates_call_hierarchy_error_with_suggestions() {
-        let nearby = vec![
-            Symbol {
-                name: "some_function".to_string(),
-                kind: "function".to_string(),
-                identifier_position: FilePosition {
-                    path: "test.rs".to_string(),
-                    position: Position { line: 10, character: 4 },
+        let nearby = vec![Symbol {
+            name: "some_function".to_string(),
+            kind: "function".to_string(),
+            identifier_position: FilePosition {
+                path: "test.rs".to_string(),
+                position: Position {
+                    line: 10,
+                    character: 4,
                 },
-                file_range: FileRange {
-                    path: "test.rs".to_string(),
-                    range: Range {
-                        start: Position { line: 10, character: 1 },
-                        end: Position { line: 15, character: 1 },
+            },
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position {
+                        line: 10,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 15,
+                        character: 1,
                     },
                 },
-                ..Default::default()
             },
-        ];
+            ..Default::default()
+        }];
 
-        let error = CallHierarchyError::NoItemAtPosition { nearby_callables: nearby };
+        let error = CallHierarchyError::NoItemAtPosition {
+            nearby_callables: nearby,
+        };
         let suggestions = error.suggestions();
 
-        assert!(!suggestions.is_empty(), "negative: NoItemAtPosition should provide suggestions");
         assert!(
-            suggestions.iter().any(|s| s.contains("function") || s.contains("method")),
+            !suggestions.is_empty(),
+            "negative: NoItemAtPosition should provide suggestions"
+        );
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.contains("function") || s.contains("method")),
             "negative: suggestions should mention function/method positioning"
         );
     }
 
     #[test]
     fn it_includes_nearby_callables_in_call_hierarchy_error_suggestions() {
-        let nearby = vec![
-            Symbol {
-                name: "callable_fn".to_string(),
-                kind: "function".to_string(),
-                identifier_position: FilePosition {
-                    path: "test.rs".to_string(),
-                    position: Position { line: 5, character: 4 },
+        let nearby = vec![Symbol {
+            name: "callable_fn".to_string(),
+            kind: "function".to_string(),
+            identifier_position: FilePosition {
+                path: "test.rs".to_string(),
+                position: Position {
+                    line: 5,
+                    character: 4,
                 },
-                file_range: FileRange {
-                    path: "test.rs".to_string(),
-                    range: Range {
-                        start: Position { line: 5, character: 1 },
-                        end: Position { line: 10, character: 1 },
+            },
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position {
+                        line: 5,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 10,
+                        character: 1,
                     },
                 },
-                ..Default::default()
             },
-        ];
+            ..Default::default()
+        }];
 
-        let error = CallHierarchyError::NoItemAtPosition { nearby_callables: nearby.clone() };
+        let error = CallHierarchyError::NoItemAtPosition {
+            nearby_callables: nearby.clone(),
+        };
         let suggestions = error.suggestions();
 
         assert!(
@@ -1349,23 +1535,26 @@ fn internal_helper() {
 
     #[test]
     fn it_formats_service_error_with_suggestions() {
-        let closest = vec![
-            Identifier {
-                name: "test_id".to_string(),
-                file_range: FileRange {
-                    path: "test.rs".to_string(),
-                    range: Range {
-                        start: Position { line: 1, character: 1 },
-                        end: Position { line: 1, character: 8 },
+        let closest = vec![Identifier {
+            name: "test_id".to_string(),
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position {
+                        line: 1,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 1,
+                        character: 8,
                     },
                 },
-                kind: Some("identifier".to_string()),
             },
-        ];
+            kind: Some("identifier".to_string()),
+        }];
 
-        let error = ServiceError::IdentifierSelection(
-            PositionError::IdentifierNotFound { closest }
-        );
+        let error =
+            ServiceError::IdentifierSelection(PositionError::IdentifierNotFound { closest });
 
         let suggestions = error.suggestions();
         assert!(
@@ -1376,28 +1565,35 @@ fn internal_helper() {
 
     #[test]
     fn it_formats_call_hierarchy_service_error_with_suggestions() {
-        let nearby = vec![
-            Symbol {
-                name: "method_name".to_string(),
-                kind: "method".to_string(),
-                identifier_position: FilePosition {
-                    path: "test.rs".to_string(),
-                    position: Position { line: 20, character: 8 },
+        let nearby = vec![Symbol {
+            name: "method_name".to_string(),
+            kind: "method".to_string(),
+            identifier_position: FilePosition {
+                path: "test.rs".to_string(),
+                position: Position {
+                    line: 20,
+                    character: 8,
                 },
-                file_range: FileRange {
-                    path: "test.rs".to_string(),
-                    range: Range {
-                        start: Position { line: 20, character: 1 },
-                        end: Position { line: 25, character: 1 },
+            },
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position {
+                        line: 20,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 25,
+                        character: 1,
                     },
                 },
-                ..Default::default()
             },
-        ];
+            ..Default::default()
+        }];
 
-        let error = ServiceError::CallHierarchy(
-            CallHierarchyError::NoItemAtPosition { nearby_callables: nearby }
-        );
+        let error = ServiceError::CallHierarchy(CallHierarchyError::NoItemAtPosition {
+            nearby_callables: nearby,
+        });
 
         let suggestions = error.suggestions();
         assert!(
@@ -1410,32 +1606,58 @@ fn internal_helper() {
     fn test_mcp_definition_location_includes_signature() {
         let def_location = McpDefinitionLocation {
             path: "src/service.ts".to_string(),
-            position: Position { line: 82, character: 5 },
+            position: Position {
+                line: 82,
+                character: 5,
+            },
             definition_range: Range {
-                start: Position { line: 82, character: 1 },
-                end: Position { line: 90, character: 1 },
+                start: Position {
+                    line: 82,
+                    character: 1,
+                },
+                end: Position {
+                    line: 90,
+                    character: 1,
+                },
             },
             symbol_kind: Some("function".to_string()),
             snippet: None,
-            signature: Some("(args: {classId: number}) => UseQueryResult<ClassDetails>".to_string()),
+            signature: Some(
+                "(args: {classId: number}) => UseQueryResult<ClassDetails>".to_string(),
+            ),
             doc: Some("Query hook for fetching class details by ID".to_string()),
             external: None,
             package: None,
             reference_count: None,
         };
 
-        assert!(def_location.signature.is_some(), "definition location must include signature");
-        assert!(def_location.doc.is_some(), "definition location must include doc");
+        assert!(
+            def_location.signature.is_some(),
+            "definition location must include signature"
+        );
+        assert!(
+            def_location.doc.is_some(),
+            "definition location must include doc"
+        );
     }
 
     #[test]
     fn test_mcp_definition_location_serializes_signature_and_doc() {
         let def_location = McpDefinitionLocation {
             path: "src/api.ts".to_string(),
-            position: Position { line: 10, character: 5 },
+            position: Position {
+                line: 10,
+                character: 5,
+            },
             definition_range: Range {
-                start: Position { line: 10, character: 1 },
-                end: Position { line: 15, character: 1 },
+                start: Position {
+                    line: 10,
+                    character: 1,
+                },
+                end: Position {
+                    line: 15,
+                    character: 1,
+                },
             },
             symbol_kind: Some("function".to_string()),
             snippet: None,
@@ -1448,19 +1670,37 @@ fn internal_helper() {
 
         let json = serde_json::to_value(&def_location).expect("serialization failed");
 
-        assert!(json.get("signature").is_some(), "signature must be present in serialization");
-        assert!(json.get("doc").is_some(), "doc must be present in serialization");
-        assert_eq!(json["signature"], "fn example(x: i32) -> String", "signature content must match");
+        assert!(
+            json.get("signature").is_some(),
+            "signature must be present in serialization"
+        );
+        assert!(
+            json.get("doc").is_some(),
+            "doc must be present in serialization"
+        );
+        assert_eq!(
+            json["signature"], "fn example(x: i32) -> String",
+            "signature content must match"
+        );
     }
 
     #[test]
     fn test_mcp_definition_location_skips_none_signature_and_doc() {
         let def_location = McpDefinitionLocation {
             path: "src/api.ts".to_string(),
-            position: Position { line: 10, character: 5 },
+            position: Position {
+                line: 10,
+                character: 5,
+            },
             definition_range: Range {
-                start: Position { line: 10, character: 1 },
-                end: Position { line: 15, character: 1 },
+                start: Position {
+                    line: 10,
+                    character: 1,
+                },
+                end: Position {
+                    line: 15,
+                    character: 1,
+                },
             },
             symbol_kind: Some("function".to_string()),
             snippet: None,
@@ -1473,8 +1713,14 @@ fn internal_helper() {
 
         let json = serde_json::to_value(&def_location).expect("serialization failed");
 
-        assert!(json.get("signature").is_none(), "None signature must be skipped in serialization");
-        assert!(json.get("doc").is_none(), "None doc must be skipped in serialization");
+        assert!(
+            json.get("signature").is_none(),
+            "None signature must be skipped in serialization"
+        );
+        assert!(
+            json.get("doc").is_none(),
+            "None doc must be skipped in serialization"
+        );
     }
 
     #[test]
@@ -1501,8 +1747,14 @@ fn internal_helper() {
         let json = serde_json::to_value(&def_location).expect("serialization failed");
 
         assert_eq!(json["external"], true, "external must be true");
-        assert_eq!(json["package"]["name"], "@reduxjs/toolkit", "package name must match");
-        assert_eq!(json["package"]["version"], "2.0.0", "package version must match");
+        assert_eq!(
+            json["package"]["name"], "@reduxjs/toolkit",
+            "package name must match"
+        );
+        assert_eq!(
+            json["package"]["version"], "2.0.0",
+            "package version must match"
+        );
         assert_eq!(json["reference_count"], 42, "reference_count must match");
     }
 
@@ -1511,7 +1763,10 @@ fn internal_helper() {
         let path = "node_modules/.pnpm/@reduxjs+toolkit@2.0.0/node_modules/@reduxjs/toolkit/dist/query/react/buildHooks.d.ts";
         let external_info = ExternalInfo::from_path(path);
 
-        assert!(external_info.is_some(), "external info must be detected for node_modules path");
+        assert!(
+            external_info.is_some(),
+            "external info must be detected for node_modules path"
+        );
 
         let info = external_info.unwrap();
         assert!(info.external, "external flag must be true");
@@ -1527,7 +1782,10 @@ fn internal_helper() {
         let path = "src/components/Button.tsx";
         let external_info = ExternalInfo::from_path(path);
 
-        assert!(external_info.is_none(), "external info must be None for workspace paths");
+        assert!(
+            external_info.is_none(),
+            "external info must be None for workspace paths"
+        );
     }
 
     #[test]
@@ -1545,7 +1803,10 @@ fn internal_helper() {
         assert_eq!(json["external"], true, "external flag must serialize");
         assert!(json.get("package").is_some(), "package must be present");
         assert_eq!(json["package"]["name"], "react", "package name must match");
-        assert_eq!(json["package"]["version"], "18.2.0", "package version must match");
+        assert_eq!(
+            json["package"]["version"], "18.2.0",
+            "package version must match"
+        );
     }
 
     #[test]
@@ -1559,7 +1820,11 @@ fn internal_helper() {
 
         let json = serde_json::to_string(&compact).expect("serialization failed");
 
-        assert!(json.len() < 250, "compact format must be under 250 chars, got {} chars", json.len());
+        assert!(
+            json.len() < 250,
+            "compact format must be under 250 chars, got {} chars",
+            json.len()
+        );
 
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse failed");
         assert!(parsed.get("name").is_some(), "name must be present");
@@ -1586,16 +1851,43 @@ fn internal_helper() {
 
     #[test]
     fn test_is_internal_builder_symbol() {
-        assert!(is_internal_builder_symbol("_baseEndpointQuery"), "underscore prefix indicates internal");
-        assert!(is_internal_builder_symbol("providesTags"), "RTK builder function");
-        assert!(is_internal_builder_symbol("invalidatesTags"), "RTK builder function");
-        assert!(is_internal_builder_symbol("query"), "generic builder method");
-        assert!(is_internal_builder_symbol("mutation"), "generic builder method");
-        assert!(is_internal_builder_symbol("endpoints"), "RTK builder config");
+        assert!(
+            is_internal_builder_symbol("_baseEndpointQuery"),
+            "underscore prefix indicates internal"
+        );
+        assert!(
+            is_internal_builder_symbol("providesTags"),
+            "RTK builder function"
+        );
+        assert!(
+            is_internal_builder_symbol("invalidatesTags"),
+            "RTK builder function"
+        );
+        assert!(
+            is_internal_builder_symbol("query"),
+            "generic builder method"
+        );
+        assert!(
+            is_internal_builder_symbol("mutation"),
+            "generic builder method"
+        );
+        assert!(
+            is_internal_builder_symbol("endpoints"),
+            "RTK builder config"
+        );
 
-        assert!(!is_internal_builder_symbol("useGetUserQuery"), "user hook export");
-        assert!(!is_internal_builder_symbol("UserService"), "user service export");
-        assert!(!is_internal_builder_symbol("getUserById"), "user function export");
+        assert!(
+            !is_internal_builder_symbol("useGetUserQuery"),
+            "user hook export"
+        );
+        assert!(
+            !is_internal_builder_symbol("UserService"),
+            "user service export"
+        );
+        assert!(
+            !is_internal_builder_symbol("getUserById"),
+            "user function export"
+        );
     }
 
     #[test]
@@ -1606,13 +1898,22 @@ fn internal_helper() {
                 kind: "function".to_string(),
                 identifier_position: FilePosition {
                     path: "src/api.ts".to_string(),
-                    position: Position { line: 10, character: 5 },
+                    position: Position {
+                        line: 10,
+                        character: 5,
+                    },
                 },
                 file_range: FileRange {
                     path: "src/api.ts".to_string(),
                     range: Range {
-                        start: Position { line: 10, character: 1 },
-                        end: Position { line: 15, character: 1 },
+                        start: Position {
+                            line: 10,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 15,
+                            character: 1,
+                        },
                     },
                 },
                 ..Default::default()
@@ -1622,13 +1923,22 @@ fn internal_helper() {
                 kind: "function".to_string(),
                 identifier_position: FilePosition {
                     path: "src/api.ts".to_string(),
-                    position: Position { line: 20, character: 5 },
+                    position: Position {
+                        line: 20,
+                        character: 5,
+                    },
                 },
                 file_range: FileRange {
                     path: "src/api.ts".to_string(),
                     range: Range {
-                        start: Position { line: 20, character: 1 },
-                        end: Position { line: 25, character: 1 },
+                        start: Position {
+                            line: 20,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 25,
+                            character: 1,
+                        },
                     },
                 },
                 ..Default::default()
@@ -1638,13 +1948,22 @@ fn internal_helper() {
                 kind: "function".to_string(),
                 identifier_position: FilePosition {
                     path: "src/api.ts".to_string(),
-                    position: Position { line: 30, character: 5 },
+                    position: Position {
+                        line: 30,
+                        character: 5,
+                    },
                 },
                 file_range: FileRange {
                     path: "src/api.ts".to_string(),
                     range: Range {
-                        start: Position { line: 30, character: 1 },
-                        end: Position { line: 35, character: 1 },
+                        start: Position {
+                            line: 30,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 35,
+                            character: 1,
+                        },
                     },
                 },
                 ..Default::default()
@@ -1653,8 +1972,15 @@ fn internal_helper() {
 
         let filtered = filter_sibling_exports(siblings, 10);
 
-        assert_eq!(filtered.len(), 1, "must filter out internal builder symbols");
-        assert_eq!(filtered[0].name, "useGetUserQuery", "must keep user exports");
+        assert_eq!(
+            filtered.len(),
+            1,
+            "must filter out internal builder symbols"
+        );
+        assert_eq!(
+            filtered[0].name, "useGetUserQuery",
+            "must keep user exports"
+        );
     }
 
     #[test]
@@ -1665,13 +1991,22 @@ fn internal_helper() {
                 kind: "function".to_string(),
                 identifier_position: FilePosition {
                     path: "src/api.ts".to_string(),
-                    position: Position { line: i * 10, character: 5 },
+                    position: Position {
+                        line: i * 10,
+                        character: 5,
+                    },
                 },
                 file_range: FileRange {
                     path: "src/api.ts".to_string(),
                     range: Range {
-                        start: Position { line: i * 10, character: 1 },
-                        end: Position { line: i * 10 + 5, character: 1 },
+                        start: Position {
+                            line: i * 10,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: i * 10 + 5,
+                            character: 1,
+                        },
                     },
                 },
                 ..Default::default()
@@ -1731,7 +2066,8 @@ fn internal_helper() {
 
     #[test]
     fn test_truncate_signature_fallback_byte_truncation() {
-        let sig = "fn very_long_function_name_without_generics(arg1: Type1, arg2: Type2, arg3: Type3)";
+        let sig =
+            "fn very_long_function_name_without_generics(arg1: Type1, arg2: Type2, arg3: Type3)";
         let result = truncate_signature(sig, Some(50));
         assert!(result.len() <= 50);
         assert!(result.ends_with("..."));
@@ -1778,8 +2114,20 @@ fn internal_helper() {
             .expect("Failed to create manager");
 
         let positions = vec![
-            ("test_file.rs", Position { line: 1, character: 1 }),
-            ("another.rs", Position { line: 2, character: 3 }),
+            (
+                "test_file.rs",
+                Position {
+                    line: 1,
+                    character: 1,
+                },
+            ),
+            (
+                "another.rs",
+                Position {
+                    line: 2,
+                    character: 3,
+                },
+            ),
         ];
 
         let results = batch_hover_for_signatures(&manager, positions.clone()).await;
@@ -1798,7 +2146,10 @@ fn internal_helper() {
             kind: "function".to_string(),
             location: FilePosition {
                 path: "src/lib.rs".to_string(),
-                position: Position { line: 10, character: 5 },
+                position: Position {
+                    line: 10,
+                    character: 5,
+                },
             },
             container_name: None,
             match_kind: Some("exact".to_string()),

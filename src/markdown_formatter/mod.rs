@@ -234,6 +234,9 @@ mod tests {
     fn it_handles_zero_position_values() {
         let result = format_position(0, 0);
 
-        assert_eq!(result, "0:0", "negative: zero positions must be formatted correctly");
+        assert_eq!(
+            result, "0:0",
+            "negative: zero positions must be formatted correctly"
+        );
     }
 }

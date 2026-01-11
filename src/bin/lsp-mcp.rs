@@ -69,7 +69,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // 7. Initialize manager and run server
     let (manager, config) = initialize_manager_with_workspace_root_async(&workspace_root).await?;
-    run_server(manager, &config, &workspace_root).await.map_err(|e| e.to_string())?;
+    run_server(manager, &config, &workspace_root)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -88,7 +90,10 @@ async fn run_indexing(
         })
         .unwrap_or_else(SemanticSearchConfig::default_enabled);
 
-    println!("Building semantic search index for: {}", workspace_root.display());
+    println!(
+        "Building semantic search index for: {}",
+        workspace_root.display()
+    );
     let start_time = Instant::now();
 
     let mut manager = SemanticSearchManager::new(ss_config, workspace_root.to_path_buf());

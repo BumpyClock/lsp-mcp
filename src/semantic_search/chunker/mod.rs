@@ -67,7 +67,12 @@ pub fn create_chunker(extension: &str) -> Box<dyn Chunker> {
 
 /// Generate a deterministic segment hash for a code chunk.
 /// Uses blake3 for speed and collision resistance.
-pub fn compute_segment_hash(file_path: &str, start_line: u32, end_line: u32, content: &str) -> String {
+pub fn compute_segment_hash(
+    file_path: &str,
+    start_line: u32,
+    end_line: u32,
+    content: &str,
+) -> String {
     use blake3::Hasher;
 
     let mut hasher = Hasher::new();

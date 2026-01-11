@@ -309,7 +309,8 @@ async fn test_references() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-async fn test_referenced_symbols_are_available_for_rust() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_referenced_symbols_are_available_for_rust() -> Result<(), Box<dyn std::error::Error>>
+{
     let root_path = std::env::current_dir()?;
     let sample_path = root_path.join("../sample_project/rust");
     let sample_path = sample_path.canonicalize()?;

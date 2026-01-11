@@ -46,7 +46,8 @@ impl std::error::Error for VectorStoreError {}
 #[async_trait]
 pub trait VectorStore: Send + Sync {
     /// Add or update entries in the index.
-    async fn upsert(&self, entries: Vec<(IndexEntry, Vec<f32>)>) -> Result<usize, VectorStoreError>;
+    async fn upsert(&self, entries: Vec<(IndexEntry, Vec<f32>)>)
+        -> Result<usize, VectorStoreError>;
 
     /// Remove entries by segment hash IDs.
     async fn delete(&self, ids: &[String]) -> Result<usize, VectorStoreError>;

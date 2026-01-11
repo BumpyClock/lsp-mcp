@@ -84,7 +84,10 @@ impl MetadataStore {
     }
 
     /// Get the numeric ID for a segment hash, or None if not found.
-    pub async fn get_numeric_id(&self, segment_hash: &str) -> Result<Option<usize>, VectorStoreError> {
+    pub async fn get_numeric_id(
+        &self,
+        segment_hash: &str,
+    ) -> Result<Option<usize>, VectorStoreError> {
         let hash = segment_hash.to_string();
         let conn = Arc::clone(&self.conn);
 
@@ -192,7 +195,9 @@ impl MetadataStore {
                 .prepare("SELECT segment_hash, hnsw_id FROM hnsw_ids")
                 .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
             let mappings = stmt
-                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })
                 .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
                 .filter_map(|r| r.ok())
                 .map(|(hash, id)| (hash, id as usize))
@@ -238,7 +243,10 @@ impl MetadataStore {
     }
 
     /// Get an entry by its numeric ID.
-    pub async fn get_by_numeric_id(&self, id: usize) -> Result<Option<IndexEntry>, VectorStoreError> {
+    pub async fn get_by_numeric_id(
+        &self,
+        id: usize,
+    ) -> Result<Option<IndexEntry>, VectorStoreError> {
         let conn = Arc::clone(&self.conn);
 
         task::spawn_blocking(move || {
@@ -472,13 +480,13 @@ impl MetadataStore {
 
         task::spawn_blocking(move || {
             let conn = conn.lock();
-            conn.execute("DELETE FROM entries WHERE segment_hash = ?", params![hash.clone()])
-                .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
             conn.execute(
-                "DELETE FROM hnsw_ids WHERE segment_hash = ?",
-                params![hash],
+                "DELETE FROM entries WHERE segment_hash = ?",
+                params![hash.clone()],
             )
             .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
+            conn.execute("DELETE FROM hnsw_ids WHERE segment_hash = ?", params![hash])
+                .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
             conn.execute(
                 "DELETE FROM enrichments WHERE segment_hash = ?",
                 params![hash],
@@ -559,11 +567,9 @@ impl MetadataStore {
         task::spawn_blocking(move || {
             let conn = conn.lock();
             let count: i64 = conn
-                .query_row(
-                    "SELECT COUNT(DISTINCT file_path) FROM entries",
-                    [],
-                    |row| row.get(0),
-                )
+                .query_row("SELECT COUNT(DISTINCT file_path) FROM entries", [], |row| {
+                    row.get(0)
+                })
                 .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
             Ok(count as usize)
         })
@@ -773,12 +779,10 @@ impl MetadataStore {
         task::spawn_blocking(move || {
             let conn = conn.lock();
             match value {
-                Some(value) => {
-                    conn.execute(
-                        "INSERT OR REPLACE INTO index_state (key, value) VALUES (?1, ?2)",
-                        params![key, value],
-                    )
-                }
+                Some(value) => conn.execute(
+                    "INSERT OR REPLACE INTO index_state (key, value) VALUES (?1, ?2)",
+                    params![key, value],
+                ),
                 None => conn.execute("DELETE FROM index_state WHERE key = ?", params![key]),
             }
             .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;

@@ -157,17 +157,23 @@ mod tests {
     async fn document_tracker_track_document_stores_file_path_and_version() {
         let tracker = DocumentTracker::new();
 
-        tracker.track_document("/path/to/file.rs".to_string(), 1).await;
+        tracker
+            .track_document("/path/to/file.rs".to_string(), 1)
+            .await;
         let docs = tracker.get_tracked_documents().await;
 
         assert_eq!(docs.len(), 1);
-        assert!(docs.iter().any(|(path, version)| path == "/path/to/file.rs" && *version == 1));
+        assert!(docs
+            .iter()
+            .any(|(path, version)| path == "/path/to/file.rs" && *version == 1));
     }
 
     #[tokio::test]
     async fn document_tracker_untrack_document_removes_file() {
         let tracker = DocumentTracker::new();
-        tracker.track_document("/path/to/file.rs".to_string(), 1).await;
+        tracker
+            .track_document("/path/to/file.rs".to_string(), 1)
+            .await;
 
         tracker.untrack_document("/path/to/file.rs").await;
         let docs = tracker.get_tracked_documents().await;
@@ -178,8 +184,12 @@ mod tests {
     #[tokio::test]
     async fn document_tracker_clear_removes_all_documents() {
         let tracker = DocumentTracker::new();
-        tracker.track_document("/path/to/file1.rs".to_string(), 1).await;
-        tracker.track_document("/path/to/file2.rs".to_string(), 2).await;
+        tracker
+            .track_document("/path/to/file1.rs".to_string(), 1)
+            .await;
+        tracker
+            .track_document("/path/to/file2.rs".to_string(), 2)
+            .await;
 
         tracker.clear().await;
         let docs = tracker.get_tracked_documents().await;
@@ -202,11 +212,8 @@ mod tests {
     // ReconnectController tests
     #[tokio::test]
     async fn reconnect_controller_can_attempt_returns_true_when_under_max() {
-        let controller = ReconnectController::new(
-            3,
-            Duration::from_secs(1),
-            Duration::from_secs(30),
-        );
+        let controller =
+            ReconnectController::new(3, Duration::from_secs(1), Duration::from_secs(30));
 
         let can_attempt = controller.can_attempt().await;
 
@@ -215,11 +222,8 @@ mod tests {
 
     #[tokio::test]
     async fn reconnect_controller_can_attempt_returns_false_after_max_attempts() {
-        let controller = ReconnectController::new(
-            2,
-            Duration::from_secs(1),
-            Duration::from_secs(30),
-        );
+        let controller =
+            ReconnectController::new(2, Duration::from_secs(1), Duration::from_secs(30));
         controller.record_attempt().await;
         controller.record_attempt().await;
 
@@ -230,11 +234,8 @@ mod tests {
 
     #[tokio::test]
     async fn reconnect_controller_record_attempt_increments_counter() {
-        let controller = ReconnectController::new(
-            3,
-            Duration::from_secs(1),
-            Duration::from_secs(30),
-        );
+        let controller =
+            ReconnectController::new(3, Duration::from_secs(1), Duration::from_secs(30));
 
         let attempt1 = controller.record_attempt().await;
         let attempt2 = controller.record_attempt().await;
@@ -245,11 +246,8 @@ mod tests {
 
     #[tokio::test]
     async fn reconnect_controller_reset_clears_attempt_counter() {
-        let controller = ReconnectController::new(
-            3,
-            Duration::from_secs(1),
-            Duration::from_secs(30),
-        );
+        let controller =
+            ReconnectController::new(3, Duration::from_secs(1), Duration::from_secs(30));
         controller.record_attempt().await;
         controller.record_attempt().await;
 
@@ -261,11 +259,8 @@ mod tests {
 
     #[test]
     fn reconnect_controller_calculate_delay_uses_exponential_backoff() {
-        let controller = ReconnectController::new(
-            3,
-            Duration::from_secs(1),
-            Duration::from_secs(30),
-        );
+        let controller =
+            ReconnectController::new(3, Duration::from_secs(1), Duration::from_secs(30));
 
         let delay0 = controller.calculate_delay(0);
         let delay1 = controller.calculate_delay(1);
@@ -278,11 +273,8 @@ mod tests {
 
     #[test]
     fn reconnect_controller_calculate_delay_caps_at_max_delay() {
-        let controller = ReconnectController::new(
-            10,
-            Duration::from_secs(1),
-            Duration::from_secs(10),
-        );
+        let controller =
+            ReconnectController::new(10, Duration::from_secs(1), Duration::from_secs(10));
 
         let delay5 = controller.calculate_delay(5); // Would be 32s without cap
 

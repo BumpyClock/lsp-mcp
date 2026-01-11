@@ -150,7 +150,11 @@ mod tests {
         let minimal = get_preset_tools(ToolPreset::Minimal);
         let standard = get_preset_tools(ToolPreset::Standard);
         for tool in &minimal {
-            assert!(standard.contains(tool), "Minimal tool {} not in standard", tool);
+            assert!(
+                standard.contains(tool),
+                "Minimal tool {} not in standard",
+                tool
+            );
         }
     }
 

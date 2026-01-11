@@ -18,25 +18,23 @@ pub mod tool_params;
 pub use filter::FilteredLspMcpServer;
 pub use server::run_server;
 
+use crate::api_types::SupportedLanguages;
 use crate::codemap::CodemapManager;
 use crate::config::{DebugConfig, LspMcpConfig, OutputMode};
-use crate::lsp::registry::LanguageMetadata;
-use crate::api_types::SupportedLanguages;
 use crate::lsp::manager::Manager;
+use crate::lsp::registry::LanguageMetadata;
 use crate::mcp::tool_params::*;
 use crate::mcp_response::tool_result_success;
 use crate::semantic_search::SemanticSearchManager;
 use crate::service::{create_service, LspService};
 use crate::session::{new_request_id, request_id_header};
 use rmcp::{
-    ServerHandler, tool, tool_router, tool_handler,
     handler::server::tool::ToolRouter,
     handler::server::wrapper::Parameters,
     model::{
-        CallToolResult, RawContent, ServerInfo, Implementation,
-        ServerCapabilities, ProtocolVersion,
+        CallToolResult, Implementation, ProtocolVersion, RawContent, ServerCapabilities, ServerInfo,
     },
-    ErrorData as McpError,
+    tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -188,7 +186,10 @@ Optional params: `limit`, `path`, `file_pattern`, `exclude`, `min_score`, `per_f
 
 #[tool_router]
 impl LspMcpServer {
-    #[tool(name = "documentSymbol", description = "Symbols defined in a file (top-level only by default; set include_children for nesting)")]
+    #[tool(
+        name = "documentSymbol",
+        description = "Symbols defined in a file (top-level only by default; set include_children for nesting)"
+    )]
     async fn definitions_in_file(
         &self,
         Parameters(params): Parameters<DocumentSymbolParams>,
@@ -221,7 +222,10 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "goToDefinition", description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5).")]
+    #[tool(
+        name = "goToDefinition",
+        description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5)."
+    )]
     async fn find_definition(
         &self,
         Parameters(params): Parameters<GoToDefinitionParams>,
@@ -255,7 +259,10 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "getSymbolDefinition", description = "Full definition for a symbol by name")]
+    #[tool(
+        name = "getSymbolDefinition",
+        description = "Full definition for a symbol by name"
+    )]
     async fn get_symbol_definition(
         &self,
         Parameters(params): Parameters<GetSymbolDefinitionParams>,
@@ -285,7 +292,10 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "findReferences", description = "References to symbol by name. Summary by default; set detail=true for per-reference output.")]
+    #[tool(
+        name = "findReferences",
+        description = "References to symbol by name. Summary by default; set detail=true for per-reference output."
+    )]
     async fn find_references(
         &self,
         Parameters(params): Parameters<FindReferencesParams>,
@@ -320,7 +330,10 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "hover", description = "Type/doc info at position; use for quick context. Requires: requests (JSON array of {path, line, character} objects)")]
+    #[tool(
+        name = "hover",
+        description = "Type/doc info at position; use for quick context. Requires: requests (JSON array of {path, line, character} objects)"
+    )]
     async fn hover(
         &self,
         Parameters(params): Parameters<HoverParams>,
@@ -380,7 +393,10 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "goToImplementation", description = "Implementations of interface/trait")]
+    #[tool(
+        name = "goToImplementation",
+        description = "Implementations of interface/trait"
+    )]
     async fn go_to_implementation(
         &self,
         Parameters(params): Parameters<GoToImplementationParams>,
@@ -395,8 +411,14 @@ impl LspMcpServer {
             "Processing tool request"
         );
 
-        let output = call_hierarchy::go_to_implementation(&self.service, self.output_mode, params.path, params.line, params.character)
-            .await;
+        let output = call_hierarchy::go_to_implementation(
+            &self.service,
+            self.output_mode,
+            params.path,
+            params.line,
+            params.character,
+        )
+        .await;
 
         tracing::debug!(
             request_id = %request_id,
@@ -406,7 +428,10 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "callHierarchy", description = "Incoming or outgoing calls at position. External deps included by default. Set externals=false to exclude.")]
+    #[tool(
+        name = "callHierarchy",
+        description = "Incoming or outgoing calls at position. External deps included by default. Set externals=false to exclude."
+    )]
     async fn call_hierarchy(
         &self,
         Parameters(params): Parameters<CallHierarchyParams>,
@@ -442,7 +467,10 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "findReferencedSymbols", description = "Symbols referenced by definition. External deps included by default. Set externals=false to exclude.")]
+    #[tool(
+        name = "findReferencedSymbols",
+        description = "Symbols referenced by definition. External deps included by default. Set externals=false to exclude."
+    )]
     async fn find_referenced_symbols(
         &self,
         Parameters(params): Parameters<FindReferencedSymbolsParams>,
@@ -484,7 +512,8 @@ impl LspMcpServer {
         &self,
         Parameters(params): Parameters<ListFilesParams>,
     ) -> Result<CallToolResult, McpError> {
-        let output = files::list_files(&self.service, self.output_mode, params.limit, params.offset).await;
+        let output =
+            files::list_files(&self.service, self.output_mode, params.limit, params.offset).await;
         Ok(output)
     }
 
@@ -532,7 +561,10 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "getDiagnostics", description = "Diagnostics for file or workspace")]
+    #[tool(
+        name = "getDiagnostics",
+        description = "Diagnostics for file or workspace"
+    )]
     async fn get_diagnostics(
         &self,
         Parameters(params): Parameters<GetDiagnosticsParams>,
@@ -544,7 +576,8 @@ impl LspMcpServer {
             "Processing tool request"
         );
 
-        let output = diagnostics::get_diagnostics(&self.service, self.output_mode, params.file_path).await;
+        let output =
+            diagnostics::get_diagnostics(&self.service, self.output_mode, params.file_path).await;
 
         tracing::debug!(
             request_id = %request_id,
@@ -756,9 +789,7 @@ impl ServerHandler for LspMcpServer {
                 version: "0.4.4".into(),
                 ..Default::default()
             },
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
             instructions: Some(self.get_instructions()),
             ..Default::default()
         }
@@ -837,7 +868,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_files_returns_data_directly() {
         let (server, _temp) = create_test_server().await;
-        let params = Parameters(ListFilesParams { limit: None, offset: None });
+        let params = Parameters(ListFilesParams {
+            limit: None,
+            offset: None,
+        });
         let result = server.list_files(params).await.unwrap();
         let text = extract_text_content(&result);
 
@@ -850,7 +884,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_files_verbose_returns_markdown() {
         let (server, _temp) = create_test_server_with_mode(OutputMode::Verbose).await;
-        let params = Parameters(ListFilesParams { limit: None, offset: None });
+        let params = Parameters(ListFilesParams {
+            limit: None,
+            offset: None,
+        });
         let result = server.list_files(params).await.unwrap();
         let text = extract_text_content(&result);
 
@@ -881,7 +918,10 @@ mod tests {
         } else {
             let text = extract_text_content(&result);
             assert!(!text.contains("\"ok\""));
-            assert!(text.contains("Source: test.rs"), "Expected markdown source header");
+            assert!(
+                text.contains("Source: test.rs"),
+                "Expected markdown source header"
+            );
             assert!(text.contains("```rust"), "Expected rust code fence");
             assert!(text.contains("fn main()"), "Expected source content");
             assert!(!text.contains("\"meta\""));
@@ -895,7 +935,10 @@ mod tests {
         let text = extract_text_content(&result);
 
         assert!(!text.contains("\"ok\":true"));
-        assert!(text.contains("LSP-MCP Health"), "Expected markdown health header");
+        assert!(
+            text.contains("LSP-MCP Health"),
+            "Expected markdown health header"
+        );
         assert!(text.contains("Status:"), "Expected markdown status field");
         assert!(text.contains("Version:"), "Expected markdown version field");
         assert!(!text.contains("\"meta\""));
@@ -909,7 +952,10 @@ mod tests {
         let text = extract_text_content(&result);
 
         assert!(!text.contains("\"ok\""));
-        assert!(text.contains("Diagnostics ("), "Expected markdown diagnostics header");
+        assert!(
+            text.contains("Diagnostics ("),
+            "Expected markdown diagnostics header"
+        );
         assert!(!text.contains("\"meta\""));
     }
 
@@ -956,7 +1002,10 @@ mod tests {
         let result = server.health().await.unwrap();
         let text = extract_text_content(&result);
 
-        assert!(text.contains("<!-- request:"), "Debug mode should add request ID header");
+        assert!(
+            text.contains("<!-- request:"),
+            "Debug mode should add request ID header"
+        );
     }
 
     #[tokio::test]

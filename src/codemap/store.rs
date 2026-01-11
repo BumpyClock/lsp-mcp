@@ -1119,10 +1119,11 @@ impl CodemapStore {
 }
 
 fn get_call_sites_sync(conn: &Connection, edge_id: &str) -> Vec<CallSite> {
-    let mut stmt = match conn.prepare("SELECT line, character, snippet FROM call_sites WHERE edge_id = ?") {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
+    let mut stmt =
+        match conn.prepare("SELECT line, character, snippet FROM call_sites WHERE edge_id = ?") {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
 
     stmt.query_map(params![edge_id], |row| {
         Ok(CallSite {

@@ -47,10 +47,7 @@ impl ToMarkdown for McpDefinitionResponse {
             }
 
             if let Some(ref package) = def.package {
-                output.push_str(&format!(
-                    "Package: {}@{}\n",
-                    package.name, package.version
-                ));
+                output.push_str(&format!("Package: {}@{}\n", package.name, package.version));
             }
 
             if let Some(ref_count) = def.reference_count {
@@ -219,10 +216,7 @@ fn format_related_symbols(output: &mut String, related: &RelatedSymbols) {
     }
 
     if !related.implements.is_empty() {
-        output.push_str(&format!(
-            "\nImplements ({})\n",
-            related.implements.len()
-        ));
+        output.push_str(&format!("\nImplements ({})\n", related.implements.len()));
 
         for item in &related.implements {
             output.push_str(&format!("  `{}`\n", escape_inline_code(&item.name)));
@@ -241,8 +235,12 @@ fn format_related_symbols(output: &mut String, related: &RelatedSymbols) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api_types::{CodeContext, FilePosition, FileRange, Identifier, Position, Range, Symbol};
-    use crate::service::types::response::{McpDefinitionLocation, SymbolDefinitionMatch, SymbolDefinitionResponse};
+    use crate::api_types::{
+        CodeContext, FilePosition, FileRange, Identifier, Position, Range, Symbol,
+    };
+    use crate::service::types::response::{
+        McpDefinitionLocation, SymbolDefinitionMatch, SymbolDefinitionResponse,
+    };
     use crate::service::utils::external::PackageInfo;
     use rand::Rng;
 
@@ -606,15 +604,7 @@ mod tests {
 
     #[test]
     fn it_detects_rust_language_from_extension() {
-        let def = create_full_definition(
-            "src/lib.rs",
-            10,
-            1,
-            "function",
-            "()",
-            "",
-            "fn test() {}",
-        );
+        let def = create_full_definition("src/lib.rs", 10, 1, "function", "()", "", "fn test() {}");
         let response = create_response_with_definitions("test", vec![def]);
 
         let result = response.to_markdown();
@@ -942,15 +932,7 @@ mod tests {
 
     #[test]
     fn it_detects_go_from_go_extension() {
-        let def = create_full_definition(
-            "main.go",
-            10,
-            1,
-            "function",
-            "()",
-            "",
-            "func test() {}",
-        );
+        let def = create_full_definition("main.go", 10, 1, "function", "()", "", "func test() {}");
         let response = create_response_with_definitions("test", vec![def]);
 
         let result = response.to_markdown();
@@ -1034,7 +1016,8 @@ mod tests {
         let mut response = create_response_with_definitions("testFunc", vec![def]);
         response.source_code_context = Some(vec![CodeContext {
             range: create_file_range("src/test.ts", 10, 15),
-            source_code: "export function testFunc(): void {\n  console.log('from context');\n}".to_string(),
+            source_code: "export function testFunc(): void {\n  console.log('from context');\n}"
+                .to_string(),
         }]);
 
         let result = response.to_markdown();

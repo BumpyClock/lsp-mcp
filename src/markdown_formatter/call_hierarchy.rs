@@ -20,10 +20,7 @@ impl ToMarkdown for CallHierarchyResponse {
         };
 
         let header = if preposition.is_empty() {
-            format!(
-                "{} ({} {})\n",
-                direction_label, call_count, entity_label
-            )
+            format!("{} ({} {})\n", direction_label, call_count, entity_label)
         } else {
             format!(
                 "{} {} ({} {})\n",
@@ -117,12 +114,7 @@ impl ToMarkdown for ImplementationResponse {
         let implementations_markdown: Vec<String> = self
             .implementations
             .iter()
-            .map(|impl_pos| {
-                format!(
-                    "  {}:{}",
-                    impl_pos.path, impl_pos.position.line
-                )
-            })
+            .map(|impl_pos| format!("  {}:{}", impl_pos.path, impl_pos.position.line))
             .collect();
 
         format!("{}\n{}", header, implementations_markdown.join("\n"))
@@ -383,8 +375,14 @@ mod tests {
                         },
                     },
                     range: Range {
-                        start: Position { line: 1, character: 1 },
-                        end: Position { line: 2, character: 1 },
+                        start: Position {
+                            line: 1,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 2,
+                            character: 1,
+                        },
                     },
                     detail: None,
                     external: Some(true),
@@ -477,7 +475,10 @@ mod tests {
                 file_range: FileRange {
                     path: "src/traits.rs".to_string(),
                     range: Range {
-                        start: Position { line: 10, character: 1 },
+                        start: Position {
+                            line: 10,
+                            character: 1,
+                        },
                         end: Position {
                             line: 10,
                             character: 12,
@@ -512,8 +513,14 @@ mod tests {
                 file_range: FileRange {
                     path: "src/missing.rs".to_string(),
                     range: Range {
-                        start: Position { line: 1, character: 1 },
-                        end: Position { line: 1, character: 11 },
+                        start: Position {
+                            line: 1,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 1,
+                            character: 11,
+                        },
                     },
                 },
                 kind: None,
@@ -556,8 +563,14 @@ mod tests {
                 file_range: FileRange {
                     path: "src/lib.rs".to_string(),
                     range: Range {
-                        start: Position { line: 5, character: 1 },
-                        end: Position { line: 5, character: 11 },
+                        start: Position {
+                            line: 5,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 5,
+                            character: 11,
+                        },
                     },
                 },
                 kind: Some("trait".to_string()),
@@ -594,8 +607,14 @@ mod tests {
                 file_range: FileRange {
                     path: "src/handlers.rs".to_string(),
                     range: Range {
-                        start: Position { line: 1, character: 1 },
-                        end: Position { line: 1, character: 13 },
+                        start: Position {
+                            line: 1,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 1,
+                            character: 13,
+                        },
                     },
                 },
                 kind: Some("trait".to_string()),
@@ -628,8 +647,14 @@ mod tests {
                         },
                     },
                     range: Range {
-                        start: Position { line: 1, character: 1 },
-                        end: Position { line: 10, character: 1 },
+                        start: Position {
+                            line: 1,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: 10,
+                            character: 1,
+                        },
                     },
                     detail: None,
                     external: None,

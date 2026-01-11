@@ -139,7 +139,11 @@ mod tests {
         let json = r#"{"line": 56, "character": 15}"#;
         let params: TestParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.line, 56, "line should deserialize from integer");
-        assert_eq!(params.character, Some(15), "character should deserialize from integer");
+        assert_eq!(
+            params.character,
+            Some(15),
+            "character should deserialize from integer"
+        );
     }
 
     #[test]
@@ -147,7 +151,11 @@ mod tests {
         let json = r#"{"line": "56", "character": "15"}"#;
         let params: TestParams = serde_json::from_str(json).unwrap();
         assert_eq!(params.line, 56, "line should deserialize from string");
-        assert_eq!(params.character, Some(15), "character should deserialize from string");
+        assert_eq!(
+            params.character,
+            Some(15),
+            "character should deserialize from string"
+        );
     }
 
     #[test]
@@ -161,7 +169,10 @@ mod tests {
     fn deserialize_optional_u32_missing_field() {
         let json = r#"{"line": 1}"#;
         let params: TestParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.character, None, "character should be None when missing");
+        assert_eq!(
+            params.character, None,
+            "character should be None when missing"
+        );
     }
 
     #[test]

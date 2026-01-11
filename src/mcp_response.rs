@@ -248,7 +248,12 @@ mod tests {
         assert_eq!(meta.get("mode").unwrap().as_str().unwrap(), "verbose");
         assert_eq!(meta.get("indexing").unwrap().as_str().unwrap(), "one-based");
         assert_eq!(
-            meta.get("counts").unwrap().get("symbols").unwrap().as_u64().unwrap(),
+            meta.get("counts")
+                .unwrap()
+                .get("symbols")
+                .unwrap()
+                .as_u64()
+                .unwrap(),
             1
         );
     }
@@ -283,13 +288,16 @@ mod tests {
         let response = retry_with(|| {
             let tool_name = tool_name.clone();
             let data = data.clone();
-            let handle =
-                thread::spawn(move || success_response(&tool_name, data, OutputMode::Verbose, None));
+            let handle = thread::spawn(move || {
+                success_response(&tool_name, data, OutputMode::Verbose, None)
+            });
             handle.join().ok()
         });
         let parsed: Value =
             serde_json::from_str(&response).expect("negative: response did not parse");
-        let meta = parsed.get("meta").expect("negative: meta missing from response");
+        let meta = parsed
+            .get("meta")
+            .expect("negative: meta missing from response");
         assert_eq!(
             meta.get("line_indexing").unwrap().as_str().unwrap(),
             "one-based",
@@ -322,26 +330,29 @@ mod tests {
 
     #[test]
     fn it_formats_error_with_suggestions_when_available() {
-        use crate::service::PositionError;
         use crate::api_types::{FileRange, Identifier, Position, Range};
+        use crate::service::PositionError;
 
-        let closest = vec![
-            Identifier {
-                name: "nearby_symbol".to_string(),
-                file_range: FileRange {
-                    path: "test.rs".to_string(),
-                    range: Range {
-                        start: Position { line: 5, character: 1 },
-                        end: Position { line: 5, character: 14 },
+        let closest = vec![Identifier {
+            name: "nearby_symbol".to_string(),
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position {
+                        line: 5,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 14,
                     },
                 },
-                kind: Some("function".to_string()),
             },
-        ];
+            kind: Some("function".to_string()),
+        }];
 
-        let error = ServiceError::IdentifierSelection(
-            PositionError::IdentifierNotFound { closest }
-        );
+        let error =
+            ServiceError::IdentifierSelection(PositionError::IdentifierNotFound { closest });
         let result = format_error(&error);
 
         assert!(
@@ -356,31 +367,38 @@ mod tests {
 
     #[test]
     fn it_formats_call_hierarchy_error_with_nearby_callables() {
-        use crate::service::CallHierarchyError;
         use crate::api_types::{FilePosition, FileRange, Position, Range, Symbol};
+        use crate::service::CallHierarchyError;
 
-        let nearby = vec![
-            Symbol {
-                name: "nearby_function".to_string(),
-                kind: "function".to_string(),
-                identifier_position: FilePosition {
-                    path: "test.rs".to_string(),
-                    position: Position { line: 10, character: 4 },
+        let nearby = vec![Symbol {
+            name: "nearby_function".to_string(),
+            kind: "function".to_string(),
+            identifier_position: FilePosition {
+                path: "test.rs".to_string(),
+                position: Position {
+                    line: 10,
+                    character: 4,
                 },
-                file_range: FileRange {
-                    path: "test.rs".to_string(),
-                    range: Range {
-                        start: Position { line: 10, character: 1 },
-                        end: Position { line: 15, character: 1 },
+            },
+            file_range: FileRange {
+                path: "test.rs".to_string(),
+                range: Range {
+                    start: Position {
+                        line: 10,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 15,
+                        character: 1,
                     },
                 },
-                ..Default::default()
             },
-        ];
+            ..Default::default()
+        }];
 
-        let error = ServiceError::CallHierarchy(
-            CallHierarchyError::NoItemAtPosition { nearby_callables: nearby }
-        );
+        let error = ServiceError::CallHierarchy(CallHierarchyError::NoItemAtPosition {
+            nearby_callables: nearby,
+        });
         let result = format_error(&error);
 
         assert!(
@@ -462,8 +480,14 @@ mod tests {
             file_range: FileRange {
                 path: "src/test.rs".to_string(),
                 range: Range {
-                    start: Position { line: 1, character: 1 },
-                    end: Position { line: 1, character: 6 },
+                    start: Position {
+                        line: 1,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 1,
+                        character: 6,
+                    },
                 },
             },
             kind: None,
@@ -500,13 +524,22 @@ mod tests {
             kind: "function".to_string(),
             identifier_position: FilePosition {
                 path: "test.rs".to_string(),
-                position: Position { line: 10, character: 4 },
+                position: Position {
+                    line: 10,
+                    character: 4,
+                },
             },
             file_range: FileRange {
                 path: "test.rs".to_string(),
                 range: Range {
-                    start: Position { line: 10, character: 1 },
-                    end: Position { line: 15, character: 1 },
+                    start: Position {
+                        line: 10,
+                        character: 1,
+                    },
+                    end: Position {
+                        line: 15,
+                        character: 1,
+                    },
                 },
             },
             ..Default::default()

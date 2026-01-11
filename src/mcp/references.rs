@@ -3,10 +3,10 @@
 
 use crate::api_types::Position;
 use crate::config::OutputMode;
-use crate::mcp_response::{format_response, tool_result_from_error, tool_result_success};
 use crate::markdown_formatter::format_references_summary;
-use crate::service::{LspService, ServiceError};
+use crate::mcp_response::{format_response, tool_result_from_error, tool_result_success};
 use crate::service::types::response::{ReferenceCandidate, ReferencesSelection};
+use crate::service::{LspService, ServiceError};
 use crate::utils::file_utils::normalize_path;
 use rmcp::model::CallToolResult;
 
@@ -23,7 +23,11 @@ pub async fn find_references(
 ) -> CallToolResult {
     let detail = resolve_detail(detail, context_lines, limit, offset);
     let context_lines = resolve_context_lines(detail, context_lines);
-    let (limit, offset) = if detail { (limit, offset) } else { (None, None) };
+    let (limit, offset) = if detail {
+        (limit, offset)
+    } else {
+        (None, None)
+    };
 
     let preferred_path = match path.as_deref() {
         Some(p) => match normalize_path(p) {
@@ -97,7 +101,11 @@ pub async fn find_references(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let selection_pool = if !narrowed.is_empty() { &narrowed } else { &candidates };
+    let selection_pool = if !narrowed.is_empty() {
+        &narrowed
+    } else {
+        &candidates
+    };
 
     let mut ranked: Vec<_> = selection_pool.clone();
     ranked.sort_by(|a, b| {
@@ -121,7 +129,10 @@ pub async fn find_references(
     let chosen_summary = candidate_summary(&chosen);
     let mut others: Vec<ReferenceCandidate> = all_ranked
         .into_iter()
-        .filter(|c| !(c.location.path == chosen.location.path && c.location.position == chosen.location.position))
+        .filter(|c| {
+            !(c.location.path == chosen.location.path
+                && c.location.position == chosen.location.position)
+        })
         .take(5)
         .map(|c| candidate_summary(&c))
         .collect();
@@ -208,7 +219,14 @@ fn candidate_rank_key(
     let match_score_scaled = (candidate.match_score.unwrap_or(0.0) * 1000.0) as i32;
 
     // Stable, deterministic tie-break by path.
-    (score, match_score_scaled, -((candidate.location.position.line as i32)), -((candidate.location.position.character as i32)), 0, candidate.location.path.clone())
+    (
+        score,
+        match_score_scaled,
+        -(candidate.location.position.line as i32),
+        -(candidate.location.position.character as i32),
+        0,
+        candidate.location.path.clone(),
+    )
 }
 
 fn is_external_path(path: &str) -> bool {
@@ -247,12 +265,7 @@ pub async fn find_referenced_symbols(
     let pos = Position { line, character };
     let include_externals = resolve_include_externals(externals);
     match service
-        .find_referenced_symbols(
-            &path,
-            pos,
-            full_scan.unwrap_or(false),
-            include_externals,
-        )
+        .find_referenced_symbols(&path, pos, full_scan.unwrap_or(false), include_externals)
         .await
     {
         Ok(response) => {
@@ -296,8 +309,7 @@ mod tests {
     fn it_defaults_context_lines_to_none_when_summary() {
         let resolved = resolve_context_lines(false, None);
         assert_eq!(
-            resolved,
-            None,
+            resolved, None,
             "negative: summary output must omit context lines by default"
         );
     }
@@ -339,8 +351,7 @@ mod tests {
         let explicit = rng.random_range(0..2) == 1;
         let resolved = resolve_include_externals(Some(explicit));
         assert_eq!(
-            resolved,
-            explicit,
+            resolved, explicit,
             "negative: explicit externals value must be preserved"
         );
     }

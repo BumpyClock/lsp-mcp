@@ -20,7 +20,9 @@ pub fn init_session() -> Uuid {
 /// # Panics
 /// Panics if called before `init_session()`.
 pub fn session_id() -> Uuid {
-    *SESSION_ID.get().expect("Session not initialized - call init_session() first")
+    *SESSION_ID
+        .get()
+        .expect("Session not initialized - call init_session() first")
 }
 
 /// Try to get the session ID without panicking.
@@ -57,7 +59,10 @@ mod tests {
     fn init_session_is_idempotent() {
         let id1 = init_session();
         let id2 = init_session();
-        assert_eq!(id1, id2, "Multiple calls to init_session should return same ID");
+        assert_eq!(
+            id1, id2,
+            "Multiple calls to init_session should return same ID"
+        );
     }
 
     #[test]
@@ -71,7 +76,10 @@ mod tests {
     fn request_id_header_formats_correctly() {
         let id = Uuid::parse_str("a1b2c3d4-e5f6-7890-abcd-ef1234567890").unwrap();
         let header = request_id_header(id);
-        assert_eq!(header, "<!-- request: a1b2c3d4-e5f6-7890-abcd-ef1234567890 -->\n");
+        assert_eq!(
+            header,
+            "<!-- request: a1b2c3d4-e5f6-7890-abcd-ef1234567890 -->\n"
+        );
     }
 
     #[test]
