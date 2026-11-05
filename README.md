@@ -37,6 +37,10 @@ bash scripts/install-ast-grep-rules.sh
 
 Configure your MCP client to launch the server with the project root as the working directory. The server communicates over stdio.
 
+The server watches workspace files for changes. If native file watching is unavailable, it logs a warning and polls every two seconds. File events are debounced for two seconds. The same fallback keeps the semantic search index current. Watchers stop when their owning service stops. If both backends fail, startup reports the workspace path and both errors.
+
+Language health reports `initializing` while the server reports standard LSP work in progress, including workspace loading and indexing. It reports `ready` when that work finishes. Servers that do not report work progress become ready after initialization.
+
 ## Pre-building the Semantic Search Index
 
 When semantic search is enabled, the initial indexing can be resource-intensive. To avoid slowdowns during normal MCP usage, you can pre-build the index from the command line:

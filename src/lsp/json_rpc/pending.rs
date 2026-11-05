@@ -2,8 +2,9 @@
 // ABOUTME: Manages request channels, notification routing, and method handlers
 
 use super::message::{JsonRpcError, JsonRpcMessage};
+use lsp_types::{ProgressParams, ProgressParamsValue, ProgressToken, WorkDoneProgress};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::broadcast::{channel, Receiver, Sender};
@@ -21,6 +22,7 @@ pub struct PendingRequests {
     request_channels: Arc<Mutex<HashMap<u64, Sender<JsonRpcMessage>>>>,
     notification_channels: Arc<Mutex<HashMap<ExpectedMessageKey, Sender<JsonRpcMessage>>>>,
     method_handlers: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<JsonRpcMessage>>>>,
+    work_in_progress: Arc<Mutex<HashSet<ProgressToken>>>,
 }
 
 impl PendingRequests {
@@ -29,7 +31,30 @@ impl PendingRequests {
             request_channels: Arc::new(Mutex::new(HashMap::new())),
             notification_channels: Arc::new(Mutex::new(HashMap::new())),
             method_handlers: Arc::new(Mutex::new(HashMap::new())),
+            work_in_progress: Arc::new(Mutex::new(HashSet::new())),
         }
+    }
+
+    pub async fn create_progress(&self, token: ProgressToken) {
+        self.work_in_progress.lock().await.insert(token);
+    }
+
+    pub async fn update_progress(&self, progress: ProgressParams) {
+        let ProgressParamsValue::WorkDone(value) = progress.value;
+        let mut active = self.work_in_progress.lock().await;
+        match value {
+            WorkDoneProgress::Begin(_) => {
+                active.insert(progress.token);
+            }
+            WorkDoneProgress::End(_) => {
+                active.remove(&progress.token);
+            }
+            WorkDoneProgress::Report(_) => {}
+        }
+    }
+
+    pub async fn is_loading(&self) -> bool {
+        !self.work_in_progress.lock().await.is_empty()
     }
 
     pub async fn add_request(
@@ -112,5 +137,67 @@ impl PendingRequests {
         &self,
     ) -> Arc<Mutex<HashMap<u64, Sender<JsonRpcMessage>>>> {
         self.request_channels.clone()
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    use serde_json::json;
+
+    async fn progress(pending: &PendingRequests, token: Value, value: Value) {
+        pending
+            .update_progress(
+                serde_json::from_value(json!({"token": token, "value": value})).unwrap(),
+            )
+            .await;
+    }
+
+    #[tokio::test]
+    async fn loading_ends_only_after_all_work_done_tokens_end() {
+        let pending = PendingRequests::new();
+        assert!(!pending.is_loading().await);
+        pending
+            .create_progress(ProgressToken::String("workspace".into()))
+            .await;
+        assert!(
+            pending.clone().is_loading().await,
+            "creation must mark loading before begin arrives"
+        );
+        progress(
+            &pending,
+            json!("workspace"),
+            json!({"kind": "begin", "title": "Workspace"}),
+        )
+        .await;
+        progress(
+            &pending,
+            json!(7),
+            json!({"kind": "begin", "title": "Indexing"}),
+        )
+        .await;
+        progress(
+            &pending,
+            json!(7),
+            json!({"kind": "report", "percentage": 50}),
+        )
+        .await;
+        progress(&pending, json!("workspace"), json!({"kind": "end"})).await;
+        assert!(
+            pending.is_loading().await,
+            "overlapping work must keep loading active"
+        );
+        progress(&pending, json!(7), json!({"kind": "end"})).await;
+        assert!(!pending.is_loading().await);
+        progress(
+            &pending,
+            json!("refresh"),
+            json!({"kind": "begin", "title": "Reloading"}),
+        )
+        .await;
+        assert!(
+            pending.is_loading().await,
+            "workspace reloads must report loading again"
+        );
     }
 }

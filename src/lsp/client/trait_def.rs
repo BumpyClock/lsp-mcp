@@ -14,9 +14,10 @@ use lsp_types::{
     ClientCapabilities, CodeActionContext, CodeActionOrCommand, CodeActionParams,
     DidOpenTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
     GotoDefinitionResponse, InitializeParams, InitializeResult, Location, PartialResultParams,
-    Position, PublishDiagnosticsParams, Range, ReferenceContext, ReferenceParams, SelectionRange,
-    SelectionRangeParams, SignatureHelp, SignatureHelpParams, TextDocumentIdentifier,
-    TextDocumentItem, TextDocumentPositionParams, Url, WorkDoneProgressParams, WorkspaceFolder,
+    Position, ProgressParams, PublishDiagnosticsParams, Range, ReferenceContext, ReferenceParams,
+    SelectionRange, SelectionRangeParams, SignatureHelp, SignatureHelpParams,
+    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
+    WorkDoneProgressCreateParams, WorkDoneProgressParams, WorkspaceFolder,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -110,7 +111,33 @@ pub trait LspClient: Send {
                 match process.receive().await {
                     Ok(raw_response) => {
                         if let Ok(message) = json_rpc.parse_message(&raw_response) {
-                            if let Some(id) = message.id {
+                            if message.method.as_deref() == Some("window/workDoneProgress/create") {
+                                match serde_json::from_value::<WorkDoneProgressCreateParams>(
+                                    message.params.clone().unwrap_or_default(),
+                                ) {
+                                    Ok(params) => {
+                                        pending_requests.create_progress(params.token).await
+                                    }
+                                    Err(e) => error!("Invalid work progress creation: {e}"),
+                                }
+                            } else if message.method.as_deref() == Some("$/progress") {
+                                match serde_json::from_value::<ProgressParams>(
+                                    message.params.clone().unwrap_or_default(),
+                                ) {
+                                    Ok(params) => pending_requests.update_progress(params).await,
+                                    Err(e) => error!("Invalid work progress notification: {e}"),
+                                }
+                            }
+                            // Servers and clients have independent request ID sequences.
+                            if let Some(id) = message.id.filter(|_| message.method.is_some()) {
+                                let response = json_rpc.create_success_response(id);
+                                let message = format!(
+                                    "Content-Length: {}\r\n\r\n{}",
+                                    response.len(),
+                                    response
+                                );
+                                let _ = process.send(&message).await;
+                            } else if let Some(id) = message.id {
                                 debug!("Received response for request {}", id);
                                 if let Ok(Some(sender)) = pending_requests.remove_request(id).await
                                 {
@@ -118,18 +145,7 @@ pub trait LspClient: Send {
                                         error!("Failed to send response for request {}", id);
                                     }
                                 } else {
-                                    debug!(
-                                        "Responding to server message {} - Message: {:?}",
-                                        id, message
-                                    );
-                                    let response = json_rpc.create_success_response(id);
-
-                                    let message = format!(
-                                        "Content-Length: {}\r\n\r\n{}",
-                                        response.len(),
-                                        response
-                                    );
-                                    let _ = process.send(&message).await;
+                                    debug!("Ignoring response for completed request {}", id);
                                 }
                             } else if let Some(method) = message.method.as_ref() {
                                 if pending_requests
@@ -852,3 +868,7 @@ pub trait LspClient: Send {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "trait_tests.rs"]
+mod tests;

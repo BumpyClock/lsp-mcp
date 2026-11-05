@@ -237,6 +237,8 @@ impl SemanticSearchManager {
             warn!("Enrichment enabled but OpenAI configuration is unavailable");
         }
 
+        self.start_watcher(shutdown_tx.subscribe()).await?;
+
         let index_state = store.get_state().await?;
         let completed_at = store.get_index_completed_at().await?;
         let mut requires_rebuild =
@@ -250,7 +252,6 @@ impl SemanticSearchManager {
                 };
                 info!(chunks = stats.chunk_count, "Loaded existing semantic index");
 
-                self.start_watcher(shutdown_tx.subscribe()).await?;
                 return Ok(());
             }
         }
@@ -322,7 +323,6 @@ impl SemanticSearchManager {
                     };
                 }
 
-                self.start_watcher(shutdown_tx.subscribe()).await?;
                 return Ok(());
             }
 
@@ -404,9 +404,6 @@ impl SemanticSearchManager {
             }
         });
 
-        // Start file watcher
-        self.start_watcher(shutdown_tx.subscribe()).await?;
-
         Ok(())
     }
 
@@ -446,7 +443,16 @@ impl SemanticSearchManager {
             Arc::clone(&self.state),
             chunk_config,
             shutdown_rx,
-        )?;
+        );
+        let watcher = match watcher {
+            Ok(watcher) => watcher,
+            Err(error) => {
+                *self.state.write().await = SemanticSearchState::Error {
+                    message: error.to_string(),
+                };
+                return Err(error);
+            }
+        };
 
         // start() takes ownership of watcher - it runs in a background task
         watcher.start();

@@ -11,13 +11,13 @@ use crate::config::LspMcpConfig;
 use crate::lsp::client::LspClient;
 use crate::utils::file_utils::uri_to_relative_path_string;
 use crate::utils::file_utils::{absolute_path_to_relative_path_string, detect_language};
+use crate::utils::file_watcher::FileWatcher;
 use crate::utils::workspace_documents::{DidOpenConfiguration, WorkspaceDocuments};
 use log::{debug, error, info, warn};
 use lsp_types::{
     DocumentSymbolResponse, GotoDefinitionResponse, Location, Position, Range, SelectionRange, Url,
 };
-use notify::RecursiveMode;
-use notify_debouncer_mini::{new_debouncer, DebounceEventResult, DebouncedEvent};
+use notify_debouncer_mini::{DebounceEventResult, DebouncedEvent};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::path::Path;
@@ -37,29 +37,26 @@ pub struct Manager {
     pending_clients: Arc<Mutex<HashSet<SupportedLanguages>>>,
     watch_events_sender: Sender<DebouncedEvent>,
     ast_grep: AstGrepClient,
+    _watcher: FileWatcher,
 }
 
 impl Manager {
     pub async fn new(root_path: &str) -> Result<Self, Box<dyn Error>> {
         let (tx, _) = channel(100);
         let event_sender = tx.clone();
-        let mut debouncer = new_debouncer(
+        let root = Path::new(root_path);
+        let watcher = FileWatcher::new(
+            root,
             Duration::from_secs(2),
             move |res: DebounceEventResult| match res {
                 Ok(events) => {
                     for event in events {
-                        let _ = tx.send(event.clone());
+                        let _ = tx.send(event);
                     }
                 }
                 Err(e) => error!("Debounce error: {:?}", e),
             },
-        )
-        .expect("Failed to create debouncer");
-
-        debouncer
-            .watcher()
-            .watch(Path::new(root_path), RecursiveMode::Recursive)
-            .expect("Failed to watch path");
+        )?;
 
         let ast_grep = AstGrepClient::new();
         Ok(Self {
@@ -67,6 +64,7 @@ impl Manager {
             pending_clients: Arc::new(Mutex::new(HashSet::new())),
             watch_events_sender: event_sender,
             ast_grep,
+            _watcher: watcher,
         })
     }
 

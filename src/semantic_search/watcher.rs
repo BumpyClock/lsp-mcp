@@ -8,9 +8,9 @@ use super::indexer::Indexer;
 use super::manager::{SemanticSearchError, SemanticSearchState};
 use super::vector_store::{HnswVectorStore, VectorStore};
 use crate::config::SemanticSearchConfig;
+use crate::utils::file_watcher::FileWatcher;
 use glob::Pattern;
-use notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
+use notify_debouncer_mini::DebounceEventResult;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,11 +34,8 @@ pub struct SemanticWatcher {
     state: Arc<RwLock<SemanticSearchState>>,
     chunk_config: ChunkConfig,
     shutdown_rx: broadcast::Receiver<()>,
-    /// Channel for file change events
-    change_tx: mpsc::Sender<PathBuf>,
-    change_rx: Option<mpsc::Receiver<PathBuf>>,
-    /// File watcher handle
-    _debouncer: Option<Debouncer<RecommendedWatcher>>,
+    change_rx: mpsc::Receiver<PathBuf>,
+    watcher: FileWatcher,
 }
 
 impl SemanticWatcher {
@@ -55,6 +52,37 @@ impl SemanticWatcher {
     ) -> Result<Self, SemanticSearchError> {
         let (change_tx, change_rx) = mpsc::channel(1000);
 
+        let config_for_callback = config.clone();
+        let root_for_callback = workspace_root.clone();
+        let runtime = tokio::runtime::Handle::current();
+        let watcher = FileWatcher::new(
+            &workspace_root,
+            DEBOUNCE_DURATION,
+            move |result: DebounceEventResult| match result {
+                Ok(events) => {
+                    for event in events {
+                        if event.path.is_dir()
+                            || !Self::should_index_file_static(
+                                &event.path,
+                                &root_for_callback,
+                                &config_for_callback,
+                            )
+                        {
+                            continue;
+                        }
+                        let tx = change_tx.clone();
+                        runtime.spawn(async move {
+                            let _ = tx.send(event.path).await;
+                        });
+                    }
+                }
+                Err(error) => warn!(?error, "Semantic file watching failed"),
+            },
+        )
+        .map_err(|error| {
+            SemanticSearchError::IndexError(format!("Failed to watch workspace: {error}"))
+        })?;
+
         Ok(Self {
             config,
             workspace_root,
@@ -64,104 +92,26 @@ impl SemanticWatcher {
             state,
             chunk_config,
             shutdown_rx,
-            change_tx,
-            change_rx: Some(change_rx),
-            _debouncer: None,
+            change_rx,
+            watcher,
         })
     }
 
     /// Start watching for file changes.
-    pub fn start(mut self) {
-        let config = self.config.clone();
-        let workspace_root = self.workspace_root.clone();
-        let store = self.store.clone();
-        let processor = self.processor.clone();
-        let enricher = self.enricher.clone();
-        let state = self.state.clone();
-        let chunk_config = self.chunk_config.clone();
-        let shutdown_rx = self.shutdown_rx;
-        let runtime = tokio::runtime::Handle::current();
-
-        // Take ownership of the receiver
-        let change_rx = self.change_rx.take().expect("change_rx already taken");
-        let change_tx = self.change_tx.clone();
-
-        // Start the notify watcher in a separate thread
-        let workspace_for_watcher = workspace_root.clone();
-        let workspace_for_processor = workspace_root.clone();
-        let config_clone = config.clone();
-
-        std::thread::spawn(move || {
-            let tx_clone = change_tx.clone();
-            let config_ref = config_clone.clone();
-            let workspace_for_callback = workspace_for_watcher.clone();
-
-            let debouncer_result = new_debouncer(
-                DEBOUNCE_DURATION,
-                move |res: Result<Vec<DebouncedEvent>, _>| {
-                    if let Ok(events) = res {
-                        for event in events {
-                            let path = &event.path;
-
-                            // Skip directories
-                            if path.is_dir() {
-                                continue;
-                            }
-
-                            // Skip if not a matching file
-                            if !Self::should_index_file_static(
-                                path,
-                                &workspace_for_callback,
-                                &config_ref,
-                            ) {
-                                continue;
-                            }
-
-                            let tx = tx_clone.clone();
-                            let path = path.clone();
-                            runtime.spawn(async move {
-                                let _ = tx.send(path).await;
-                            });
-                        }
-                    }
-                },
-            );
-
-            match debouncer_result {
-                Ok(mut debouncer) => {
-                    if let Err(e) = debouncer
-                        .watcher()
-                        .watch(&workspace_for_watcher, RecursiveMode::Recursive)
-                    {
-                        warn!(error = %e, "Failed to watch workspace");
-                        return;
-                    }
-
-                    info!("Started semantic search file watcher");
-
-                    // Keep the watcher alive
-                    loop {
-                        std::thread::park();
-                    }
-                }
-                Err(e) => {
-                    warn!(error = %e, "Failed to create debouncer");
-                }
-            }
-        });
-
-        // Spawn batch processor
+    pub fn start(self) {
         tokio::spawn(async move {
+            let _watcher = self.watcher;
+            info!("Started semantic search file watcher");
             Self::run_batch_processor(
-                config,
-                workspace_for_processor,
-                store,
-                processor,
-                enricher,
-                state,
-                chunk_config,
-                change_rx,
-                shutdown_rx,
+                self.config,
+                self.workspace_root,
+                self.store,
+                self.processor,
+                self.enricher,
+                self.state,
+                self.chunk_config,
+                self.change_rx,
+                self.shutdown_rx,
             )
             .await;
         });
@@ -292,5 +242,111 @@ impl SemanticWatcher {
         }
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::semantic_search::embedder::{BatchConfig, EmbedderError, EmbeddingProvider};
+
+    struct TestEmbeddings;
+
+    #[async_trait::async_trait]
+    impl EmbeddingProvider for TestEmbeddings {
+        async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError> {
+            Ok(texts.iter().map(|_| vec![1.0; 4]).collect())
+        }
+        fn dimension(&self) -> usize {
+            4
+        }
+        fn name(&self) -> &str {
+            "test"
+        }
+    }
+
+    async fn wait_for_hash(store: &HnswVectorStore, previous: Option<&str>) -> String {
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                if let Some(hash) = store.get_file_hash("watched.rs").await.unwrap() {
+                    if Some(hash.as_str()) != previous {
+                        return hash;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("file events must update the semantic index")
+    }
+
+    #[tokio::test]
+    async fn semantic_watcher_indexes_file_creation_and_modification() {
+        let root = tempfile::tempdir().unwrap();
+        let index = tempfile::tempdir().unwrap();
+        let store = Arc::new(HnswVectorStore::new(index.path(), 4).await.unwrap());
+        let processor = Arc::new(BatchProcessor::new(
+            Arc::new(TestEmbeddings),
+            BatchConfig::default(),
+        ));
+        let (shutdown, rx) = broadcast::channel(1);
+        let state = Arc::new(RwLock::new(SemanticSearchState::Ready { total_chunks: 0 }));
+        let watcher = SemanticWatcher::new(
+            SemanticSearchConfig::default_enabled(),
+            root.path().to_path_buf(),
+            store.clone(),
+            processor,
+            None,
+            state,
+            ChunkConfig::default(),
+            rx,
+        )
+        .unwrap();
+        watcher.start();
+        let path = root.path().join("watched.rs");
+        std::fs::write(&path, "pub fn original() -> &'static str { \"a sufficiently long function for semantic indexing\" }\n").unwrap();
+        let first = wait_for_hash(&store, None).await;
+        std::fs::write(&path, "pub fn modified() -> &'static str { \"different content must replace the previous indexed function\" }\n").unwrap();
+        wait_for_hash(&store, Some(&first)).await;
+        std::fs::remove_file(&path).unwrap();
+        tokio::time::timeout(Duration::from_secs(20), async {
+            while !store
+                .get_file_hashes("watched.rs")
+                .await
+                .unwrap()
+                .is_empty()
+            {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("deleted files must leave the semantic index");
+        shutdown.send(()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn semantic_watcher_rejects_a_missing_workspace() {
+        let root = tempfile::tempdir().unwrap();
+        let index = tempfile::tempdir().unwrap();
+        let store = Arc::new(HnswVectorStore::new(index.path(), 4).await.unwrap());
+        let processor = Arc::new(BatchProcessor::new(
+            Arc::new(TestEmbeddings),
+            BatchConfig::default(),
+        ));
+        let (_shutdown, rx) = broadcast::channel(1);
+        let result = SemanticWatcher::new(
+            SemanticSearchConfig::default_enabled(),
+            root.path().join("missing"),
+            store,
+            processor,
+            None,
+            Arc::new(RwLock::new(SemanticSearchState::Initializing)),
+            ChunkConfig::default(),
+            rx,
+        );
+        assert!(
+            result.is_err(),
+            "watcher failure must propagate to its caller"
+        );
     }
 }

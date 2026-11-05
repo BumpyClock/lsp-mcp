@@ -207,8 +207,18 @@ impl LspService {
             SupportedLanguages::Golang,
             SupportedLanguages::PHP,
         ] {
-            let status = if self.manager.get_client(lang).await.is_some() {
-                LspStatus::Ready
+            let status = if let Some(client) = self.manager.get_client(lang).await {
+                if client
+                    .lock()
+                    .await
+                    .get_pending_requests()
+                    .is_loading()
+                    .await
+                {
+                    LspStatus::Initializing
+                } else {
+                    LspStatus::Ready
+                }
             } else if self.manager.is_language_pending(lang).await {
                 LspStatus::Initializing
             } else {

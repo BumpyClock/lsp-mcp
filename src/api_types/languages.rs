@@ -18,7 +18,7 @@ pub struct ErrorResponse {
 pub enum LspStatus {
     /// Language server is available and ready
     Ready,
-    /// Language server is starting up in the background
+    /// Language server is starting up or reports work in progress
     Initializing,
     /// Language server is not available (not installed or failed to start)
     Unavailable,

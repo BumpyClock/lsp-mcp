@@ -12,6 +12,10 @@ use lsp_types::{
 /// Creates default client capabilities for LSP initialization
 pub fn create_default_capabilities() -> ClientCapabilities {
     let mut capabilities = ClientCapabilities::default();
+    capabilities.window = Some(lsp_types::WindowClientCapabilities {
+        work_done_progress: Some(true),
+        ..Default::default()
+    });
     capabilities.text_document = Some(TextDocumentClientCapabilities {
         document_symbol: Some(DocumentSymbolClientCapabilities {
             dynamic_registration: Some(false),
