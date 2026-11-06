@@ -5,6 +5,7 @@ use crate::api_types::{
     Diagnostic, DiagnosticSeverity, DiagnosticsResponse, FileDiagnostics, SeverityCounts,
 };
 use crate::lsp::manager::Manager;
+use futures::stream::{self, StreamExt};
 use std::sync::Arc;
 
 use crate::service::types::errors::ServiceError;
@@ -22,39 +23,49 @@ pub(crate) async fn get_diagnostics_impl(
     let mut files: Vec<FileDiagnostics> = Vec::new();
     let mut by_severity = SeverityCounts::default();
 
-    for (path, lsp_diagnostics) in raw_diagnostics {
-        let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    let mut enriched_files = stream::iter(raw_diagnostics)
+        .map(|(path, lsp_diagnostics)| async move {
+            let mut by_severity = SeverityCounts::default();
+            let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
-        for lsp_diag in lsp_diagnostics {
-            let lsp_range = lsp_diag.range;
-            let lsp_diag_clone = lsp_diag.clone();
-            let mut diag = Diagnostic::from(lsp_diag);
+            for lsp_diag in lsp_diagnostics {
+                let lsp_range = lsp_diag.range;
+                let lsp_diag_clone = lsp_diag.clone();
+                let mut diag = Diagnostic::from(lsp_diag);
 
-            match diag.severity {
-                Some(DiagnosticSeverity::Error) => by_severity.error += 1,
-                Some(DiagnosticSeverity::Warning) => by_severity.warning += 1,
-                Some(DiagnosticSeverity::Information) => by_severity.info += 1,
-                Some(DiagnosticSeverity::Hint) => by_severity.hint += 1,
-                None => {}
+                match diag.severity {
+                    Some(DiagnosticSeverity::Error) => by_severity.error += 1,
+                    Some(DiagnosticSeverity::Warning) => by_severity.warning += 1,
+                    Some(DiagnosticSeverity::Information) => by_severity.info += 1,
+                    Some(DiagnosticSeverity::Hint) => by_severity.hint += 1,
+                    None => {}
+                }
+
+                if let Ok(Some(actions)) = manager
+                    .code_action(&path, lsp_range, vec![lsp_diag_clone])
+                    .await
+                {
+                    diag.has_quick_fix = actions.iter().any(|action| match action {
+                        lsp_types::CodeActionOrCommand::CodeAction(ca) => ca
+                            .kind
+                            .as_ref()
+                            .is_some_and(|k| k.as_str().starts_with("quickfix")),
+                        lsp_types::CodeActionOrCommand::Command(_) => false,
+                    });
+                }
+
+                diagnostics.push(diag);
             }
 
-            if let Ok(Some(actions)) = manager
-                .code_action(&path, lsp_range, vec![lsp_diag_clone])
-                .await
-            {
-                diag.has_quick_fix = actions.iter().any(|action| match action {
-                    lsp_types::CodeActionOrCommand::CodeAction(ca) => ca
-                        .kind
-                        .as_ref()
-                        .is_some_and(|k| k.as_str().starts_with("quickfix")),
-                    lsp_types::CodeActionOrCommand::Command(_) => false,
-                });
-            }
-
-            diagnostics.push(diag);
-        }
-
-        files.push(FileDiagnostics { path, diagnostics });
+            (FileDiagnostics { path, diagnostics }, by_severity)
+        })
+        .buffer_unordered(8);
+    while let Some((file, counts)) = enriched_files.next().await {
+        by_severity.error += counts.error;
+        by_severity.warning += counts.warning;
+        by_severity.info += counts.info;
+        by_severity.hint += counts.hint;
+        files.push(file);
     }
 
     files.sort_by(|a, b| a.path.cmp(&b.path));

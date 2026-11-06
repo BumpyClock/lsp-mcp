@@ -5,14 +5,16 @@ use crate::api_types::{
     CodeContext, FilePosition, FileRange, Identifier, ImplementationResponse, Position, Range,
     RelatedSymbols, Symbol,
 };
+use crate::ast_grep::types::SymbolLookup;
 use crate::lsp::manager::Manager;
 use crate::utils::external_file::{is_external_path, read_file_range};
 use crate::utils::file_utils::uri_to_relative_path_string;
+use futures::stream::{self, StreamExt};
 use lsp_types::{
     DocumentSymbol, DocumentSymbolResponse, GotoDefinitionResponse, Location,
     Position as LspPosition, Range as LspRange, SelectionRange, SymbolKind,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::service::types::errors::{PositionError, ServiceError};
@@ -586,38 +588,48 @@ async fn rank_definition_locations(
     workspace_files: &[String],
 ) -> Vec<Location> {
     let workspace_set: HashSet<&str> = workspace_files.iter().map(|s| s.as_str()).collect();
-    let mut candidates = Vec::with_capacity(locations.len());
-
-    for (index, location) in locations.into_iter().enumerate() {
-        let path = uri_to_relative_path_string(&location.uri);
-        let is_external = ExternalInfo::from_path(&path).is_some()
-            || (!workspace_set.is_empty() && !workspace_set.contains(path.as_str()));
-        let line_span = if is_external {
-            0
-        } else {
-            manager
-                .get_symbol_from_position(&path, &location.range.start)
-                .await
-                .ok()
-                .map(|symbol| {
-                    symbol
-                        .file_range
-                        .range
-                        .end
-                        .line
-                        .saturating_sub(symbol.file_range.range.start.line)
-                })
-                .unwrap_or(0)
-        };
-        candidates.push(DefinitionCandidate {
-            location,
-            path,
-            is_external,
-            line_span,
-            original_index: index,
-        });
+    let mut candidates: Vec<_> = locations
+        .into_iter()
+        .enumerate()
+        .map(|(index, location)| {
+            let path = uri_to_relative_path_string(&location.uri);
+            let is_external = ExternalInfo::from_path(&path).is_some()
+                || (!workspace_set.is_empty() && !workspace_set.contains(path.as_str()));
+            DefinitionCandidate {
+                location,
+                path,
+                is_external,
+                line_span: 0,
+                original_index: index,
+            }
+        })
+        .collect();
+    let lookups: Vec<_> = candidates
+        .iter()
+        .filter(|candidate| !candidate.is_external)
+        .map(|candidate| SymbolLookup {
+            path: candidate.path.clone(),
+            position: candidate.location.range.start,
+        })
+        .collect();
+    let symbols = manager.get_symbols_from_positions(&lookups).await;
+    for (candidate, symbol) in candidates
+        .iter_mut()
+        .filter(|candidate| !candidate.is_external)
+        .zip(symbols)
+    {
+        candidate.line_span = symbol
+            .ok()
+            .map(|symbol| {
+                symbol
+                    .file_range
+                    .range
+                    .end
+                    .line
+                    .saturating_sub(symbol.file_range.range.start.line)
+            })
+            .unwrap_or(0);
     }
-
     sort_definition_candidates(candidates)
 }
 
@@ -972,38 +984,56 @@ pub(crate) async fn find_definition_impl(
         None
     };
 
-    let mut definition_items = Vec::with_capacity(definition_locations.len());
-    let mut first_definition_path: Option<String> = None;
-    for (index, location) in definition_locations.into_iter().enumerate() {
-        let path = uri_to_relative_path_string(&location.uri);
-        let is_external = !workspace_files.contains(&path);
-
-        if index == 0 {
-            first_definition_path = Some(path.clone());
-        }
-
-        let (symbol, reference_count) = if is_external {
-            (None, None)
-        } else {
-            let symbol = manager
-                .get_symbol_from_position(&path, &location.range.start)
-                .await
-                .ok();
-            let ref_count = count_references_impl(manager, &path, &location.range.start).await;
-            (symbol, ref_count)
-        };
-
-        let (signature, doc) = fetch_hover_info_impl(manager, &path, &location.range.start).await;
-
-        definition_items.push(definition_item_from_location(
-            &location,
-            symbol,
-            None, // snippets removed - source_code_context provides full context
-            signature,
-            doc,
-            reference_count,
-        ));
-    }
+    let first_definition_path = definition_locations
+        .first()
+        .map(|location| uri_to_relative_path_string(&location.uri));
+    let lookups: Vec<_> = definition_locations
+        .iter()
+        .filter_map(|location| {
+            let path = uri_to_relative_path_string(&location.uri);
+            workspace_files.contains(&path).then_some(SymbolLookup {
+                path,
+                position: location.range.start,
+            })
+        })
+        .collect();
+    let (symbols, enrichment) = tokio::join!(manager.get_symbols_from_positions(&lookups), async {
+        stream::iter(definition_locations.clone())
+            .map(|location| {
+                let workspace_files = &workspace_files;
+                async move {
+                    let path = uri_to_relative_path_string(&location.uri);
+                    let reference_count = if workspace_files.contains(&path) {
+                        count_references_impl(manager, &path, &location.range.start).await
+                    } else {
+                        None
+                    };
+                    let hover = fetch_hover_info_impl(manager, &path, &location.range.start).await;
+                    (reference_count, hover)
+                }
+            })
+            .buffered(8)
+            .boxed()
+            .collect::<Vec<_>>()
+            .await
+    });
+    let mut symbols = symbols.into_iter();
+    let definition_items = definition_locations
+        .into_iter()
+        .zip(enrichment)
+        .map(|(location, (reference_count, (signature, doc)))| {
+            let path = uri_to_relative_path_string(&location.uri);
+            let symbol = if workspace_files.contains(&path) {
+                symbols
+                    .next()
+                    .expect("one batch result per workspace definition")
+                    .ok()
+            } else {
+                None
+            };
+            definition_item_from_location(&location, symbol, None, signature, doc, reference_count)
+        })
+        .collect();
 
     let related = compute_related_symbols(
         manager,
@@ -1127,11 +1157,10 @@ pub(crate) async fn fetch_definition_source_code(
     manager: &Manager,
     definitions: &[Location],
 ) -> Result<Vec<CodeContext>, ServiceError> {
-    let mut code_contexts = Vec::new();
-
     // Separate external paths (handle immediately) from workspace paths (batch by file)
     let mut external_definitions: Vec<&Location> = Vec::new();
-    let mut workspace_by_file: HashMap<String, Vec<&Location>> = HashMap::new();
+    let mut workspace_by_file: std::collections::BTreeMap<String, Vec<&Location>> =
+        std::collections::BTreeMap::new();
 
     for definition in definitions.iter() {
         let relative_path = uri_to_relative_path_string(&definition.uri);
@@ -1145,110 +1174,142 @@ pub(crate) async fn fetch_definition_source_code(
         }
     }
 
-    // Process external definitions (no ast-grep, just read file ranges)
-    for definition in external_definitions {
-        let relative_path = uri_to_relative_path_string(&definition.uri);
-        let start_line = definition.range.start.line.saturating_sub(3);
-        let end_line = definition.range.end.line.saturating_add(10);
+    let external_contexts = async {
+        let mut code_contexts = Vec::new();
+        let mut external_contexts = stream::iter(external_definitions)
+            .map(|definition| async move {
+                let relative_path = uri_to_relative_path_string(&definition.uri);
+                let start_line = definition.range.start.line.saturating_sub(3);
+                let end_line = definition.range.end.line.saturating_add(10);
 
-        match read_file_range(&relative_path, start_line, end_line).await {
-            Ok(source_code) => {
-                code_contexts.push(CodeContext {
-                    range: FileRange {
-                        path: relative_path,
-                        range: Range {
-                            start: Position {
-                                line: start_line + 1,
-                                character: 1,
-                            },
-                            end: Position {
-                                line: end_line + 1,
-                                character: 1,
-                            },
-                        },
-                    },
-                    source_code: truncate_source_code(&source_code, MAX_SOURCE_CODE_LINES),
-                });
-            }
-            Err(e) => {
-                warn!("Failed to read external file {}: {}", relative_path, e);
-            }
-        }
-    }
-
-    // Process workspace definitions batched by file (one ast-grep call per unique file)
-    for (relative_path, file_definitions) in workspace_by_file {
-        // Call ast-grep once for this file
-        let file_symbols = match manager.definitions_in_file_ast_grep(&relative_path).await {
-            Ok(symbols) => Some(symbols),
-            Err(err) if err.is_ast_grep_missing() => None,
-            Err(err) => return Err(err.into()),
-        };
-
-        for definition in file_definitions {
-            let symbol = file_symbols.as_ref().and_then(|symbols| {
-                symbols.iter().find(|s| {
-                    s.get_identifier_range().start.line == definition.range.start.line
-                        && s.get_identifier_range().start.column == definition.range.start.character
-                })
-            });
-
-            let source_code_context = match symbol {
-                Some(ast_grep_match) => CodeContext {
-                    range: FileRange {
-                        path: relative_path.clone(),
-                        range: Range {
-                            start: Position {
-                                line: ast_grep_match.get_context_range().start.line + 1,
-                                character: ast_grep_match.get_context_range().start.column + 1,
-                            },
-                            end: Position {
-                                line: ast_grep_match.get_context_range().end.line + 1,
-                                character: ast_grep_match.get_context_range().end.column + 1,
-                            },
-                        },
-                    },
-                    source_code: truncate_source_code(
-                        &ast_grep_match.get_source_code(),
-                        MAX_SOURCE_CODE_LINES,
-                    ),
-                },
-                None => {
-                    let range = LspRange {
-                        start: LspPosition {
-                            line: definition.range.start.line.saturating_sub(3),
-                            character: 0,
-                        },
-                        end: LspPosition {
-                            line: definition.range.end.line + 3,
-                            character: 0,
-                        },
-                    };
-                    let source_code = manager
-                        .read_source_code(&relative_path, Some(range))
-                        .await?;
-                    CodeContext {
+                match read_file_range(&relative_path, start_line, end_line).await {
+                    Ok(source_code) => Some(CodeContext {
                         range: FileRange {
-                            path: relative_path.clone(),
+                            path: relative_path,
                             range: Range {
                                 start: Position {
-                                    line: definition.range.start.line.saturating_sub(3) + 1,
+                                    line: start_line + 1,
                                     character: 1,
                                 },
                                 end: Position {
-                                    line: definition.range.end.line + 3 + 1,
+                                    line: end_line + 1,
                                     character: 1,
                                 },
                             },
                         },
                         source_code: truncate_source_code(&source_code, MAX_SOURCE_CODE_LINES),
+                    }),
+                    Err(e) => {
+                        warn!("Failed to read external file {}: {}", relative_path, e);
+                        None
                     }
                 }
-            };
-
-            code_contexts.push(source_code_context);
+            })
+            .buffered(8)
+            .boxed();
+        while let Some(context) = external_contexts.next().await {
+            if let Some(context) = context {
+                code_contexts.push(context);
+            }
         }
-    }
+
+        code_contexts
+    };
+
+    let workspace_contexts = async {
+        let mut code_contexts = Vec::new();
+        let mut workspace_contexts = stream::iter(workspace_by_file)
+            .map(|(relative_path, file_definitions)| async move {
+                let mut file_contexts = Vec::new();
+                // Call ast-grep once for this file
+                let file_symbols = match manager.definitions_in_file_ast_grep(&relative_path).await
+                {
+                    Ok(symbols) => Some(symbols),
+                    Err(err) if err.is_ast_grep_missing() => None,
+                    Err(err) => return Err(err.into()),
+                };
+
+                for definition in file_definitions {
+                    let symbol = file_symbols.as_ref().and_then(|symbols| {
+                        symbols.iter().find(|s| {
+                            s.get_identifier_range().start.line == definition.range.start.line
+                                && s.get_identifier_range().start.column
+                                    == definition.range.start.character
+                        })
+                    });
+
+                    let source_code_context = match symbol {
+                        Some(ast_grep_match) => CodeContext {
+                            range: FileRange {
+                                path: relative_path.clone(),
+                                range: Range {
+                                    start: Position {
+                                        line: ast_grep_match.get_context_range().start.line + 1,
+                                        character: ast_grep_match.get_context_range().start.column
+                                            + 1,
+                                    },
+                                    end: Position {
+                                        line: ast_grep_match.get_context_range().end.line + 1,
+                                        character: ast_grep_match.get_context_range().end.column
+                                            + 1,
+                                    },
+                                },
+                            },
+                            source_code: truncate_source_code(
+                                &ast_grep_match.get_source_code(),
+                                MAX_SOURCE_CODE_LINES,
+                            ),
+                        },
+                        None => {
+                            let range = LspRange {
+                                start: LspPosition {
+                                    line: definition.range.start.line.saturating_sub(3),
+                                    character: 0,
+                                },
+                                end: LspPosition {
+                                    line: definition.range.end.line + 3,
+                                    character: 0,
+                                },
+                            };
+                            let source_code = manager
+                                .read_source_code(&relative_path, Some(range))
+                                .await?;
+                            CodeContext {
+                                range: FileRange {
+                                    path: relative_path.clone(),
+                                    range: Range {
+                                        start: Position {
+                                            line: definition.range.start.line.saturating_sub(3) + 1,
+                                            character: 1,
+                                        },
+                                        end: Position {
+                                            line: definition.range.end.line + 3 + 1,
+                                            character: 1,
+                                        },
+                                    },
+                                },
+                                source_code: truncate_source_code(
+                                    &source_code,
+                                    MAX_SOURCE_CODE_LINES,
+                                ),
+                            }
+                        }
+                    };
+
+                    file_contexts.push(source_code_context);
+                }
+                Ok::<_, ServiceError>(file_contexts)
+            })
+            .buffered(8)
+            .boxed();
+        while let Some(contexts) = workspace_contexts.next().await {
+            code_contexts.extend(contexts?);
+        }
+        Ok::<_, ServiceError>(code_contexts)
+    };
+    let (mut code_contexts, workspace_contexts) =
+        tokio::join!(external_contexts, workspace_contexts);
+    code_contexts.extend(workspace_contexts?);
 
     Ok(code_contexts)
 }
@@ -1297,6 +1358,100 @@ mod tests {
     use rand::{distr::Alphanumeric, Rng};
     use std::fs;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn multifile_definition_ranking_keeps_spans_fallbacks_and_duplicates() {
+        let workspace = TempDir::new().unwrap();
+        let _context =
+            crate::test_utils::TestContext::setup(workspace.path().to_str().unwrap(), false)
+                .await
+                .unwrap();
+        fs::write(workspace.path().join("a.rs"), "fn short() {}\n").unwrap();
+        fs::write(
+            workspace.path().join("long.rs"),
+            "fn large() {\n    let value = 1;\n    value;\n}\n",
+        )
+        .unwrap();
+        let manager = Arc::new(
+            Manager::new(workspace.path().to_str().unwrap())
+                .await
+                .unwrap(),
+        );
+        let paths = ["outside.rs", "z.rs", "a.rs", "long.rs", "long.rs"];
+        let locations: Vec<_> = paths
+            .iter()
+            .map(|path| Location {
+                uri: Url::from_file_path(workspace.path().join(path)).unwrap(),
+                range: LspRange::new(LspPosition::new(0, 3), LspPosition::new(0, 8)),
+            })
+            .collect();
+        let workspace_files = vec!["a.rs".into(), "z.rs".into(), "long.rs".into()];
+        let ranked = rank_definition_locations(&manager, locations, &workspace_files).await;
+        let ranked_paths: Vec<_> = ranked
+            .iter()
+            .map(|location| uri_to_relative_path_string(&location.uri))
+            .collect();
+        assert_eq!(
+            ranked_paths,
+            ["long.rs", "long.rs", "a.rs", "z.rs", "outside.rs"]
+        );
+    }
+
+    #[tokio::test]
+    async fn external_definition_contexts_keep_input_order_and_skip_missing_files() {
+        let workspace = TempDir::new().unwrap();
+        let _context =
+            crate::test_utils::TestContext::setup(workspace.path().to_str().unwrap(), false)
+                .await
+                .unwrap();
+        let external = TempDir::new().unwrap();
+        fs::write(external.path().join("second.rs"), "second context").unwrap();
+        fs::write(external.path().join("first.rs"), "first context").unwrap();
+        let manager = Manager::new(workspace.path().to_str().unwrap())
+            .await
+            .unwrap();
+        let locations: Vec<_> = ["second.rs", "missing.rs", "first.rs"]
+            .iter()
+            .map(|path| Location {
+                uri: Url::from_file_path(external.path().join(path)).unwrap(),
+                range: LspRange::default(),
+            })
+            .collect();
+        let contexts = fetch_definition_source_code(&manager, &locations)
+            .await
+            .unwrap();
+        let contents: Vec<_> = contexts
+            .iter()
+            .map(|context| context.source_code.as_str())
+            .collect();
+        assert_eq!(contents, ["second context", "first context"]);
+        assert!(contexts[0].range.path.ends_with("second.rs"));
+        assert!(contexts[1].range.path.ends_with("first.rs"));
+    }
+
+    #[tokio::test]
+    async fn workspace_definition_context_error_uses_lexical_file_order() {
+        let workspace = TempDir::new().unwrap();
+        let _context =
+            crate::test_utils::TestContext::setup(workspace.path().to_str().unwrap(), false)
+                .await
+                .unwrap();
+        let manager = Manager::new(workspace.path().to_str().unwrap())
+            .await
+            .unwrap();
+        let locations: Vec<_> = ["z.rs", "a.rs"]
+            .iter()
+            .map(|path| Location {
+                uri: Url::from_file_path(workspace.path().join(path)).unwrap(),
+                range: LspRange::default(),
+            })
+            .collect();
+        let error = fetch_definition_source_code(&manager, &locations)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("a.rs"));
+        assert!(!error.to_string().contains("z.rs"));
+    }
 
     fn random_irregular_string() -> String {
         let mut rng = rand::rng();

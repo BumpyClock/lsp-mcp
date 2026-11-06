@@ -148,8 +148,18 @@ impl CodemapIndexer {
         // Create file node
         let file_id = NodeId::for_file(path);
         let language = detect_language(path);
-        let content_hash = self.compute_file_hash(path).await?;
-        let line_count = self.count_lines(path).await.unwrap_or(0);
+        let (content_hash, line_count) = {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+
+            let content = tokio::fs::read_to_string(path).await?;
+            let mut hasher = DefaultHasher::new();
+            content.hash(&mut hasher);
+            (
+                format!("{:016x}", hasher.finish()),
+                content.lines().count() as u32,
+            )
+        };
 
         let file_node = FileNode {
             id: file_id.clone(),
@@ -493,21 +503,6 @@ impl CodemapIndexer {
         }
 
         from_parts[0] != to_parts[0] || from_parts[1] != to_parts[1]
-    }
-
-    async fn compute_file_hash(&self, path: &str) -> Result<String, IndexerError> {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let content = tokio::fs::read_to_string(path).await?;
-        let mut hasher = DefaultHasher::new();
-        content.hash(&mut hasher);
-        Ok(format!("{:016x}", hasher.finish()))
-    }
-
-    async fn count_lines(&self, path: &str) -> Result<u32, IndexerError> {
-        let content = tokio::fs::read_to_string(path).await?;
-        Ok(content.lines().count() as u32)
     }
 }
 

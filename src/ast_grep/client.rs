@@ -1,6 +1,7 @@
 // ABOUTME: Client for parsing files and extracting symbols/references using tree-sitter
 // ABOUTME: Includes mtime-based caching to avoid redundant parsing
 
+use futures::{stream, StreamExt};
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
@@ -13,7 +14,7 @@ use super::filters;
 use super::query_registry::{QueryRegistry, QueryType};
 use super::types::{
     AstGrepMatch, AstGrepPosition, AstGrepRange, ByteOffset, CharCount, MetaVariable,
-    MetaVariables, MultiVariables, SingleVariable,
+    MetaVariables, MultiVariables, SingleVariable, SymbolLookup,
 };
 use crate::shared::languages;
 
@@ -46,13 +47,54 @@ impl AstGrepClient {
         identifier_position: &lsp_types::Position,
     ) -> Result<AstGrepMatch, Box<dyn std::error::Error>> {
         let entry = self.parse_file(file_name).await?;
-        match select_symbol_match(entry.symbols, identifier_position) {
+        match select_symbol_match(&entry.symbols, identifier_position).cloned() {
             Some(matched_symbol) => Ok(matched_symbol),
             None => Err(Box::new(Error::new(
                 ErrorKind::NotFound,
                 "No symbol found for position",
             ))),
         }
+    }
+
+    /// Resolve each position independently, in input order, parsing each file once.
+    /// A file error is returned for every requested position in that file.
+    pub(crate) async fn get_symbol_matches_from_positions(
+        &self,
+        lookups: &[SymbolLookup],
+    ) -> Vec<Result<AstGrepMatch, String>> {
+        let mut by_file: HashMap<String, Vec<_>> = HashMap::new();
+        for (index, lookup) in lookups.iter().enumerate() {
+            by_file
+                .entry(lookup.path.clone())
+                .or_default()
+                .push((index, lookup.position));
+        }
+        let groups: Vec<Vec<_>> = stream::iter(by_file)
+            .map(|(path, positions)| async move {
+                let entry = self
+                    .parse_file(&path)
+                    .await
+                    .map_err(|error| error.to_string());
+                positions
+                    .into_iter()
+                    .map(|(index, position)| {
+                        let result = match &entry {
+                            Ok(entry) => select_symbol_match(&entry.symbols, &position)
+                                .cloned()
+                                .ok_or_else(|| "No symbol found for position".to_string()),
+                            Err(error) => Err(error.clone()),
+                        };
+                        (index, result)
+                    })
+                    .collect()
+            })
+            .buffer_unordered(8)
+            .boxed()
+            .collect()
+            .await;
+        let mut results: Vec<_> = groups.into_iter().flatten().collect();
+        results.sort_by_key(|(index, _)| *index);
+        results.into_iter().map(|(_, result)| result).collect()
     }
 
     pub async fn get_file_symbols(
@@ -400,40 +442,20 @@ fn node_to_range(node: tree_sitter::Node) -> AstGrepRange {
     }
 }
 
-fn select_symbol_match(
-    file_symbols: Vec<AstGrepMatch>,
+fn select_symbol_match<'a>(
+    file_symbols: &'a [AstGrepMatch],
     position: &lsp_types::Position,
-) -> Option<AstGrepMatch> {
-    let mut containing = Vec::new();
-    let mut nearest: Option<(AstGrepMatch, u64, u64)> = None;
-
-    for symbol in file_symbols {
-        let context_range = symbol.get_context_range();
-        if range_contains_position(&context_range, position) {
-            containing.push(symbol);
-            continue;
-        }
-
-        let distance = range_distance(&context_range, position);
-        let span_score = range_span_score(&context_range);
-        match &nearest {
-            None => nearest = Some((symbol, distance, span_score)),
-            Some((_, best_distance, best_span)) => {
-                if distance < *best_distance
-                    || (distance == *best_distance && span_score < *best_span)
-                {
-                    nearest = Some((symbol, distance, span_score));
-                }
-            }
-        }
-    }
-
-    if !containing.is_empty() {
-        containing.sort_by_key(|symbol| range_span_score(&symbol.get_context_range()));
-        return containing.into_iter().next();
-    }
-
-    nearest.map(|(symbol, _, _)| symbol)
+) -> Option<&'a AstGrepMatch> {
+    file_symbols
+        .iter()
+        .filter(|symbol| range_contains_position(&symbol.get_context_range(), position))
+        .min_by_key(|symbol| range_span_score(&symbol.get_context_range()))
+        .or_else(|| {
+            file_symbols.iter().min_by_key(|symbol| {
+                let range = symbol.get_context_range();
+                (range_distance(&range, position), range_span_score(&range))
+            })
+        })
 }
 
 fn range_contains_position(range: &AstGrepRange, position: &lsp_types::Position) -> bool {
@@ -566,7 +588,8 @@ mod tests {
             character: 2,
         };
 
-        let selected = select_symbol_match(vec![outer, inner], &position).expect("expected match");
+        let symbols = [outer, inner];
+        let selected = select_symbol_match(&symbols, &position).expect("expected match");
 
         assert_eq!(selected.meta_variables.single.name.text, "inner");
     }
@@ -579,9 +602,100 @@ mod tests {
             character: 4,
         };
 
-        let selected = select_symbol_match(vec![symbol], &position).expect("expected match");
+        let symbols = [symbol];
+        let selected = select_symbol_match(&symbols, &position).expect("expected match");
 
         assert_eq!(selected.meta_variables.single.name.text, "symbol");
+    }
+
+    #[test]
+    fn selection_keeps_first_equal_match_and_nearest_fallback() {
+        let symbols = [
+            make_match("first", (1, 0, 1, 5), None),
+            make_match("second", (1, 0, 1, 5), None),
+        ];
+        for position in [
+            lsp_types::Position::new(1, 2),
+            lsp_types::Position::new(20, 0),
+        ] {
+            let selected = select_symbol_match(&symbols, &position).unwrap();
+            assert_eq!(selected.meta_variables.single.name.text, "first");
+        }
+        assert!(select_symbol_match(&[], &lsp_types::Position::default()).is_none());
+    }
+
+    #[tokio::test]
+    async fn batch_symbol_lookup_preserves_positions_duplicates_and_file_errors() {
+        let root = tempfile::tempdir().unwrap();
+        let mut lookups = Vec::new();
+        for index in (0..12).rev() {
+            let path = root.path().join(format!("{index}.rs"));
+            tokio::fs::write(
+                &path,
+                format!("fn first_{index}() {{}}\nfn second_{index}() {{}}\n"),
+            )
+            .await
+            .unwrap();
+            for line in [1, 0, 1] {
+                lookups.push(SymbolLookup {
+                    path: path.to_string_lossy().into_owned(),
+                    position: lsp_types::Position::new(line, 4),
+                });
+            }
+        }
+        let missing = SymbolLookup {
+            path: root
+                .path()
+                .join("missing.rs")
+                .to_string_lossy()
+                .into_owned(),
+            position: lsp_types::Position::default(),
+        };
+        lookups.insert(2, missing.clone());
+        lookups.push(missing);
+        let empty = root.path().join("empty.rs");
+        tokio::fs::write(&empty, "").await.unwrap();
+        lookups.push(SymbolLookup {
+            path: empty.to_string_lossy().into_owned(),
+            position: lsp_types::Position::default(),
+        });
+
+        let client = AstGrepClient::new();
+        let mut results = client.get_symbol_matches_from_positions(&lookups).await;
+        assert_eq!(results.len(), lookups.len());
+        assert!(results.remove(2).is_err());
+        assert_eq!(
+            results.pop().unwrap().unwrap_err(),
+            "No symbol found for position"
+        );
+        assert!(results.pop().unwrap().is_err());
+        for (names, index) in results.chunks(3).zip((0..12).rev()) {
+            let actual: Vec<_> = names
+                .iter()
+                .map(|result| {
+                    result
+                        .as_ref()
+                        .unwrap()
+                        .meta_variables
+                        .single
+                        .name
+                        .text
+                        .as_str()
+                })
+                .collect();
+            assert_eq!(
+                actual,
+                [
+                    format!("second_{index}"),
+                    format!("first_{index}"),
+                    format!("second_{index}")
+                ]
+            );
+        }
+        assert!(client
+            .get_symbol_matches_from_positions(&[])
+            .await
+            .is_empty());
     }
 
     #[tokio::test]

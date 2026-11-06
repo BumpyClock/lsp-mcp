@@ -49,8 +49,8 @@ impl StatsStore {
     async fn new_with_global_path(workspace_root: &Path, global_path: &Path) -> Self {
         let local_path = workspace_root.join(".lsp-mcp").join("tool-stats.json");
 
-        let local_stats = Self::load_stats(&local_path).await;
-        let global_stats = Self::load_stats(global_path).await;
+        let (local_stats, global_stats) =
+            tokio::join!(Self::load_stats(&local_path), Self::load_stats(global_path));
 
         Self {
             local_path,
@@ -316,6 +316,43 @@ mod tests {
             hover_stat.failure_count, 2,
             "Should load existing failure count"
         );
+    }
+
+    #[tokio::test]
+    async fn corrupt_local_stats_do_not_discard_global_stats() {
+        let workspace = TempDir::new().unwrap();
+        let local_dir = workspace.path().join(".lsp-mcp");
+        tokio::fs::create_dir_all(&local_dir).await.unwrap();
+        tokio::fs::write(local_dir.join("tool-stats.json"), "invalid json")
+            .await
+            .unwrap();
+
+        let global_dir = TempDir::new().unwrap();
+        let global_path = global_dir.path().join("tool-stats.json");
+        let global_stats = ToolStatsFile {
+            version: 1,
+            last_updated: Utc::now(),
+            tools: HashMap::from([(
+                "hover".to_string(),
+                ToolStat {
+                    total_calls: 7,
+                    success_count: 5,
+                    failure_count: 2,
+                },
+            )]),
+        };
+        tokio::fs::write(&global_path, serde_json::to_string(&global_stats).unwrap())
+            .await
+            .unwrap();
+
+        let store = StatsStore::new_with_global_path(workspace.path(), &global_path).await;
+
+        assert!(store.local_cache.lock().tools.is_empty());
+        let global = store.global_cache.lock();
+        let hover = global.tools.get("hover").unwrap();
+        assert_eq!(hover.total_calls, 7);
+        assert_eq!(hover.success_count, 5);
+        assert_eq!(hover.failure_count, 2);
     }
 
     #[tokio::test]

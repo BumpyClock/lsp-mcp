@@ -387,8 +387,6 @@ impl VectorStore for HnswVectorStore {
             }
         };
 
-        let mut results = Vec::with_capacity(neighbors.len());
-
         // Build reverse mapping from data_id to segment_hash
         let id_to_hash: HashMap<usize, String> = {
             let hash_to_id = self.hash_to_id.read();
@@ -398,7 +396,9 @@ impl VectorStore for HnswVectorStore {
                 .collect()
         };
 
-        for (rank, neighbor) in neighbors.into_iter().enumerate() {
+        let mut hashes = Vec::with_capacity(neighbors.len());
+        let mut scores = Vec::with_capacity(neighbors.len());
+        for neighbor in neighbors {
             let data_id = neighbor.d_id;
             let score = 1.0 - neighbor.distance; // Convert distance to similarity
 
@@ -415,40 +415,42 @@ impl VectorStore for HnswVectorStore {
                 None => continue, // Orphaned vector, skip
             };
 
-            // Look up metadata by segment_hash
-            if let Some(numeric_id) = self.metadata.get_numeric_id(segment_hash).await? {
-                if let Some(entry) = self.metadata.get_by_numeric_id(numeric_id).await? {
-                    // Apply path prefix filter
-                    if let Some(ref prefix) = normalized_prefix {
-                        let entry_path = normalize_path(&entry.file_path);
-                        if !path_matches_prefix(&entry_path, prefix) {
-                            continue;
-                        }
-                    }
-
-                    // Apply symbol kind filter
-                    if let Some(ref kinds) = options.symbol_kinds {
-                        if let Some(ref entry_kind) = entry.symbol_kind {
-                            if !kinds.contains(entry_kind) {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        }
-                    }
-
-                    results.push(SearchResult {
-                        entry,
-                        score,
-                        rank: (rank + 1) as u32,
-                    });
-                }
-            }
+            hashes.push(segment_hash.clone());
+            scores.push(score);
         }
 
-        // Re-rank after filtering
-        for (i, result) in results.iter_mut().enumerate() {
-            result.rank = (i + 1) as u32;
+        // One metadata worker preserves neighbor order without per-result task dispatch.
+        let entries = self.metadata.get_entries(&hashes).await?;
+        let mut results = Vec::with_capacity(entries.len());
+        for (entry, score) in entries.into_iter().zip(scores) {
+            let Some(entry) = entry else {
+                continue;
+            };
+
+            // Apply path prefix filter
+            if let Some(ref prefix) = normalized_prefix {
+                let entry_path = normalize_path(&entry.file_path);
+                if !path_matches_prefix(&entry_path, prefix) {
+                    continue;
+                }
+            }
+
+            // Apply symbol kind filter
+            if let Some(ref kinds) = options.symbol_kinds {
+                if let Some(ref entry_kind) = entry.symbol_kind {
+                    if !kinds.contains(entry_kind) {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+            }
+
+            results.push(SearchResult {
+                entry,
+                score,
+                rank: (results.len() + 1) as u32,
+            });
         }
 
         Ok(results)
@@ -459,14 +461,12 @@ impl VectorStore for HnswVectorStore {
         let file_count = self.metadata.count_files().await?;
 
         let basename = self.index_basename.read().clone();
-        let graph_size = tokio::fs::metadata(graph_path(&self.index_dir, &basename))
-            .await
-            .map(|m| m.len())
-            .unwrap_or(0);
-        let data_size = tokio::fs::metadata(data_path(&self.index_dir, &basename))
-            .await
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let (graph_metadata, data_metadata) = tokio::join!(
+            tokio::fs::metadata(graph_path(&self.index_dir, &basename)),
+            tokio::fs::metadata(data_path(&self.index_dir, &basename)),
+        );
+        let graph_size = graph_metadata.map(|m| m.len()).unwrap_or(0);
+        let data_size = data_metadata.map(|m| m.len()).unwrap_or(0);
         let index_size_bytes = graph_size.saturating_add(data_size);
 
         let metadata_size_bytes = self.metadata.size_bytes().await?;

@@ -6,6 +6,7 @@ use crate::config::OutputMode;
 use crate::markdown_formatter::HoverBatchResponse;
 use crate::mcp_response::{format_error, format_response, tool_result_error, tool_result_success};
 use crate::service::LspService;
+use futures::stream::{self, StreamExt};
 use rmcp::model::CallToolResult;
 
 pub async fn hover(
@@ -19,28 +20,96 @@ pub async fn hover(
         Ok(r) => r,
         Err(e) => return tool_result_error(format!("Invalid requests JSON: {}", e)),
     };
-    let mut results: Vec<HoverBatchItem> = Vec::with_capacity(batch_requests.len());
-    for req in batch_requests {
-        let pos = Position {
-            line: req.line,
-            character: req.character,
-        };
-        match service
-            .hover(
-                &req.path,
-                pos,
-                output_mode == OutputMode::Verbose,
-                include_def,
-            )
-            .await
-        {
-            Ok(response) => results.push(HoverBatchItem::Success(response)),
-            Err(e) => results.push(HoverBatchItem::Error {
-                error: format_error(&e),
-            }),
-        }
-    }
+    let results = stream::iter(batch_requests)
+        .map(|req| async move {
+            let pos = Position {
+                line: req.line,
+                character: req.character,
+            };
+            match service
+                .hover(
+                    &req.path,
+                    pos,
+                    output_mode == OutputMode::Verbose,
+                    include_def,
+                )
+                .await
+            {
+                Ok(response) => HoverBatchItem::Success(response),
+                Err(e) => HoverBatchItem::Error {
+                    error: format_error(&e),
+                },
+            }
+        })
+        .buffered(8)
+        .collect()
+        .await;
     let batch_response = HoverBatchResponse { results };
     let resp = format_response(&batch_response, output_mode);
     tool_result_success(resp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lsp::manager::Manager;
+    use crate::service::create_service;
+    use rmcp::model::RawContent;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn batch_errors_remain_in_request_order_across_multiple_windows() {
+        let workspace = tempfile::tempdir().unwrap();
+        let service = create_service(Arc::new(
+            Manager::new(workspace.path().to_str().unwrap())
+                .await
+                .unwrap(),
+        ));
+        let requests: Vec<_> = (0..19)
+            .map(|index| {
+                serde_json::json!({
+                    "path": format!("request_{index}.unsupported"),
+                    "line": 1,
+                    "character": 1,
+                })
+            })
+            .collect();
+        let result = hover(
+            &service,
+            OutputMode::Default,
+            serde_json::to_string(&requests).unwrap(),
+            None,
+        )
+        .await;
+        assert_ne!(result.is_error, Some(true));
+        let RawContent::Text(text) = &result.content[0].raw else {
+            panic!("hover batch must return text");
+        };
+        let mut remaining = text.text.as_str();
+        for index in 0..19 {
+            let expected = format!("request_{index}.unsupported");
+            let offset = remaining
+                .find(&expected)
+                .expect("missing or reordered error");
+            remaining = &remaining[offset + expected.len()..];
+        }
+        assert_eq!(text.text.matches("Error: ").count(), 19);
+    }
+
+    #[tokio::test]
+    async fn malformed_batch_json_returns_one_tool_error() {
+        let workspace = tempfile::tempdir().unwrap();
+        let service = create_service(Arc::new(
+            Manager::new(workspace.path().to_str().unwrap())
+                .await
+                .unwrap(),
+        ));
+        let result = hover(&service, OutputMode::Default, "[".into(), None).await;
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(result.content.len(), 1);
+        let RawContent::Text(text) = &result.content[0].raw else {
+            panic!("invalid JSON must return text");
+        };
+        assert!(text.text.starts_with("Invalid requests JSON: "));
+    }
 }

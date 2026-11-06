@@ -1,0 +1,6 @@
+
+[mcp_servers.lsp-mcp]
+command = 'lsp-mcp'
+args = ['--workspace-root', '/Users/adityasharma/Projects/lsp-mcp']
+cwd = '/Users/adityasharma/Projects/lsp-mcp'
+startup_timeout_sec = 30

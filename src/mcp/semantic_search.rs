@@ -8,6 +8,7 @@ use crate::semantic_search::{
     SearchResult, SemanticSearchError, SemanticSearchManager, SemanticSearchState,
 };
 use crate::service::{extract_signature_and_docs_from_markdown, LspService};
+use futures::stream::{self, StreamExt};
 use glob::Pattern;
 use rmcp::model::CallToolResult;
 use std::cmp::Ordering;
@@ -306,10 +307,12 @@ pub async fn semantic_search(
     let rerank = rerank.unwrap_or(false);
     let per_file = per_file.unwrap_or(false);
 
-    match manager
+    let search_result = manager
         .search(&query, limit.map(|l| l as usize), path.clone())
-        .await
-    {
+        .await;
+    drop(manager);
+
+    match search_result {
         Ok(results) => {
             let query_terms = tokenize_query(&query);
             let mut display_results = Vec::new();
@@ -392,47 +395,49 @@ pub async fn semantic_search(
             }
 
             // Enrich results with LSP hover data (signature + docs)
-            for item in display_results.iter_mut() {
-                // Find character position of symbol name in the code chunk
-                let character = if let Some(ref symbol_name) = item.result.entry.symbol_name {
-                    // Search for symbol name in the code to find its character position
-                    find_symbol_character_position(&item.result.entry.code, symbol_name)
-                        .unwrap_or(1)
-                } else {
-                    1
-                };
+            stream::iter(display_results.iter_mut())
+                .for_each_concurrent(8, |item| async move {
+                    // Find character position of symbol name in the code chunk
+                    let character = if let Some(ref symbol_name) = item.result.entry.symbol_name {
+                        // Search for symbol name in the code to find its character position
+                        find_symbol_character_position(&item.result.entry.code, symbol_name)
+                            .unwrap_or(1)
+                    } else {
+                        1
+                    };
 
-                let hover_result = lsp_service
-                    .hover(
-                        &item.result.entry.file_path,
-                        Position {
-                            line: item.result.entry.start_line,
-                            character,
-                        },
-                        false, // include_raw_response
-                        false, // include_definition
-                    )
-                    .await;
+                    let hover_result = lsp_service
+                        .hover(
+                            &item.result.entry.file_path,
+                            Position {
+                                line: item.result.entry.start_line,
+                                character,
+                            },
+                            false, // include_raw_response
+                            false, // include_definition
+                        )
+                        .await;
 
-                if let Ok(hover) = hover_result {
-                    // Extract signature and docs from hover contents using robust markdown parsing
-                    let (extracted_sig, extracted_docs) = hover
-                        .contents
-                        .as_ref()
-                        .map(|contents| {
-                            let text = hover_contents_to_string(contents);
-                            extract_signature_and_docs_from_markdown(&text)
-                        })
-                        .unwrap_or((None, None));
+                    if let Ok(hover) = hover_result {
+                        // Extract signature and docs from hover contents using robust markdown parsing
+                        let (extracted_sig, extracted_docs) = hover
+                            .contents
+                            .as_ref()
+                            .map(|contents| {
+                                let text = hover_contents_to_string(contents);
+                                extract_signature_and_docs_from_markdown(&text)
+                            })
+                            .unwrap_or((None, None));
 
-                    // Prefer active_signature over extracted signature
-                    item.signature = hover.active_signature.clone().or(extracted_sig);
+                        // Prefer active_signature over extracted signature
+                        item.signature = hover.active_signature.clone().or(extracted_sig);
 
-                    // Get first line of docs
-                    item.doc_line =
-                        extracted_docs.and_then(|d| d.lines().next().map(|s| s.to_string()));
-                }
-            }
+                        // Get first line of docs
+                        item.doc_line =
+                            extracted_docs.and_then(|d| d.lines().next().map(|s| s.to_string()));
+                    }
+                })
+                .await;
 
             let response = SemanticSearchResponse {
                 results: display_results,

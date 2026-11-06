@@ -5,8 +5,10 @@ use crate::api_types::{
     get_mount_dir, CodeContext, FilePosition, FileRange, Identifier, Position, Range,
     ReferenceWithSymbolDefinitions, ReferencedSymbolsResponse,
 };
+use crate::ast_grep::types::SymbolLookup;
 use crate::lsp::manager::Manager;
 use crate::utils::file_utils::uri_to_relative_path_string;
+use futures::stream::{self, StreamExt, TryStreamExt};
 use lsp_types::{
     GotoDefinitionResponse, Location, Position as LspPosition, Range as LspRange, Url,
 };
@@ -209,6 +211,23 @@ pub(crate) async fn find_referenced_symbols_impl(
     let files = manager.list_files().await?;
     let files_set: HashSet<String> = files.into_iter().collect();
 
+    let lookups: Vec<_> = unwrapped_definitions
+        .iter()
+        .flat_map(|(_, definitions)| definitions)
+        .filter(|definition| files_set.contains(&definition.path))
+        .map(|definition| SymbolLookup {
+            path: definition.path.clone(),
+            position: LspPosition {
+                line: definition.position.line.saturating_sub(1),
+                character: definition.position.character.saturating_sub(1),
+            },
+        })
+        .collect();
+    let mut symbols = manager
+        .get_symbols_from_positions(&lookups)
+        .await
+        .into_iter();
+
     let mut workspace_symbols = Vec::new();
     let mut external_symbols = Vec::new();
     let mut not_found = Vec::new();
@@ -216,6 +235,16 @@ pub(crate) async fn find_referenced_symbols_impl(
     let mut seen_workspace: HashSet<(String, String, u32, u32)> = HashSet::new();
 
     for (identifier, definitions) in unwrapped_definitions {
+        let symbols_with_definitions: Vec<_> = definitions
+            .iter()
+            .filter(|definition| files_set.contains(&definition.path))
+            .filter_map(|_| {
+                symbols
+                    .next()
+                    .expect("one batch result per internal definition")
+                    .ok()
+            })
+            .collect();
         if definitions.is_empty() {
             if include_externals {
                 not_found.push(identifier);
@@ -224,24 +253,6 @@ pub(crate) async fn find_referenced_symbols_impl(
             let has_internal_definition =
                 definitions.iter().any(|def| files_set.contains(&def.path));
             if has_internal_definition {
-                let mut symbols_with_definitions = Vec::new();
-                for def in definitions
-                    .iter()
-                    .filter(|def| files_set.contains(&def.path))
-                {
-                    if let Ok(symbol) = manager
-                        .get_symbol_from_position(
-                            &def.path,
-                            &lsp_types::Position {
-                                line: def.position.line.saturating_sub(1),
-                                character: def.position.character.saturating_sub(1),
-                            },
-                        )
-                        .await
-                    {
-                        symbols_with_definitions.push(symbol);
-                    }
-                }
                 if !symbols_with_definitions.is_empty() {
                     // Deduplicate: use (name, first_def_path, first_def_line, first_def_char) as key
                     let first_def = &symbols_with_definitions[0];
@@ -378,40 +389,42 @@ pub(crate) async fn fetch_code_context(
     references: Vec<Location>,
     context_lines: u32,
 ) -> Result<Vec<CodeContext>, ServiceError> {
-    let mut code_contexts = Vec::new();
-    for reference in references {
-        let range = LspRange {
-            start: LspPosition {
-                line: reference.range.start.line.saturating_sub(context_lines),
-                character: 0,
-            },
-            end: LspPosition {
-                line: reference.range.end.line.saturating_add(context_lines),
-                character: 0,
-            },
-        };
-        let relative_path = uri_to_relative_path_string(&reference.uri);
-        let source_code = manager
-            .read_source_code(&relative_path, Some(range))
-            .await?;
-        code_contexts.push(CodeContext {
-            range: FileRange {
-                path: relative_path,
-                range: Range {
-                    start: Position {
-                        line: reference.range.start.line.saturating_sub(context_lines) + 1,
-                        character: 1,
-                    },
-                    end: Position {
-                        line: reference.range.end.line.saturating_add(context_lines) + 1,
-                        character: 1,
+    stream::iter(references)
+        .map(|reference| async move {
+            let range = LspRange {
+                start: LspPosition {
+                    line: reference.range.start.line.saturating_sub(context_lines),
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: reference.range.end.line.saturating_add(context_lines),
+                    character: 0,
+                },
+            };
+            let relative_path = uri_to_relative_path_string(&reference.uri);
+            let source_code = manager
+                .read_source_code(&relative_path, Some(range))
+                .await?;
+            Ok::<_, ServiceError>(CodeContext {
+                range: FileRange {
+                    path: relative_path,
+                    range: Range {
+                        start: Position {
+                            line: reference.range.start.line.saturating_sub(context_lines) + 1,
+                            character: 1,
+                        },
+                        end: Position {
+                            line: reference.range.end.line.saturating_add(context_lines) + 1,
+                            character: 1,
+                        },
                     },
                 },
-            },
-            source_code,
-        });
-    }
-    Ok(code_contexts)
+                source_code,
+            })
+        })
+        .buffered(8)
+        .try_collect()
+        .await
 }
 
 /// Groups references by file path.
@@ -478,27 +491,33 @@ pub(crate) async fn classify_references_by_type(
     let mut counts = TypeCounts::default();
     let mut types = Vec::with_capacity(references.len());
 
-    for reference in references {
-        let key = reference_key(reference);
-        let mut reference_type = if definition_keys.contains(&key) {
-            ReferenceType::Definition
-        } else {
-            ReferenceType::Call
-        };
+    let mut classifications = stream::iter(references)
+        .map(|reference| async move {
+            let key = reference_key(reference);
+            let mut reference_type = if definition_keys.contains(&key) {
+                ReferenceType::Definition
+            } else {
+                ReferenceType::Call
+            };
 
-        if reference_type == ReferenceType::Call {
-            let path = uri_to_relative_path_string(&reference.uri);
-            let line_num = reference.range.start.line;
+            if reference_type == ReferenceType::Call {
+                let path = uri_to_relative_path_string(&reference.uri);
+                let line_num = reference.range.start.line;
 
-            if let Some(line) = read_source_line(manager, &path, line_num).await {
-                if is_reexport_line(&line) {
-                    reference_type = ReferenceType::ReExport;
-                } else if is_import_line(&line) {
-                    reference_type = ReferenceType::Import;
+                if let Some(line) = read_source_line(manager, &path, line_num).await {
+                    if is_reexport_line(&line) {
+                        reference_type = ReferenceType::ReExport;
+                    } else if is_import_line(&line) {
+                        reference_type = ReferenceType::Import;
+                    }
                 }
             }
-        }
 
+            reference_type
+        })
+        .buffered(8)
+        .boxed();
+    while let Some(reference_type) = classifications.next().await {
         match reference_type {
             ReferenceType::Definition => counts.definition += 1,
             ReferenceType::Import => counts.import += 1,

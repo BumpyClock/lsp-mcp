@@ -286,8 +286,6 @@ pub(crate) async fn batch_hover_for_signatures(
     manager: &Manager,
     positions: Vec<(&str, Position)>,
 ) -> Vec<Option<String>> {
-    use futures::future::join_all;
-
     let futures = positions.into_iter().map(|(path, pos)| {
         let path = path.to_string();
         async move {
@@ -305,7 +303,11 @@ pub(crate) async fn batch_hover_for_signatures(
         }
     });
 
-    join_all(futures).await
+    stream::iter(futures)
+        .buffered(DEFAULT_ENRICHMENT_CONCURRENCY)
+        .boxed()
+        .collect()
+        .await
 }
 
 /// Detects if a symbol is exported based on its kind (best-effort heuristic)
@@ -350,104 +352,113 @@ async fn compute_symbol_enrichment(
         ..Default::default()
     };
 
-    let hover_position = lsp_types::Position {
-        line: symbol.identifier_position.position.line.saturating_sub(1),
-        character: symbol
-            .identifier_position
-            .position
-            .character
-            .saturating_sub(1),
-    };
+    let (_, dependencies) = tokio::join!(
+        async {
+            let hover_position = lsp_types::Position {
+                line: symbol.identifier_position.position.line.saturating_sub(1),
+                character: symbol
+                    .identifier_position
+                    .position
+                    .character
+                    .saturating_sub(1),
+            };
 
-    // Try LSP hover first
-    if let Ok(Some(hover)) = manager.hover(file_path, hover_position).await {
-        let (sig, jsdoc) = extract_signature_and_docs(&hover.contents);
-        enrichment.signature = sig;
-        enrichment.jsdoc_summary = jsdoc;
-    }
-
-    // Fallback to source-based extraction if needed
-    if enrichment.signature.is_none() || enrichment.jsdoc_summary.is_none() {
-        if let Ok(source_code) = manager
-            .read_source_code(
-                file_path,
-                Some(lsp_types::Range::new(
-                    lsp_types::Position {
-                        line: symbol.file_range.range.start.line.saturating_sub(1),
-                        character: 0,
-                    },
-                    lsp_types::Position {
-                        line: symbol.file_range.range.end.line,
-                        character: 0,
-                    },
-                )),
-            )
-            .await
-        {
-            if enrichment.signature.is_none() {
-                enrichment.signature = extract_signature_from_source(&source_code, &symbol.name);
+            // Try LSP hover first
+            if let Ok(Some(hover)) = manager.hover(file_path, hover_position).await {
+                let (sig, jsdoc) = extract_signature_and_docs(&hover.contents);
+                enrichment.signature = sig;
+                enrichment.jsdoc_summary = jsdoc;
             }
-            if enrichment.jsdoc_summary.is_none() {
-                enrichment.jsdoc_summary = extract_docs_from_source(&source_code);
-            }
-        }
-    }
 
-    // Truncate signature
-    if let Some(ref sig) = enrichment.signature {
-        enrichment.signature = Some(truncate_signature(sig, None));
-    }
-
-    // Get dependencies
-    let position = lsp_types::Position {
-        line: symbol.identifier_position.position.line.saturating_sub(1),
-        character: symbol
-            .identifier_position
-            .position
-            .character
-            .saturating_sub(1),
-    };
-    if let Ok(referenced) = manager
-        .find_referenced_symbols(file_path, position, false)
-        .await
-    {
-        let deps: Vec<String> = referenced
-            .into_iter()
-            .filter_map(|(ast_match, def_response)| {
-                let locations = match def_response {
-                    lsp_types::GotoDefinitionResponse::Scalar(loc) => vec![loc],
-                    lsp_types::GotoDefinitionResponse::Array(locs) => locs,
-                    lsp_types::GotoDefinitionResponse::Link(links) => links
-                        .into_iter()
-                        .map(|l| lsp_types::Location {
-                            uri: l.target_uri,
-                            range: l.target_selection_range,
-                        })
-                        .collect(),
-                };
-
-                let has_external_def = locations.iter().any(|loc| {
-                    let def_path = loc.uri.path();
-                    def_path != file_path && !def_path.ends_with(".d.ts")
-                });
-
-                if has_external_def {
-                    Some(ast_match.meta_variables.single.name.text)
-                } else {
-                    None
+            // Fallback to source-based extraction if needed
+            if enrichment.signature.is_none() || enrichment.jsdoc_summary.is_none() {
+                if let Ok(source_code) = manager
+                    .read_source_code(
+                        file_path,
+                        Some(lsp_types::Range::new(
+                            lsp_types::Position {
+                                line: symbol.file_range.range.start.line.saturating_sub(1),
+                                character: 0,
+                            },
+                            lsp_types::Position {
+                                line: symbol.file_range.range.end.line,
+                                character: 0,
+                            },
+                        )),
+                    )
+                    .await
+                {
+                    if enrichment.signature.is_none() {
+                        enrichment.signature =
+                            extract_signature_from_source(&source_code, &symbol.name);
+                    }
+                    if enrichment.jsdoc_summary.is_none() {
+                        enrichment.jsdoc_summary = extract_docs_from_source(&source_code);
+                    }
                 }
-            })
-            .collect();
-        if !deps.is_empty() {
-            let mut unique_deps: Vec<String> = deps
-                .into_iter()
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .collect();
-            unique_deps.sort();
-            enrichment.dependencies = Some(unique_deps);
+            }
+
+            // Truncate signature
+            if let Some(ref sig) = enrichment.signature {
+                enrichment.signature = Some(truncate_signature(sig, None));
+            }
+        },
+        async {
+            let mut dependencies = None;
+            // Get dependencies
+            let position = lsp_types::Position {
+                line: symbol.identifier_position.position.line.saturating_sub(1),
+                character: symbol
+                    .identifier_position
+                    .position
+                    .character
+                    .saturating_sub(1),
+            };
+            if let Ok(referenced) = manager
+                .find_referenced_symbols(file_path, position, false)
+                .await
+            {
+                let deps: Vec<String> = referenced
+                    .into_iter()
+                    .filter_map(|(ast_match, def_response)| {
+                        let locations = match def_response {
+                            lsp_types::GotoDefinitionResponse::Scalar(loc) => vec![loc],
+                            lsp_types::GotoDefinitionResponse::Array(locs) => locs,
+                            lsp_types::GotoDefinitionResponse::Link(links) => links
+                                .into_iter()
+                                .map(|l| lsp_types::Location {
+                                    uri: l.target_uri,
+                                    range: l.target_selection_range,
+                                })
+                                .collect(),
+                        };
+
+                        let has_external_def = locations.iter().any(|loc| {
+                            let def_path = loc.uri.path();
+                            def_path != file_path && !def_path.ends_with(".d.ts")
+                        });
+
+                        if has_external_def {
+                            Some(ast_match.meta_variables.single.name.text)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if !deps.is_empty() {
+                    let mut unique_deps: Vec<String> = deps
+                        .into_iter()
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect();
+                    unique_deps.sort();
+                    dependencies = Some(unique_deps);
+                }
+            }
+            dependencies
         }
-    }
+    );
+    enrichment.dependencies = dependencies;
 
     enrichment
 }
@@ -530,8 +541,7 @@ pub const DEFAULT_ENRICHMENT_CONCURRENCY: usize = 8;
 /// 2. Computes enrichment for each symbol concurrently (limited to `concurrency_limit`)
 /// 3. Applies results back to the symbols
 ///
-/// Using bounded concurrency prevents overwhelming the LSP server while still
-/// achieving significant speedup over sequential processing.
+/// Bounded concurrency limits the number of in-flight symbol enrichments.
 pub(crate) async fn batch_enrich_symbols(
     manager: &Manager,
     file_path: &str,

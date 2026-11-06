@@ -83,32 +83,6 @@ impl MetadataStore {
         })
     }
 
-    /// Get the numeric ID for a segment hash, or None if not found.
-    pub async fn get_numeric_id(
-        &self,
-        segment_hash: &str,
-    ) -> Result<Option<usize>, VectorStoreError> {
-        let hash = segment_hash.to_string();
-        let conn = Arc::clone(&self.conn);
-
-        task::spawn_blocking(move || {
-            let conn = conn.lock();
-            let result: Result<i64, _> = conn.query_row(
-                "SELECT id FROM entries WHERE segment_hash = ?",
-                params![hash],
-                |row| row.get(0),
-            );
-
-            match result {
-                Ok(id) => Ok(Some(id as usize)),
-                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-                Err(e) => Err(VectorStoreError::DatabaseError(e.to_string())),
-            }
-        })
-        .await
-        .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
-    }
-
     /// Insert or update an entry and return its numeric ID.
     pub async fn upsert_entry(&self, entry: &IndexEntry) -> Result<i64, VectorStoreError> {
         let entry = entry.clone();
@@ -242,38 +216,49 @@ impl MetadataStore {
         .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
     }
 
-    /// Get an entry by its numeric ID.
-    pub async fn get_by_numeric_id(
+    /// Get entries in request order, retaining missing hashes as None.
+    pub async fn get_entries(
         &self,
-        id: usize,
-    ) -> Result<Option<IndexEntry>, VectorStoreError> {
+        segment_hashes: &[String],
+    ) -> Result<Vec<Option<IndexEntry>>, VectorStoreError> {
+        if segment_hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let hashes = segment_hashes.to_vec();
         let conn = Arc::clone(&self.conn);
 
         task::spawn_blocking(move || {
             let conn = conn.lock();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT segment_hash, file_path, code, start_line, end_line, symbol_name, symbol_kind, indexed_at FROM entries WHERE segment_hash = ?",
+                )
+                .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?;
 
-            let result = conn.query_row(
-                "SELECT segment_hash, file_path, code, start_line, end_line, symbol_name, symbol_kind, indexed_at FROM entries WHERE id = ?",
-                params![id as i64],
-                |row| {
-                    Ok(IndexEntry {
-                        id: row.get(0)?,
-                        file_path: row.get(1)?,
-                        code: row.get(2)?,
-                        start_line: row.get(3)?,
-                        end_line: row.get(4)?,
-                        symbol_name: row.get(5)?,
-                        symbol_kind: row.get(6)?,
-                        indexed_at: row.get(7)?,
-                    })
-                },
-            );
+            hashes
+                .iter()
+                .map(|hash| {
+                    let result = stmt.query_row(params![hash], |row| {
+                        Ok(IndexEntry {
+                            id: row.get(0)?,
+                            file_path: row.get(1)?,
+                            code: row.get(2)?,
+                            start_line: row.get(3)?,
+                            end_line: row.get(4)?,
+                            symbol_name: row.get(5)?,
+                            symbol_kind: row.get(6)?,
+                            indexed_at: row.get(7)?,
+                        })
+                    });
 
-            match result {
-                Ok(entry) => Ok(Some(entry)),
-                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-                Err(e) => Err(VectorStoreError::DatabaseError(e.to_string())),
-            }
+                    match result {
+                        Ok(entry) => Ok(Some(entry)),
+                        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                        Err(e) => Err(VectorStoreError::DatabaseError(e.to_string())),
+                    }
+                })
+                .collect()
         })
         .await
         .map_err(|e| VectorStoreError::DatabaseError(e.to_string()))?
@@ -837,4 +822,71 @@ fn escape_like(value: &str) -> String {
         }
     }
     escaped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(id: &str, path: &str) -> IndexEntry {
+        IndexEntry {
+            id: id.to_string(),
+            file_path: path.to_string(),
+            code: format!("fn {id}() {{}}"),
+            start_line: 2,
+            end_line: 3,
+            symbol_name: Some(id.to_string()),
+            symbol_kind: Some("function".to_string()),
+            indexed_at: 123,
+        }
+    }
+
+    #[tokio::test]
+    async fn entry_lookup_preserves_order_missing_hashes_and_duplicates() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MetadataStore::new(&dir.path().join("metadata.db"))
+            .await
+            .unwrap();
+        let first = entry("first", "src/first.rs");
+        let second = entry("second", "src/second.rs");
+        store.upsert_entry(&first).await.unwrap();
+        store.upsert_entry(&second).await.unwrap();
+
+        let hashes = ["second", "absent", "first", "second"].map(str::to_string);
+        let entries = store.get_entries(&hashes).await.unwrap();
+        let ids: Vec<_> = entries
+            .iter()
+            .map(|entry| entry.as_ref().map(|entry| entry.id.as_str()))
+            .collect();
+        assert_eq!(
+            ids,
+            vec![Some("second"), None, Some("first"), Some("second")]
+        );
+        assert_eq!(entries[0].as_ref().unwrap().file_path, second.file_path);
+        assert_eq!(entries[2].as_ref().unwrap().code, first.code);
+        assert!(store.get_entries(&[]).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn entry_lookup_propagates_decode_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MetadataStore::new(&dir.path().join("metadata.db"))
+            .await
+            .unwrap();
+        store
+            .upsert_entry(&entry("bad", "src/bad.rs"))
+            .await
+            .unwrap();
+        store
+            .conn
+            .lock()
+            .execute(
+                "UPDATE entries SET start_line = 'invalid' WHERE segment_hash = 'bad'",
+                [],
+            )
+            .unwrap();
+
+        let result = store.get_entries(&["bad".to_string()]).await;
+        assert!(matches!(result, Err(VectorStoreError::DatabaseError(_))));
+    }
 }

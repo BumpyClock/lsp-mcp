@@ -1,19 +1,18 @@
 // ABOUTME: Core manager struct for coordinating multiple language server clients
 // ABOUTME: Provides workspace-wide LSP operations like definitions, references, and diagnostics
 
-use super::detection::detect_languages_in_workspace;
 use super::error::LspManagerError;
-use super::startup::create_lsp_client;
 use crate::api_types::{get_mount_dir, Identifier, SupportedLanguages, Symbol};
 use crate::ast_grep::client::AstGrepClient;
-use crate::ast_grep::types::AstGrepMatch;
-use crate::config::LspMcpConfig;
+use crate::ast_grep::types::{AstGrepMatch, SymbolLookup};
 use crate::lsp::client::LspClient;
+use crate::lsp::registry::LanguageMetadata;
 use crate::utils::file_utils::uri_to_relative_path_string;
 use crate::utils::file_utils::{absolute_path_to_relative_path_string, detect_language};
 use crate::utils::file_watcher::FileWatcher;
 use crate::utils::workspace_documents::{DidOpenConfiguration, WorkspaceDocuments};
-use log::{debug, error, info, warn};
+use futures::{stream, StreamExt};
+use log::{debug, error};
 use lsp_types::{
     DocumentSymbolResponse, GotoDefinitionResponse, Location, Position, Range, SelectionRange, Url,
 };
@@ -21,11 +20,12 @@ use notify_debouncer_mini::{DebounceEventResult, DebouncedEvent};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::{channel, Sender};
 use tokio::sync::{Mutex, RwLock};
+
+pub(super) const CLIENT_CONCURRENCY: usize = 4;
 
 /// Manages language server clients for a workspace
 ///
@@ -33,9 +33,10 @@ use tokio::sync::{Mutex, RwLock};
 /// When using async initialization, language servers start in the background and
 /// become available as they complete initialization.
 pub struct Manager {
-    lsp_clients: Arc<RwLock<HashMap<SupportedLanguages, Arc<Mutex<Box<dyn LspClient>>>>>>,
-    pending_clients: Arc<Mutex<HashSet<SupportedLanguages>>>,
-    watch_events_sender: Sender<DebouncedEvent>,
+    pub(super) lsp_clients:
+        Arc<RwLock<HashMap<SupportedLanguages, Arc<Mutex<Box<dyn LspClient>>>>>>,
+    pub(super) pending_clients: Arc<Mutex<HashSet<SupportedLanguages>>>,
+    pub(super) watch_events_sender: Sender<DebouncedEvent>,
     ast_grep: AstGrepClient,
     _watcher: FileWatcher,
 }
@@ -66,184 +67,6 @@ impl Manager {
             ast_grep,
             _watcher: watcher,
         })
-    }
-
-    /// Returns languages currently being initialized
-    pub async fn pending_languages(&self) -> Vec<SupportedLanguages> {
-        self.pending_clients.lock().await.iter().copied().collect()
-    }
-
-    /// Checks if a specific language is still initializing
-    pub async fn is_language_pending(&self, lang: SupportedLanguages) -> bool {
-        self.pending_clients.lock().await.contains(&lang)
-    }
-
-    /// Waits for all pending language servers to initialize with a timeout.
-    ///
-    /// Returns true if all pending clients finished initializing within the timeout,
-    /// or false if the timeout was reached with some clients still pending.
-    pub async fn wait_for_pending_clients(&self, timeout: Duration) -> bool {
-        let start = std::time::Instant::now();
-        let poll_interval = Duration::from_millis(100);
-
-        loop {
-            let pending = self.pending_clients.lock().await;
-            if pending.is_empty() {
-                return true;
-            }
-            drop(pending); // Release lock before sleeping
-
-            if start.elapsed() >= timeout {
-                log::debug!(
-                    "wait_for_pending_clients: timeout reached with {} clients still pending",
-                    self.pending_clients.lock().await.len()
-                );
-                return false;
-            }
-
-            tokio::time::sleep(poll_interval).await;
-        }
-    }
-
-    pub async fn start_langservers(
-        &mut self,
-        workspace_path: &str,
-        config: Option<&LspMcpConfig>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let lsps = match config {
-            Some(cfg) => cfg
-                .languages
-                .iter()
-                .filter_map(|s| SupportedLanguages::from_str(s).ok())
-                .collect(),
-            None => detect_languages_in_workspace(workspace_path),
-        };
-
-        let mut started_count = 0;
-        for lsp in lsps {
-            if self.get_client(lsp).await.is_some() {
-                continue;
-            }
-
-            let binary = config
-                .and_then(|c| c.get_binary(&lsp.to_string().to_lowercase()))
-                .map(|s| s.as_str());
-
-            debug!("Starting {:?} LSP", lsp);
-            let client_result = create_lsp_client(
-                lsp,
-                workspace_path,
-                self.watch_events_sender.subscribe(),
-                binary,
-            )
-            .await;
-
-            match client_result {
-                Ok(mut client) => match client.initialize(workspace_path.to_string()).await {
-                    Ok(_) => {
-                        debug!("Setting up workspace for {:?}", lsp);
-                        if let Err(e) = client.setup_workspace(workspace_path).await {
-                            warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
-                            continue;
-                        }
-                        self.lsp_clients
-                            .write()
-                            .await
-                            .insert(lsp, Arc::new(Mutex::new(client)));
-                        started_count += 1;
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to initialize {:?} language server: {}. Skipping",
-                            lsp, e
-                        );
-                    }
-                },
-                Err(e) => {
-                    warn!("Failed to start {:?} language server: {}. Skipping", lsp, e);
-                }
-            }
-        }
-
-        if started_count == 0 && config.map_or(false, |c| !c.languages.is_empty()) {
-            return Err("No language servers could be started from config".into());
-        }
-        Ok(())
-    }
-
-    /// Starts language servers asynchronously in the background
-    ///
-    /// Unlike `start_langservers`, this method returns immediately after spawning
-    /// background tasks for each language server. Language servers become available
-    /// as they complete initialization. Check `pending_languages()` or `is_language_pending()`
-    /// to determine initialization status.
-    pub async fn start_langservers_async(
-        &self,
-        workspace_path: &str,
-        config: Option<LspMcpConfig>,
-    ) {
-        let lsps: Vec<SupportedLanguages> = match &config {
-            Some(cfg) => cfg
-                .languages
-                .iter()
-                .filter_map(|s| SupportedLanguages::from_str(s).ok())
-                .collect(),
-            None => detect_languages_in_workspace(workspace_path),
-        };
-
-        for lsp in lsps {
-            if self.get_client(lsp).await.is_some() {
-                continue;
-            }
-
-            self.pending_clients.lock().await.insert(lsp);
-
-            let binary = config
-                .as_ref()
-                .and_then(|c| c.get_binary(&lsp.to_string().to_lowercase()))
-                .cloned();
-
-            let lsp_clients = self.lsp_clients.clone();
-            let pending_clients = self.pending_clients.clone();
-            let events_rx = self.watch_events_sender.subscribe();
-            let ws_path = workspace_path.to_string();
-
-            tokio::spawn(async move {
-                debug!("Starting {:?} LSP in background", lsp);
-                let binary_ref = binary.as_deref();
-                let client_result = create_lsp_client(lsp, &ws_path, events_rx, binary_ref).await;
-
-                match client_result {
-                    Ok(mut client) => match client.initialize(ws_path.clone()).await {
-                        Ok(_) => {
-                            debug!("Setting up workspace for {:?}", lsp);
-                            if let Err(e) = client.setup_workspace(&ws_path).await {
-                                warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
-                                pending_clients.lock().await.remove(&lsp);
-                                return;
-                            }
-                            lsp_clients
-                                .write()
-                                .await
-                                .insert(lsp, Arc::new(Mutex::new(client)));
-                            pending_clients.lock().await.remove(&lsp);
-                            info!("{:?} language server is now ready", lsp);
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to initialize {:?} language server: {}. Skipping",
-                                lsp, e
-                            );
-                            pending_clients.lock().await.remove(&lsp);
-                        }
-                    },
-                    Err(e) => {
-                        warn!("Failed to start {:?} language server: {}. Skipping", lsp, e);
-                        pending_clients.lock().await.remove(&lsp);
-                    }
-                }
-            });
-        }
     }
 
     pub async fn definitions_in_file_ast_grep(
@@ -312,21 +135,28 @@ impl Manager {
             })
     }
 
-    pub async fn get_symbol_from_position(
+    pub(crate) async fn get_symbols_from_positions(
         &self,
-        file_path: &str,
-        identifier_position: &lsp_types::Position,
-    ) -> Result<Symbol, LspManagerError> {
-        let full_path = get_mount_dir().join(file_path);
-        let full_path_str = full_path.to_str().unwrap_or_default();
-        match self
-            .ast_grep
-            .get_symbol_match_from_position(full_path_str, identifier_position)
+        lookups: &[SymbolLookup],
+    ) -> Vec<Result<Symbol, LspManagerError>> {
+        let root = get_mount_dir();
+        let absolute_lookups: Vec<_> = lookups
+            .iter()
+            .map(|lookup| SymbolLookup {
+                path: root.join(&lookup.path).to_string_lossy().into_owned(),
+                position: lookup.position,
+            })
+            .collect();
+        self.ast_grep
+            .get_symbol_matches_from_positions(&absolute_lookups)
             .await
-        {
-            Ok(ast_grep_symbol) => Ok(Symbol::from(ast_grep_symbol)),
-            Err(e) => Err(LspManagerError::InternalError(e.to_string())),
-        }
+            .into_iter()
+            .map(|result| {
+                result
+                    .map(Symbol::from)
+                    .map_err(LspManagerError::InternalError)
+            })
+            .collect()
     }
 
     pub async fn find_definition(
@@ -394,6 +224,13 @@ impl Manager {
         lsp_type: SupportedLanguages,
     ) -> Option<Arc<Mutex<Box<dyn LspClient>>>> {
         self.lsp_clients.read().await.get(&lsp_type).cloned()
+    }
+
+    async fn clients_snapshot(&self) -> Vec<Arc<Mutex<Box<dyn LspClient>>>> {
+        let clients = self.lsp_clients.read().await;
+        LanguageMetadata::all()
+            .filter_map(|metadata| clients.get(&metadata.id).cloned())
+            .collect()
     }
 
     /// Returns an error appropriate for when a client is not available
@@ -534,12 +371,14 @@ impl Manager {
             self.wait_for_pending_clients(Duration::from_secs(5)).await;
         }
 
+        let clients = self.clients_snapshot().await;
+        let mut results = stream::iter(clients)
+            .map(|client| async move { client.lock().await.workspace_symbol(query).await })
+            .buffered(CLIENT_CONCURRENCY)
+            .boxed();
         let mut all_symbols = Vec::new();
-        let clients = self.lsp_clients.read().await;
-
-        for client in clients.values() {
-            let mut locked_client = client.lock().await;
-            match locked_client.workspace_symbol(query).await {
+        while let Some(result) = results.next().await {
+            match result {
                 Ok(symbols) => all_symbols.extend(symbols),
                 Err(e) => {
                     log::warn!("Workspace symbol query failed for a client: {}", e);
@@ -699,17 +538,24 @@ impl Manager {
     }
 
     pub async fn list_files(&self) -> Result<Vec<String>, LspManagerError> {
-        let mut files = Vec::new();
-        let clients = self.lsp_clients.read().await;
-        for client in clients.values() {
-            let mut locked_client = client.lock().await;
-            files.extend(
-                locked_client
+        let clients = self.clients_snapshot().await;
+        let mut results = stream::iter(clients)
+            .map(|client| async move {
+                client
+                    .lock()
+                    .await
                     .get_workspace_documents()
                     .list_files()
                     .await
+            })
+            .buffered(CLIENT_CONCURRENCY)
+            .boxed();
+        let mut files = Vec::new();
+        while let Some(client_files) = results.next().await {
+            files.extend(
+                client_files
                     .iter()
-                    .filter_map(|f| Some(absolute_path_to_relative_path_string(f)))
+                    .map(|f| absolute_path_to_relative_path_string(f))
                     .collect::<Vec<String>>(),
             );
         }
@@ -817,11 +663,15 @@ impl Manager {
                 }
             }
             None => {
-                let clients = self.lsp_clients.read().await;
-                for client in clients.values() {
-                    let locked_client = client.lock().await;
-                    let client_diagnostics = locked_client.get_diagnostics_store().get_all().await;
-
+                let clients = self.clients_snapshot().await;
+                let mut results = stream::iter(clients)
+                    .map(|client| async move {
+                        let store = client.lock().await.get_diagnostics_store().clone();
+                        store.get_all().await
+                    })
+                    .buffered(CLIENT_CONCURRENCY)
+                    .boxed();
+                while let Some(client_diagnostics) = results.next().await {
                     for (uri, diagnostics) in client_diagnostics {
                         let relative_path = uri_to_relative_path_string(&uri);
                         all_diagnostics.insert(relative_path, diagnostics);
@@ -979,3 +829,7 @@ impl Manager {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+#[path = "core_tests.rs"]
+mod tests;

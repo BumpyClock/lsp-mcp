@@ -9,6 +9,7 @@ use crate::lsp::manager::Manager;
 use crate::utils::file_utils::{
     absolute_path_to_relative_path_string, uri_to_relative_path_string,
 };
+use futures::stream::{self, StreamExt};
 use log::debug;
 use lsp_types::{Position as LspPosition, Range as LspRange};
 use std::collections::HashSet;
@@ -152,19 +153,21 @@ pub(crate) async fn workspace_symbol_impl(
         symbol.signature = sig;
     }
 
-    for symbol in &mut filtered_symbols {
-        if let Some(line) = read_symbol_line(
-            manager,
-            &symbol.location.path,
-            symbol.location.position.line,
-        )
-        .await
-        {
-            if is_reexport_line(&line) && !symbol.kind.contains("re-export") {
-                symbol.kind = format!("{} (re-export)", symbol.kind);
+    stream::iter(filtered_symbols.iter_mut())
+        .for_each_concurrent(8, |symbol| async move {
+            if let Some(line) = read_symbol_line(
+                manager,
+                &symbol.location.path,
+                symbol.location.position.line,
+            )
+            .await
+            {
+                if is_reexport_line(&line) && !symbol.kind.contains("re-export") {
+                    symbol.kind = format!("{} (re-export)", symbol.kind);
+                }
             }
-        }
-    }
+        })
+        .await;
 
     filtered_symbols = dedupe_workspace_symbols(filtered_symbols);
 
@@ -198,52 +201,54 @@ async fn attach_snippets_to_workspace_symbols(
     use lsp_types::Position as LspPosition;
     use lsp_types::Range as LspRange;
 
-    for symbol in symbols.iter_mut() {
-        let line = symbol.location.position.line;
-        let start_line = line.saturating_sub(context_lines).max(1);
-        let end_line = line.saturating_add(context_lines).max(1);
+    stream::iter(symbols.iter_mut())
+        .for_each_concurrent(8, |symbol| async move {
+            let line = symbol.location.position.line;
+            let start_line = line.saturating_sub(context_lines).max(1);
+            let end_line = line.saturating_add(context_lines).max(1);
 
-        let lsp_range = LspRange {
-            start: LspPosition {
-                line: start_line.saturating_sub(1),
-                character: 0,
-            },
-            end: LspPosition {
-                line: end_line,
-                character: 0,
-            },
-        };
+            let lsp_range = LspRange {
+                start: LspPosition {
+                    line: start_line.saturating_sub(1),
+                    character: 0,
+                },
+                end: LspPosition {
+                    line: end_line,
+                    character: 0,
+                },
+            };
 
-        match manager
-            .read_source_code(&symbol.location.path, Some(lsp_range))
-            .await
-        {
-            Ok(source_code) => {
-                symbol.snippet = Some(CodeContext {
-                    range: FileRange {
-                        path: symbol.location.path.clone(),
-                        range: Range {
-                            start: crate::api_types::Position {
-                                line: start_line,
-                                character: 1,
-                            },
-                            end: crate::api_types::Position {
-                                line: end_line,
-                                character: 1,
+            match manager
+                .read_source_code(&symbol.location.path, Some(lsp_range))
+                .await
+            {
+                Ok(source_code) => {
+                    symbol.snippet = Some(CodeContext {
+                        range: FileRange {
+                            path: symbol.location.path.clone(),
+                            range: Range {
+                                start: crate::api_types::Position {
+                                    line: start_line,
+                                    character: 1,
+                                },
+                                end: crate::api_types::Position {
+                                    line: end_line,
+                                    character: 1,
+                                },
                             },
                         },
-                    },
-                    source_code,
-                });
+                        source_code,
+                    });
+                }
+                Err(e) => {
+                    debug!(
+                        "Failed to read snippet for workspace symbol {}: {}",
+                        symbol.name, e
+                    );
+                }
             }
-            Err(e) => {
-                debug!(
-                    "Failed to read snippet for workspace symbol {}: {}",
-                    symbol.name, e
-                );
-            }
-        }
-    }
+        })
+        .await;
 }
 
 fn workspace_symbol_info_from_ast_match(ast_match: &AstGrepMatch) -> WorkspaceSymbolInfo {
@@ -315,8 +320,12 @@ async fn workspace_symbol_fallback(
     exact: bool,
 ) -> Vec<WorkspaceSymbolInfo> {
     let mut symbols = Vec::new();
-    for file in workspace_files {
-        let matches = match manager.definitions_in_file_ast_grep(file).await {
+    let mut file_matches = stream::iter(workspace_files)
+        .map(|file| manager.definitions_in_file_ast_grep(file))
+        .buffered(8)
+        .boxed();
+    while let Some(result) = file_matches.next().await {
+        let matches = match result {
             Ok(matches) => matches,
             Err(_) => continue,
         };

@@ -52,3 +52,5 @@ node_modules
 .fastembed_cache/
 
 .venv/
+.mcp/
+docs/audits

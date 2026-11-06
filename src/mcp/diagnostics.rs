@@ -47,18 +47,20 @@ pub async fn health(
     let log_file =
         session_log_path(debug_config, workspace_root).map(|p| p.to_string_lossy().to_string());
 
-    let semantic_search = match semantic_search_manager {
-        Some(manager) => {
-            let snapshot = manager.read().await.health_snapshot().await;
-            Some(to_semantic_search_health(snapshot))
+    let (languages, semantic_search) = tokio::join!(service.health(), async {
+        match semantic_search_manager {
+            Some(manager) => {
+                let snapshot = manager.read().await.health_snapshot().await;
+                Some(to_semantic_search_health(snapshot))
+            }
+            None => None,
         }
-        None => None,
-    };
+    });
 
     let response = HealthResponse {
         status: "ok".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        languages: service.health().await,
+        languages,
         debug_mode: if debug_enabled { Some(true) } else { None },
         session_id,
         log_file,

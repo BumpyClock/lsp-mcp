@@ -7,6 +7,13 @@ use crate::{
     utils::file_utils::absolute_path_to_relative_path_string,
 };
 
+/// A symbol lookup using a file path and zero-based LSP position.
+#[derive(Debug, Clone)]
+pub(crate) struct SymbolLookup {
+    pub path: String,
+    pub position: lsp_types::Position,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AstGrepMatch {

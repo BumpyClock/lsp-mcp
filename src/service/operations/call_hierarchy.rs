@@ -6,6 +6,7 @@ use crate::api_types::{
     IncomingCallInfo, IncomingCallsResponse, OutgoingCallInfo, OutgoingCallsResponse, Position,
     PrepareCallHierarchyResponse, Range,
 };
+use crate::ast_grep::types::SymbolLookup;
 use crate::lsp::manager::Manager;
 use crate::mcp_response::normalize_kind;
 use crate::service::types::errors::ServiceError;
@@ -14,6 +15,7 @@ use crate::service::utils::transformations::{
     call_hierarchy_item_to_info, definition_locations_lsp,
 };
 use crate::utils::file_utils::uri_to_relative_path_string;
+use futures::stream::{self, StreamExt};
 use log::debug;
 use lsp_types::Position as LspPosition;
 use lsp_types::Range as LspRange;
@@ -32,33 +34,39 @@ async fn fetch_call_snippets(
     source_file_path: &str,
     context_lines: u32,
 ) -> Vec<CallInfo> {
-    for call in &mut calls {
-        let file_path = match direction {
-            CallHierarchyDirection::Incoming => &call.item.location.path,
-            CallHierarchyDirection::Outgoing => source_file_path,
-        };
-
-        let mut snippets = Vec::with_capacity(call.call_ranges.len());
-        for range in &call.call_ranges {
-            let start_line = range.start.line.saturating_sub(context_lines);
-            let end_line = range.start.line.saturating_add(context_lines);
-            let lsp_range = LspRange {
-                start: LspPosition {
-                    line: start_line.saturating_sub(1),
-                    character: 0,
-                },
-                end: LspPosition {
-                    line: end_line,
-                    character: 0,
-                },
+    let concurrency = match direction {
+        CallHierarchyDirection::Incoming => 8,
+        CallHierarchyDirection::Outgoing => 1,
+    };
+    stream::iter(calls.iter_mut())
+        .for_each_concurrent(concurrency, |call| async move {
+            let file_path = match direction {
+                CallHierarchyDirection::Incoming => &call.item.location.path,
+                CallHierarchyDirection::Outgoing => source_file_path,
             };
-            match manager.read_source_code(file_path, Some(lsp_range)).await {
-                Ok(code) => snippets.push(code.trim().to_string()),
-                Err(_) => snippets.push(String::new()),
+
+            let mut snippets = Vec::with_capacity(call.call_ranges.len());
+            for range in &call.call_ranges {
+                let start_line = range.start.line.saturating_sub(context_lines);
+                let end_line = range.start.line.saturating_add(context_lines);
+                let lsp_range = LspRange {
+                    start: LspPosition {
+                        line: start_line.saturating_sub(1),
+                        character: 0,
+                    },
+                    end: LspPosition {
+                        line: end_line,
+                        character: 0,
+                    },
+                };
+                match manager.read_source_code(file_path, Some(lsp_range)).await {
+                    Ok(code) => snippets.push(code.trim().to_string()),
+                    Err(_) => snippets.push(String::new()),
+                }
             }
-        }
-        call.call_snippets = Some(snippets);
-    }
+            call.call_snippets = Some(snippets);
+        })
+        .await;
     calls
 }
 
@@ -506,23 +514,29 @@ async fn outgoing_calls_from_references(
         "call_hierarchy_impl: ast-grep found {} referenced symbols",
         referenced_symbols.len()
     );
-    let mut calls = Vec::new();
-    for (ast_match, def_response) in referenced_symbols {
-        if !allow_call_hierarchy_reference_rule(&ast_match.rule_id) {
-            continue;
-        }
-        let locations = definition_locations_lsp(&def_response);
-        if locations.is_empty() {
-            continue;
-        }
-
-        for location in locations {
+    let locations: Vec<_> = referenced_symbols
+        .iter()
+        .filter(|(ast_match, _)| allow_call_hierarchy_reference_rule(&ast_match.rule_id))
+        .flat_map(|(ast_match, response)| {
+            definition_locations_lsp(response)
+                .into_iter()
+                .map(move |location| (ast_match, location))
+        })
+        .collect();
+    let lookups: Vec<_> = locations
+        .iter()
+        .map(|(_, location)| SymbolLookup {
+            path: uri_to_relative_path_string(&location.uri),
+            position: location.range.start,
+        })
+        .collect();
+    let symbols = manager.get_symbols_from_positions(&lookups).await;
+    let calls: Vec<_> = locations
+        .into_iter()
+        .zip(symbols)
+        .map(|((ast_match, location), symbol)| {
             let def_path = uri_to_relative_path_string(&location.uri);
-            let def_lsp_position = location.range.start;
-            let (kind, def_range) = match manager
-                .get_symbol_from_position(&def_path, &def_lsp_position)
-                .await
-            {
+            let (kind, def_range) = match symbol {
                 Ok(symbol) => (normalize_kind(&symbol.kind), symbol.file_range.range),
                 Err(_) => (
                     "function".to_string(),
@@ -538,7 +552,6 @@ async fn outgoing_calls_from_references(
                     },
                 ),
             };
-
             let external = if is_external_call(&def_path, workspace_set) {
                 Some(true)
             } else {
@@ -557,7 +570,7 @@ async fn outgoing_calls_from_references(
                 },
             };
 
-            let call_info = CallInfo {
+            CallInfo {
                 item: CallHierarchyItemInfo {
                     name: ast_match.meta_variables.single.name.text.clone(),
                     kind,
@@ -574,10 +587,9 @@ async fn outgoing_calls_from_references(
                 },
                 call_ranges: vec![call_range],
                 call_snippets: None,
-            };
-            calls.push(call_info);
-        }
-    }
+            }
+        })
+        .collect();
     debug!(
         "call_hierarchy_impl: ast-grep fallback produced {} calls",
         calls.len()
