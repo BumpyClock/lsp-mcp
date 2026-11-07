@@ -205,13 +205,12 @@ pub fn is_property_key(node: Node, lang: &str) -> bool {
                     }
                 }
             }
-            "python" => {
-                if parent.kind() == "dictionary" || parent.kind() == "pair" {
+            "python"
+                if (parent.kind() == "dictionary" || parent.kind() == "pair") => {
                     if let Some(key) = parent.child_by_field_name("key") {
                         return key.id() == node.id();
                     }
                 }
-            }
             _ => {}
         }
     }

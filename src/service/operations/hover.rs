@@ -319,11 +319,7 @@ fn collect_nearby_symbols(
             for sym in symbols {
                 // DocumentSymbol uses 0-based lines, our target_line is 1-based
                 let sym_line = sym.selection_range.start.line + 1;
-                let distance = if sym_line >= target_line {
-                    sym_line - target_line
-                } else {
-                    target_line - sym_line
-                };
+                let distance = sym_line.abs_diff(target_line);
 
                 if distance <= line_range {
                     result.push((
@@ -340,11 +336,7 @@ fn collect_nearby_symbols(
                 if let Some(children) = &sym.children {
                     for child in children {
                         let child_line = child.selection_range.start.line + 1;
-                        let child_distance = if child_line >= target_line {
-                            child_line - target_line
-                        } else {
-                            target_line - child_line
-                        };
+                        let child_distance = child_line.abs_diff(target_line);
 
                         if child_distance <= line_range {
                             result.push((
@@ -364,11 +356,7 @@ fn collect_nearby_symbols(
             for sym in symbols {
                 #[allow(deprecated)]
                 let sym_line = sym.location.range.start.line + 1;
-                let distance = if sym_line >= target_line {
-                    sym_line - target_line
-                } else {
-                    target_line - sym_line
-                };
+                let distance = sym_line.abs_diff(target_line);
 
                 if distance <= line_range {
                     result.push((

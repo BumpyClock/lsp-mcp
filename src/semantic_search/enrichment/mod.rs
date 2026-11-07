@@ -214,7 +214,7 @@ impl EnrichmentManager {
                 .collect();
 
             let mut results = HashMap::new();
-            let responses = stream::iter(batches.into_iter())
+            let responses = stream::iter(batches)
                 .map(|batch| async move { self.fetch_batch(&batch).await })
                 .buffer_unordered(max_concurrency)
                 .collect::<Vec<_>>()

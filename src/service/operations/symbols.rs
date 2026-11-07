@@ -149,7 +149,7 @@ pub(crate) async fn workspace_symbol_impl(
         .map(|s| (s.location.path.as_str(), s.location.position.clone()))
         .collect();
     let signatures = batch_hover_for_signatures(manager, positions).await;
-    for (symbol, sig) in filtered_symbols.iter_mut().zip(signatures.into_iter()) {
+    for (symbol, sig) in filtered_symbols.iter_mut().zip(signatures) {
         symbol.signature = sig;
     }
 

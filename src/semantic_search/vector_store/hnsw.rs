@@ -106,11 +106,10 @@ impl HnswVectorStore {
         if index_basename.trim().is_empty() {
             index_basename = INDEX_BASENAME.to_string();
         }
-        if !index_files_exist(index_dir, &index_basename) && index_basename != INDEX_BASENAME {
-            if index_files_exist(index_dir, INDEX_BASENAME) {
+        if !index_files_exist(index_dir, &index_basename) && index_basename != INDEX_BASENAME
+            && index_files_exist(index_dir, INDEX_BASENAME) {
                 index_basename = INDEX_BASENAME.to_string();
             }
-        }
         metadata.set_index_basename(&index_basename).await?;
 
         let mappings = metadata.load_hnsw_ids().await?;

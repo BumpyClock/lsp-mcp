@@ -439,7 +439,7 @@ pub(crate) fn group_references_by_file(references: &[McpReferenceLocation]) -> V
         let path = reference.path.clone().unwrap_or_default();
         groups
             .entry(path)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(reference.clone());
     }
 

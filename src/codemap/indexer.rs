@@ -348,11 +348,7 @@ impl CodemapIndexer {
                 jsdoc_summary: None,
                 dependencies: None,
                 line_count: None,
-                children: if let Some(children) = &symbol.children {
-                    Some(self.flatten_document_symbols(path, children))
-                } else {
-                    None
-                },
+                children: symbol.children.as_ref().map(|children| self.flatten_document_symbols(path, children)),
                 snippet: None,
             };
             result.push(api_symbol);

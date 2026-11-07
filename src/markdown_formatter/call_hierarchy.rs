@@ -35,7 +35,7 @@ impl ToMarkdown for CallHierarchyResponse {
         let calls_markdown: Vec<String> = self
             .calls
             .iter()
-            .map(|call| format_call_info(call))
+            .map(format_call_info)
             .collect();
 
         format!("{}\n{}", header, calls_markdown.join("\n\n"))

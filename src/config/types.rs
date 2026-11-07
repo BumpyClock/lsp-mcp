@@ -6,18 +6,15 @@ use serde::Deserialize;
 /// Output formatting mode for MCP tool responses.
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum OutputMode {
     /// Compact output format (default)
+    #[default]
     Default,
     /// Verbose output format with all details
     Verbose,
 }
 
-impl Default for OutputMode {
-    fn default() -> Self {
-        OutputMode::Default
-    }
-}
 
 /// Configuration for MCP output formatting.
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -51,19 +48,16 @@ impl OutputConfigFile {
 /// Log level for debug output.
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum DebugLogLevel {
     Error,
     Warn,
     Info,
+    #[default]
     Debug,
     Trace,
 }
 
-impl Default for DebugLogLevel {
-    fn default() -> Self {
-        DebugLogLevel::Debug
-    }
-}
 
 /// Debug configuration for logging.
 #[derive(Debug, Clone, Deserialize, Default)]

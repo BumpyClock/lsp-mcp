@@ -347,17 +347,12 @@ fn default_context_lines() -> Option<u32> {
     Some(15)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) enum OptionalContextLines {
+    #[default]
     Missing,
     Null,
     Value(u32),
-}
-
-impl Default for OptionalContextLines {
-    fn default() -> Self {
-        OptionalContextLines::Missing
-    }
 }
 
 impl OptionalContextLines {

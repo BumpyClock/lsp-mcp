@@ -200,7 +200,7 @@ fn format_context(response: &CodemapResponse) -> String {
                 .nodes
                 .iter()
                 .find(|n| n.id() == edge.from_node_id())
-                .map(|n| get_node_name(n))
+                .map(get_node_name)
                 .unwrap_or_else(|| "unknown".to_string());
             output.push_str(&format!(
                 "  {} — {}\n",
@@ -231,7 +231,7 @@ fn format_context(response: &CodemapResponse) -> String {
                 .nodes
                 .iter()
                 .find(|n| n.id() == edge.to_node_id())
-                .map(|n| get_node_name(n))
+                .map(get_node_name)
                 .unwrap_or_else(|| "unknown".to_string());
             output.push_str(&format!(
                 "  {} — {}\n",

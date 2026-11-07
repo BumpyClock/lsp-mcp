@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "lspMCP": {
+      "type": "stdio",
+      "command": "lsp-mcp"
+    }
+  }
+}

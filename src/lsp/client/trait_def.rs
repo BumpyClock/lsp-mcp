@@ -206,7 +206,7 @@ pub trait LspClient: Send {
         &mut self,
         item: lsp_types::TextDocumentItem,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        if let Some(path) = item.uri.to_file_path().ok() {
+        if let Ok(path) = item.uri.to_file_path() {
             if let Some(path_str) = path.to_str() {
                 self.track_opened_document(path_str, item.version).await;
             }

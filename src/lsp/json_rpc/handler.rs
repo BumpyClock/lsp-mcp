@@ -26,6 +26,12 @@ impl JsonRpcHandler {
     }
 }
 
+impl Default for JsonRpcHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JsonRpc for JsonRpcHandler {
     fn create_success_response(&self, id: u64) -> String {
         serde_json::json!({

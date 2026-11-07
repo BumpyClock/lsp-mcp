@@ -140,6 +140,12 @@ impl PendingRequests {
     }
 }
 
+impl Default for PendingRequests {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod progress_tests {
     use super::*;

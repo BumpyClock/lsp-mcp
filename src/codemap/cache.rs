@@ -68,14 +68,14 @@ impl GraphCache {
                 self.symbol_index
                     .write()
                     .entry(name_lower)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(node_id.clone());
 
                 let file_path = s.location.path.clone();
                 self.file_symbols
                     .write()
                     .entry(file_path)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(node_id.clone());
             }
             Node::File(f) => {
@@ -170,13 +170,13 @@ impl GraphCache {
         self.outgoing_edges
             .write()
             .entry(from_id.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push((edge_kind, to_id.clone(), edge_id.clone()));
 
         self.incoming_edges
             .write()
             .entry(to_id.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push((edge_kind, from_id.clone(), edge_id.clone()));
 
         self.edges.write().insert(edge_id, edge);

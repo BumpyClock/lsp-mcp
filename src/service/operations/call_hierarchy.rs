@@ -337,7 +337,7 @@ pub(crate) async fn call_hierarchy_impl(
                     })
                 }
             };
-            let lsp_calls = manager.incoming_calls(file_path, &item).await?;
+            let lsp_calls = manager.incoming_calls(file_path, item).await?;
             lsp_calls
                 .into_iter()
                 .map(|call| {
