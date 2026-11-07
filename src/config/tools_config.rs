@@ -7,16 +7,12 @@ use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum InitialSetupMode {
+    #[default]
     Auto,
     Enabled,
     Disabled,
-}
-
-impl Default for InitialSetupMode {
-    fn default() -> Self {
-        InitialSetupMode::Auto
-    }
 }
 
 /// Configuration for which MCP tools are enabled/disabled.
@@ -122,25 +118,5 @@ impl ToolsConfig {
         }
 
         tools
-    }
-
-    /// Merge project config over global config for tools
-    #[cfg(test)]
-    pub(crate) fn merge(self, project: Self) -> Self {
-        let preset = project.preset;
-        let initial_setup = project.initial_setup;
-
-        let mut enable: HashSet<_> = self.enable.into_iter().collect();
-        enable.extend(project.enable);
-
-        let mut disable: HashSet<_> = self.disable.into_iter().collect();
-        disable.extend(project.disable);
-
-        ToolsConfig {
-            preset,
-            enable: enable.into_iter().collect(),
-            disable: disable.into_iter().collect(),
-            initial_setup,
-        }
     }
 }

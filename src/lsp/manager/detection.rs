@@ -27,10 +27,18 @@ pub fn detect_languages_in_workspace(root_path: &str) -> Vec<SupportedLanguages>
 
     let mut detected: HashSet<SupportedLanguages> = HashSet::new();
 
-    let walk = WalkBuilder::new(Path::new(root_path))
+    let workspace = Path::new(root_path).to_path_buf();
+    let walk = WalkBuilder::new(&workspace)
         .git_ignore(true)
+        .require_git(false)
         .filter_entry(move |entry| {
-            let path = entry.path();
+            if entry.depth() == 0 {
+                return true;
+            }
+            let path = entry
+                .path()
+                .strip_prefix(&workspace)
+                .unwrap_or(entry.path());
             !exclude_patterns.iter().any(|pattern| {
                 glob::Pattern::new(pattern)
                     .map(|p| p.matches_path(path))
@@ -52,7 +60,9 @@ pub fn detect_languages_in_workspace(root_path: &str) -> Vec<SupportedLanguages>
         }
     }
 
-    let result: Vec<SupportedLanguages> = detected.into_iter().collect();
+    let result: Vec<SupportedLanguages> = LanguageMetadata::all()
+        .filter_map(|metadata| detected.contains(&metadata.id).then_some(metadata.id))
+        .collect();
     debug!("Starting LSPs: {:?}", result);
     result
 }

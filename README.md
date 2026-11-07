@@ -186,9 +186,15 @@ args = ["--workspace-root", "/path/to/project"]
 You can customize `lsp-mcp` behavior with a `.lsp-mcp.json` file in your workspace root.
 See `CONFIGURATION.md` for the full schema and examples.
 
+When `languages` is omitted, LSP-MCP scans the workspace with gitignore rules to detect supported languages. An explicit list is an allowlist, and `[]` disables all language servers. Project settings override global settings. Unknown languages and configuration parse errors fail startup.
+
+Servers start in the background for the workspace root. File requests can start a server lazily when a language appears later. Binary overrides take precedence over registry defaults; default discovery searches PATH only and does not install servers or discover project-local binaries. Missing executables are retried on later requests. The read-only `health` tool reports selection and server status, including missing executables and failures. Detection does not create additional monorepo roots or add arbitrary language support.
+
 ### First-time setup
 
-On first launch (no project config), the `initialSetup` tool is enabled in the standard preset to help configure languages and binaries.
+On first launch (no project config), the `initialSetup` tool is enabled in the standard preset for optional language and binary overrides. `health` is also available in the standard preset.
+
+Verify automatic discovery against a built or installed binary with `python scripts/verify_discovery.py /path/to/lsp-mcp`. The probe uses fixture workspaces and a fake LSP to check automatic and lazy startup, PATH resolution, allowlists, concurrent requests, live health, and configuration errors.
 If a project `.lsp-mcp.json` exists, `initialSetup` is auto-disabled unless you set `"tools": { "initial_setup": "enabled" }`.
 After setup, add `initialSetup` to `"tools": { "disable": ["initialSetup"] }` and restart your agent.
 

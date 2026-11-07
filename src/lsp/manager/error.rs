@@ -9,6 +9,10 @@ pub enum LspManagerError {
     FileNotFound(String),
     LspClientNotFound(SupportedLanguages),
     LspClientInitializing(SupportedLanguages),
+    LspStartupFailed {
+        language: SupportedLanguages,
+        reason: String,
+    },
     InternalError(String),
     UnsupportedFileType(String),
     NotImplemented(String),
@@ -29,6 +33,9 @@ impl fmt::Display for LspManagerError {
                     "The {:?} language server is still initializing, please try again shortly",
                     lang
                 )
+            }
+            LspManagerError::LspStartupFailed { language, reason } => {
+                write!(f, "The {language} language server is unavailable: {reason}")
             }
             LspManagerError::InternalError(msg) => write!(f, "Internal error: {}", msg),
             LspManagerError::UnsupportedFileType(path) => {

@@ -291,6 +291,21 @@ impl LanguageMetadata {
         LANGUAGE_REGISTRY.iter()
     }
 
+    /// Resolve a configured path or the catalog command through the process PATH.
+    pub fn resolve_binary(
+        &self,
+        binary: Option<&str>,
+        workspace: &std::path::Path,
+    ) -> Result<std::path::PathBuf, String> {
+        let command = binary.unwrap_or(self.default_binary);
+        which::which_in(command, std::env::var_os("PATH"), workspace).map_err(|error| {
+            format!(
+                "Cannot find executable '{command}' for {}: {error}. Install it on PATH or set binaries.{} in .lsp-mcp.json",
+                self.name, self.id
+            )
+        })
+    }
+
     /// Find language by file extension
     pub fn from_extension(ext: &str) -> Option<&'static LanguageMetadata> {
         LANGUAGE_REGISTRY

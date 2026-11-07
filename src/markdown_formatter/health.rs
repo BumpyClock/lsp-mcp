@@ -9,7 +9,10 @@ impl ToMarkdown for LspStatus {
         match self {
             LspStatus::Ready => "ready".to_string(),
             LspStatus::Initializing => "initializing".to_string(),
-            LspStatus::Unavailable => "unavailable".to_string(),
+            LspStatus::Disabled => "disabled".to_string(),
+            LspStatus::NotDetected => "not_detected".to_string(),
+            LspStatus::MissingExecutable => "missing_executable".to_string(),
+            LspStatus::Failed => "failed".to_string(),
         }
     }
 }
@@ -70,8 +73,14 @@ impl ToMarkdown for HealthResponse {
                 output.push_str(&format!(
                     "  {} - {}\n",
                     language.to_markdown(),
-                    status.to_markdown()
+                    status.status.to_markdown()
                 ));
+                if let Some(command) = &status.command {
+                    output.push_str(&format!("    command: {}\n", command));
+                }
+                if let Some(reason) = &status.reason {
+                    output.push_str(&format!("    reason: {}\n", reason));
+                }
             }
         }
 
@@ -114,12 +123,43 @@ mod tests {
         HealthResponse {
             status: status.to_string(),
             version: version.to_string(),
-            languages: languages.into_iter().collect(),
+            languages: languages
+                .into_iter()
+                .map(|(language, status)| {
+                    (
+                        language,
+                        crate::api_types::LanguageServerHealth {
+                            status,
+                            command: None,
+                            reason: None,
+                        },
+                    )
+                })
+                .collect(),
             debug_mode: None,
             session_id: None,
             log_file: None,
             semantic_search: None,
         }
+    }
+
+    #[test]
+    fn health_renders_command_and_reason() {
+        let mut response = create_health_response(
+            "ok",
+            "1",
+            vec![(SupportedLanguages::Rust, LspStatus::MissingExecutable)],
+        );
+        let health = response
+            .languages
+            .get_mut(&SupportedLanguages::Rust)
+            .unwrap();
+        health.command = Some("rust-analyzer".into());
+        health.reason = Some("not found on PATH".into());
+        let output = response.to_markdown();
+        assert!(output.contains("rust - missing_executable"));
+        assert!(output.contains("command: rust-analyzer"));
+        assert!(output.contains("reason: not found on PATH"));
     }
 
     #[test]
@@ -147,14 +187,14 @@ mod tests {
     }
 
     #[test]
-    fn lsp_status_unavailable_renders_as_lowercase_unavailable() {
-        let status = LspStatus::Unavailable;
+    fn lsp_status_missing_executable_renders_as_lowercase_missing_executable() {
+        let status = LspStatus::MissingExecutable;
 
         let result = status.to_markdown();
 
         assert_eq!(
-            result, "unavailable",
-            "negative: Unavailable status must render as lowercase 'unavailable'"
+            result, "missing_executable",
+            "negative: MissingExecutable status must render as lowercase 'missing_executable'"
         );
     }
 
@@ -359,18 +399,18 @@ mod tests {
     }
 
     #[test]
-    fn health_response_renders_unavailable_language() {
+    fn health_response_renders_missing_executable_language() {
         let response = create_health_response(
             "ok",
             "1.0.0",
-            vec![(SupportedLanguages::Golang, LspStatus::Unavailable)],
+            vec![(SupportedLanguages::Golang, LspStatus::MissingExecutable)],
         );
 
         let result = response.to_markdown();
 
         assert!(
-            result.contains("  golang - unavailable"),
-            "negative: health response must render unavailable language"
+            result.contains("  golang - missing_executable"),
+            "negative: health response must render missing_executable language"
         );
     }
 
@@ -411,7 +451,7 @@ mod tests {
                 (SupportedLanguages::TypeScriptJavaScript, LspStatus::Ready),
                 (SupportedLanguages::Rust, LspStatus::Ready),
                 (SupportedLanguages::Python, LspStatus::Initializing),
-                (SupportedLanguages::Golang, LspStatus::Unavailable),
+                (SupportedLanguages::Golang, LspStatus::MissingExecutable),
             ],
         );
 
@@ -430,8 +470,8 @@ mod tests {
             "negative: health response must render python initializing"
         );
         assert!(
-            result.contains("  golang - unavailable"),
-            "negative: health response must render golang unavailable"
+            result.contains("  golang - missing_executable"),
+            "negative: health response must render golang missing_executable"
         );
     }
 

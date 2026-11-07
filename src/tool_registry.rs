@@ -39,6 +39,7 @@ pub const CORE_TOOLS: &[&str] = &[
     "documentSymbol",
     "callHierarchy",
     "findReferencedSymbols",
+    "health",
     "initialSetup",
 ];
 
@@ -56,7 +57,7 @@ pub const MINIMAL_TOOLS: &[&str] = &[
 pub enum ToolPreset {
     /// Minimal: Only essential navigation tools (4 tools)
     Minimal,
-    /// Standard (default): Core tools for productive development (10 tools)
+    /// Standard (default): Core tools for productive development (11 tools)
     #[default]
     Standard,
     /// Full: All available tools except opt-in (15 tools)
@@ -92,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_core_tools_count() {
-        assert_eq!(CORE_TOOLS.len(), 10, "Expected 10 core tools");
+        assert_eq!(CORE_TOOLS.len(), 11, "Expected 11 core tools");
     }
 
     #[test]
@@ -113,7 +114,8 @@ mod tests {
     #[test]
     fn test_get_preset_tools_standard() {
         let tools = get_preset_tools(ToolPreset::Standard);
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 11);
+        assert!(tools.contains("health"));
         // Should include all minimal tools
         assert!(tools.contains("goToDefinition"));
         assert!(tools.contains("getSymbolDefinition"));

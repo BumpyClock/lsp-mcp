@@ -3,8 +3,8 @@
 
 use crate::api_types::{
     CallHierarchyDirection, CallHierarchyResponse, DiagnosticsResponse, HoverResponse,
-    ImplementationResponse, IncomingCallsResponse, LspStatus, OutgoingCallsResponse, Position,
-    PrepareCallHierarchyResponse, Range, ReferencedSymbolsResponse, SupportedLanguages,
+    ImplementationResponse, IncomingCallsResponse, LanguageServerHealth, OutgoingCallsResponse,
+    Position, PrepareCallHierarchyResponse, Range, ReferencedSymbolsResponse, SupportedLanguages,
     WorkspaceSymbolResponse,
 };
 use crate::lsp::manager::Manager;
@@ -195,38 +195,8 @@ impl LspService {
     }
 
     /// Returns health status for all supported language servers.
-    pub async fn health(&self) -> HashMap<SupportedLanguages, LspStatus> {
-        let mut languages = HashMap::new();
-        for lang in [
-            SupportedLanguages::Python,
-            SupportedLanguages::TypeScriptJavaScript,
-            SupportedLanguages::Rust,
-            SupportedLanguages::CPP,
-            SupportedLanguages::CSharp,
-            SupportedLanguages::Java,
-            SupportedLanguages::Golang,
-            SupportedLanguages::PHP,
-        ] {
-            let status = if let Some(client) = self.manager.get_client(lang).await {
-                if client
-                    .lock()
-                    .await
-                    .get_pending_requests()
-                    .is_loading()
-                    .await
-                {
-                    LspStatus::Initializing
-                } else {
-                    LspStatus::Ready
-                }
-            } else if self.manager.is_language_pending(lang).await {
-                LspStatus::Initializing
-            } else {
-                LspStatus::Unavailable
-            };
-            languages.insert(lang, status);
-        }
-        languages
+    pub async fn health(&self) -> HashMap<SupportedLanguages, LanguageServerHealth> {
+        self.manager.language_health().await
     }
 
     /// Gets diagnostics (errors, warnings, hints) for a file or the entire workspace.
@@ -561,25 +531,12 @@ mod tests {
         .await?;
         let service = create_service(Arc::new(manager));
 
-        let mut attempts_remaining = 3;
-        let mut results = tokio::join!(service.health(), service.health());
-        while attempts_remaining > 0
-            && (results.0.values().any(|status| *status == LspStatus::Ready)
-                || results.0 != results.1)
-        {
-            attempts_remaining -= 1;
-            results = tokio::join!(service.health(), service.health());
-        }
-
-        let all_unavailable = results
-            .0
+        let (first, second) = tokio::join!(service.health(), service.health());
+        assert_eq!(first, second);
+        assert!(!first.is_empty());
+        assert!(first
             .values()
-            .all(|status| *status == LspStatus::Unavailable);
-        let consistent = results.0 == results.1;
-        assert!(
-            all_unavailable && consistent,
-            "Expected language servers to be unavailable and consistent but they were not"
-        );
+            .all(|health| health.status == crate::api_types::LspStatus::NotDetected));
 
         Ok(())
     }

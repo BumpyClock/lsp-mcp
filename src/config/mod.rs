@@ -6,7 +6,15 @@ mod semantic_search_config;
 mod tools_config;
 mod types;
 
+use crate::api_types::SupportedLanguages;
 use std::collections::HashMap;
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub enum LanguageSelection {
+    #[default]
+    Auto,
+    Explicit(Vec<SupportedLanguages>),
+}
 
 pub use semantic_search_config::{
     EmbedderConfig, EnrichmentConfig, ExcludeConfig, SemanticSearchConfig, VectorStoreConfig,
@@ -42,7 +50,7 @@ pub(crate) use types::{DebugConfigFile, OutputConfigFile};
 /// ```
 #[derive(Debug, Default, Clone)]
 pub struct LspMcpConfig {
-    pub languages: Vec<String>,
+    pub languages: LanguageSelection,
     pub binaries: HashMap<String, String>,
     pub tools: ToolsConfig,
     pub output: Option<OutputConfig>,
@@ -57,7 +65,6 @@ mod tests {
     use crate::tool_registry::ToolPreset;
     use rand::distr::Alphanumeric;
     use rand::Rng;
-    use std::collections::HashSet;
     use tempfile::TempDir;
 
     fn random_suffix() -> String {
@@ -71,7 +78,7 @@ mod tests {
     #[test]
     fn it_returns_none_when_config_file_does_not_exist() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
         assert!(
             result.is_none(),
             "Expected None when .lsp-mcp.json does not exist"
@@ -85,22 +92,13 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
 
         assert!(result.is_some(), "Expected Some when config file exists");
         let config = result.unwrap();
         assert_eq!(
-            config.languages.len(),
-            2,
-            "Expected two languages in config"
-        );
-        assert!(
-            config.languages.contains(&"rust".to_string()),
-            "Expected rust in languages"
-        );
-        assert!(
-            config.languages.contains(&"python".to_string()),
-            "Expected python in languages"
+            config.languages,
+            LanguageSelection::Explicit(vec![SupportedLanguages::Rust, SupportedLanguages::Python])
         );
     }
 
@@ -115,7 +113,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
 
         assert!(result.is_some(), "Expected Some when config file exists");
         let config = result.unwrap();
@@ -127,14 +125,17 @@ mod tests {
     }
 
     #[test]
-    fn it_returns_none_for_invalid_json() {
+    fn it_rejects_invalid_json_with_config_path() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, "not valid json {{{").expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path());
 
-        assert!(result.is_none(), "Expected None for invalid JSON config");
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains(&config_path.display().to_string()));
     }
 
     #[test]
@@ -143,12 +144,12 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, "{}").expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
 
         assert!(result.is_some(), "Expected Some for empty but valid JSON");
         let config = result.unwrap();
         assert!(
-            config.languages.is_empty(),
+            config.languages == LanguageSelection::Auto,
             "Expected empty languages for empty config"
         );
         assert!(
@@ -164,7 +165,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
         let config = result.expect("Expected config to load");
 
         assert!(
@@ -184,7 +185,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
 
         assert!(result.is_some(), "Expected Some for unicode paths");
         let config = result.unwrap();
@@ -202,7 +203,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
         let config = result.expect("Expected config to load");
 
         assert_eq!(config.tools.preset, ToolPreset::Minimal);
@@ -221,7 +222,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
         let config = result.expect("Expected config to load");
 
         assert_eq!(config.tools.preset, ToolPreset::Standard);
@@ -239,7 +240,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
         let config = result.expect("Expected config to load");
 
         assert_eq!(config.tools.preset, ToolPreset::Standard);
@@ -252,7 +253,7 @@ mod tests {
         let config = LspMcpConfig::default();
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 11);
         assert!(tools.contains("goToDefinition"));
         assert!(tools.contains("getSymbolDefinition"));
         assert!(tools.contains("findReferences"));
@@ -278,7 +279,7 @@ mod tests {
         };
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 11);
         assert!(tools.contains("findReferencedSymbols"));
     }
 
@@ -295,7 +296,7 @@ mod tests {
         };
         let tools = config.enabled_tools();
 
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         assert!(!tools.contains("callHierarchy"));
     }
 
@@ -324,7 +325,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
     }
 
     #[test]
@@ -340,7 +341,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 11);
     }
 
     #[test]
@@ -356,7 +357,7 @@ mod tests {
         let tools = config.enabled_tools();
 
         assert!(!tools.contains("initialSetup"));
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
     }
 
     #[test]
@@ -376,161 +377,11 @@ mod tests {
     }
 
     #[test]
-    fn test_config_merge_languages() {
-        let global = LspMcpConfig {
-            languages: vec!["rust".to_string()],
-            ..Default::default()
-        };
-        let project = LspMcpConfig {
-            languages: vec!["python".to_string()],
-            ..Default::default()
-        };
-
-        let merged = global.merge(project);
-
-        assert_eq!(merged.languages, vec!["python".to_string()]);
-    }
-
-    #[test]
-    fn test_config_merge_languages_empty_project() {
-        let global = LspMcpConfig {
-            languages: vec!["rust".to_string()],
-            ..Default::default()
-        };
-        let project = LspMcpConfig::default();
-
-        let merged = global.merge(project);
-
-        assert_eq!(merged.languages, vec!["rust".to_string()]);
-    }
-
-    #[test]
-    fn test_config_merge_binaries() {
-        let global = LspMcpConfig {
-            binaries: [("rust".to_string(), "/global/rust-analyzer".to_string())]
-                .into_iter()
-                .collect(),
-            ..Default::default()
-        };
-        let project = LspMcpConfig {
-            binaries: [("python".to_string(), "/project/jedi".to_string())]
-                .into_iter()
-                .collect(),
-            ..Default::default()
-        };
-
-        let merged = global.merge(project);
-
-        assert_eq!(merged.binaries.len(), 2);
-        assert_eq!(
-            merged.get_binary("rust"),
-            Some(&"/global/rust-analyzer".to_string())
-        );
-        assert_eq!(
-            merged.get_binary("python"),
-            Some(&"/project/jedi".to_string())
-        );
-    }
-
-    #[test]
-    fn test_config_merge_binaries_project_overrides() {
-        let global = LspMcpConfig {
-            binaries: [("rust".to_string(), "/global/rust-analyzer".to_string())]
-                .into_iter()
-                .collect(),
-            ..Default::default()
-        };
-        let project = LspMcpConfig {
-            binaries: [("rust".to_string(), "/project/rust-analyzer".to_string())]
-                .into_iter()
-                .collect(),
-            ..Default::default()
-        };
-
-        let merged = global.merge(project);
-
-        assert_eq!(
-            merged.get_binary("rust"),
-            Some(&"/project/rust-analyzer".to_string())
-        );
-    }
-
-    #[test]
-    fn test_config_merge_tools_preset() {
-        let global = LspMcpConfig {
-            tools: ToolsConfig {
-                preset: ToolPreset::Full,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let project = LspMcpConfig {
-            tools: ToolsConfig {
-                preset: ToolPreset::Minimal,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let merged = global.merge(project);
-
-        assert_eq!(merged.tools.preset, ToolPreset::Minimal);
-    }
-
-    #[test]
-    fn test_config_merge_tools_enable_union() {
-        let global = LspMcpConfig {
-            tools: ToolsConfig {
-                enable: vec!["tool_a".to_string()],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let project = LspMcpConfig {
-            tools: ToolsConfig {
-                enable: vec!["tool_b".to_string()],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let merged = global.merge(project);
-
-        let enable_set: HashSet<_> = merged.tools.enable.into_iter().collect();
-        assert!(enable_set.contains("tool_a"));
-        assert!(enable_set.contains("tool_b"));
-    }
-
-    #[test]
-    fn test_config_merge_tools_disable_union() {
-        let global = LspMcpConfig {
-            tools: ToolsConfig {
-                disable: vec!["tool_a".to_string()],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let project = LspMcpConfig {
-            tools: ToolsConfig {
-                disable: vec!["tool_b".to_string()],
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let merged = global.merge(project);
-
-        let disable_set: HashSet<_> = merged.tools.disable.into_iter().collect();
-        assert!(disable_set.contains("tool_a"));
-        assert!(disable_set.contains("tool_b"));
-    }
-
-    #[test]
     fn test_load_merged_returns_defaults_when_no_config() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let config = LspMcpConfig::load_merged(temp_dir.path());
+        let config = LspMcpConfig::load_merged_with_global(temp_dir.path(), None).unwrap();
 
-        assert!(config.languages.is_empty());
+        assert!(config.languages == LanguageSelection::Auto);
         assert!(config.binaries.is_empty());
         assert_eq!(config.tools.preset, ToolPreset::Standard);
     }
@@ -575,15 +426,9 @@ mod tests {
         std::fs::write(&project_config_path, project_config)
             .expect("Failed to write project config");
 
-        let original_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", home_dir.path());
-
-        let config = LspMcpConfig::load_merged(workspace_dir.path());
-
-        match original_home {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
-        }
+        let config =
+            LspMcpConfig::load_merged_with_global(workspace_dir.path(), Some(&global_config_path))
+                .unwrap();
 
         let semantic = config
             .semantic_search
@@ -617,7 +462,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
         let config = result.expect("Expected config to load");
 
         assert_eq!(
@@ -643,7 +488,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
         let config = result.expect("Expected config to load");
 
         assert_eq!(
@@ -657,44 +502,6 @@ mod tests {
     }
 
     #[test]
-    fn test_config_merge_output_mode_project_overrides() {
-        let global = LspMcpConfig {
-            output: Some(OutputConfig {
-                mode: OutputMode::Default,
-            }),
-            ..Default::default()
-        };
-        let project = LspMcpConfig {
-            output: Some(OutputConfig {
-                mode: OutputMode::Verbose,
-            }),
-            ..Default::default()
-        };
-
-        let merged = global.merge(project);
-
-        assert_eq!(merged.output_mode(), OutputMode::Verbose);
-    }
-
-    #[test]
-    fn test_config_merge_output_mode_uses_global_when_project_missing() {
-        let global = LspMcpConfig {
-            output: Some(OutputConfig {
-                mode: OutputMode::Verbose,
-            }),
-            ..Default::default()
-        };
-        let project = LspMcpConfig {
-            output: None,
-            ..Default::default()
-        };
-
-        let merged = global.merge(project);
-
-        assert_eq!(merged.output_mode(), OutputMode::Verbose);
-    }
-
-    #[test]
     fn it_parses_debug_config_from_config_file() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let config_content =
@@ -702,7 +509,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
         let config = result.expect("Expected config to load");
 
         let debug = config.debug.expect("Expected debug config");
@@ -725,7 +532,7 @@ mod tests {
         let config_path = temp_dir.path().join(".lsp-mcp.json");
         std::fs::write(&config_path, config_content).expect("Failed to write config");
 
-        let result = LspMcpConfig::load(temp_dir.path());
+        let result = LspMcpConfig::load_project(temp_dir.path()).unwrap();
         let config = result.expect("Expected config to load");
 
         assert!(config.debug_config().is_none());

@@ -48,10 +48,10 @@ pub async fn initialize_manager_with_workspace_root(
         )
     })?;
 
-    let config = LspMcpConfig::load_merged(workspace_root);
+    let config = LspMcpConfig::load_merged(workspace_root)?;
     info!(
-        "Config loaded: {} languages, {} tools enabled",
-        config.languages.len(),
+        "Config loaded: {:?} languages, {} tools enabled",
+        config.languages,
         config.enabled_tools().len()
     );
 
@@ -83,10 +83,10 @@ pub async fn initialize_manager_with_workspace_root_async(
         )
     })?;
 
-    let config = LspMcpConfig::load_merged(workspace_root);
+    let config = LspMcpConfig::load_merged(workspace_root)?;
     info!(
-        "Config loaded: {} languages, {} tools enabled",
-        config.languages.len(),
+        "Config loaded: {:?} languages, {} tools enabled",
+        config.languages,
         config.enabled_tools().len()
     );
 

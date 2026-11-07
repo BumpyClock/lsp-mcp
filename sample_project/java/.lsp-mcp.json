@@ -1,22 +1,13 @@
 {
-    "languages": [
-        "java"
-    ],
     "tools": {
         "preset": "full",
-        "enable": [
-            "semanticSearch"
-        ],
         "disable": [
             "listFiles",
             "readSourceCode"
         ]
     },
     "semantic_search": {
-        "enabled": true,
-        "embedder": {
-            "provider": "fastembed"
-        }
+        "enabled": false
     },
     "debug": {
         "enabled": true,

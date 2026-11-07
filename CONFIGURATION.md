@@ -39,6 +39,7 @@ This file describes the `.lsp-mcp.json` configuration format and merge rules.
 ### Tools
 
 - `tools.preset`: `minimal`, `standard`, or `full`.
+- `health` is included in the default `standard` preset.
 - `tools.enable`: list of tool names to enable in addition to the preset.
 - `tools.disable`: list of tool names to disable (takes precedence).
 - `tools.initial_setup`: `auto` (default), `enabled`, or `disabled`.
@@ -59,11 +60,16 @@ When enabled:
 
 ### Languages
 
-- `languages`: list of language identifiers to start language servers for.
+- Omit `languages` to detect supported languages by scanning the workspace while respecting gitignore rules. A project list overrides the global list. If the project omits it, the global setting applies.
+- An explicit `languages` list is an allowlist. `[]` disables all language servers.
+- Unknown language identifiers and configuration parse errors fail startup.
+- Clients use the configured workspace root. Detection does not create additional monorepo roots or add arbitrary language support.
+- Detected servers start in the background. File requests can start servers lazily for newly introduced languages. A missing executable is retried on a later request.
+- The read-only `health` tool reports selection, missing executable, failure, initialization, and ready details without starting servers.
 
 ### Binaries
 
-- `binaries`: map of language identifier to language server path.
+- `binaries`: map of language identifier to language server path. An override takes precedence over the registry default. Default executable discovery searches PATH only. It does not install servers or discover and run project-local binaries.
 
 ### Semantic Search
 

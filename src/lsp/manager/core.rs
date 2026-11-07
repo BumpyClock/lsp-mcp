@@ -2,9 +2,11 @@
 // ABOUTME: Provides workspace-wide LSP operations like definitions, references, and diagnostics
 
 use super::error::LspManagerError;
+use super::startup::ServerState;
 use crate::api_types::{get_mount_dir, Identifier, SupportedLanguages, Symbol};
 use crate::ast_grep::client::AstGrepClient;
 use crate::ast_grep::types::{AstGrepMatch, SymbolLookup};
+use crate::config::LspMcpConfig;
 use crate::lsp::client::LspClient;
 use crate::lsp::registry::LanguageMetadata;
 use crate::utils::file_utils::uri_to_relative_path_string;
@@ -17,13 +19,13 @@ use lsp_types::{
     DocumentSymbolResponse, GotoDefinitionResponse, Location, Position, Range, SelectionRange, Url,
 };
 use notify_debouncer_mini::{DebounceEventResult, DebouncedEvent};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::{channel, Sender};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 
 pub(super) const CLIENT_CONCURRENCY: usize = 4;
 
@@ -35,7 +37,12 @@ pub(super) const CLIENT_CONCURRENCY: usize = 4;
 pub struct Manager {
     pub(super) lsp_clients:
         Arc<RwLock<HashMap<SupportedLanguages, Arc<Mutex<Box<dyn LspClient>>>>>>,
-    pub(super) pending_clients: Arc<Mutex<HashSet<SupportedLanguages>>>,
+    pub(super) startup_locks: HashMap<SupportedLanguages, Arc<Mutex<()>>>,
+    pub(super) startup_permits: Arc<Semaphore>,
+    pub(super) server_health: Arc<RwLock<HashMap<SupportedLanguages, ServerState>>>,
+    pub(super) discovery_lock: Arc<Mutex<()>>,
+    pub(super) config: RwLock<LspMcpConfig>,
+    pub(super) root_path: String,
     pub(super) watch_events_sender: Sender<DebouncedEvent>,
     ast_grep: AstGrepClient,
     _watcher: FileWatcher,
@@ -62,7 +69,14 @@ impl Manager {
         let ast_grep = AstGrepClient::new();
         Ok(Self {
             lsp_clients: Arc::new(RwLock::new(HashMap::new())),
-            pending_clients: Arc::new(Mutex::new(HashSet::new())),
+            startup_locks: LanguageMetadata::all()
+                .map(|metadata| (metadata.id, Arc::new(Mutex::new(()))))
+                .collect(),
+            startup_permits: Arc::new(Semaphore::new(CLIENT_CONCURRENCY)),
+            server_health: Arc::new(RwLock::new(HashMap::new())),
+            discovery_lock: Arc::new(Mutex::new(())),
+            config: RwLock::new(LspMcpConfig::default()),
+            root_path: root_path.to_owned(),
             watch_events_sender: event_sender,
             ast_grep,
             _watcher: watcher,
@@ -73,6 +87,7 @@ impl Manager {
         &self,
         file_path: &str,
     ) -> Result<Vec<AstGrepMatch>, LspManagerError> {
+        self.ensure_client(detect_language(file_path)?).await?;
         let workspace_files = self.list_files().await?;
         if !workspace_files.contains(&file_path.to_string()) {
             return Err(LspManagerError::FileNotFound(file_path.to_string()));
@@ -96,10 +111,7 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         locked_client
@@ -121,10 +133,7 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         locked_client
@@ -164,6 +173,7 @@ impl Manager {
         file_path: &str,
         position: Position,
     ) -> Result<GotoDefinitionResponse, LspManagerError> {
+        self.ensure_client(detect_language(file_path)?).await?;
         let workspace_files = self.list_files().await.map_err(|e| {
             LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
         })?;
@@ -176,10 +186,7 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
         let mut definition = locked_client
             .text_document_definition(full_path_str, position)
@@ -233,15 +240,20 @@ impl Manager {
             .collect()
     }
 
-    /// Returns an error appropriate for when a client is not available
-    ///
-    /// Returns `LspClientInitializing` if the language is still being initialized,
-    /// or `LspClientNotFound` if initialization failed or wasn't attempted.
     pub async fn client_unavailable_error(&self, lang: SupportedLanguages) -> LspManagerError {
-        if self.is_language_pending(lang).await {
-            LspManagerError::LspClientInitializing(lang)
-        } else {
-            LspManagerError::LspClientNotFound(lang)
+        let health = self.language_health().await;
+        match health.get(&lang) {
+            Some(state) if state.status == crate::api_types::LspStatus::Initializing => {
+                LspManagerError::LspClientInitializing(lang)
+            }
+            Some(state) => LspManagerError::LspStartupFailed {
+                language: lang,
+                reason: state
+                    .reason
+                    .clone()
+                    .unwrap_or_else(|| format!("{:?}", state.status)),
+            },
+            None => LspManagerError::LspClientNotFound(lang),
         }
     }
 
@@ -250,6 +262,7 @@ impl Manager {
         file_path: &str,
         position: Position,
     ) -> Result<Vec<Location>, LspManagerError> {
+        self.ensure_client(detect_language(file_path)?).await?;
         let workspace_files = self.list_files().await.map_err(|e| {
             LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
         })?;
@@ -263,10 +276,7 @@ impl Manager {
         let lsp_type = detect_language(full_path_str).map_err(|e| {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         locked_client
@@ -288,10 +298,7 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         locked_client
@@ -311,10 +318,7 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         locked_client
@@ -331,6 +335,7 @@ impl Manager {
         range: Range,
         diagnostics: Vec<lsp_types::Diagnostic>,
     ) -> Result<Option<Vec<lsp_types::CodeActionOrCommand>>, LspManagerError> {
+        self.ensure_client(detect_language(file_path)?).await?;
         let workspace_files = self.list_files().await.map_err(|e| {
             LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
         })?;
@@ -345,10 +350,7 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         locked_client
@@ -363,13 +365,7 @@ impl Manager {
         &self,
         query: &str,
     ) -> Result<Vec<lsp_types::SymbolInformation>, LspManagerError> {
-        // Wait for any pending language servers to initialize (with short timeout)
-        // This prevents race conditions where workspace_symbol is called before
-        // all LSP clients have finished async initialization
-        if !self.pending_clients.lock().await.is_empty() {
-            log::debug!("workspace_symbol: waiting for pending LSP clients to initialize");
-            self.wait_for_pending_clients(Duration::from_secs(5)).await;
-        }
+        self.wait_for_pending_clients(Duration::from_secs(5)).await;
 
         let clients = self.clients_snapshot().await;
         let mut results = stream::iter(clients)
@@ -396,6 +392,7 @@ impl Manager {
         file_path: &str,
         position: Position,
     ) -> Result<GotoDefinitionResponse, LspManagerError> {
+        self.ensure_client(detect_language(file_path)?).await?;
         let workspace_files = self.list_files().await.map_err(|e| {
             LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
         })?;
@@ -410,10 +407,7 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         let mut implementations = locked_client
@@ -461,6 +455,7 @@ impl Manager {
         position: Position,
         full_scan: bool,
     ) -> Result<Vec<(AstGrepMatch, GotoDefinitionResponse)>, LspManagerError> {
+        self.ensure_client(detect_language(file_path)?).await?;
         let workspace_files = self.list_files().await.map_err(|e| {
             LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
         })?;
@@ -503,10 +498,7 @@ impl Manager {
             }
         };
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
         let mut definitions = Vec::new();
 
@@ -538,6 +530,7 @@ impl Manager {
     }
 
     pub async fn list_files(&self) -> Result<Vec<String>, LspManagerError> {
+        self.wait_for_pending_clients(Duration::from_secs(5)).await;
         let clients = self.clients_snapshot().await;
         let mut results = stream::iter(clients)
             .map(|client| async move {
@@ -555,7 +548,7 @@ impl Manager {
             files.extend(
                 client_files
                     .iter()
-                    .map(|f| absolute_path_to_relative_path_string(f))
+                    .map(absolute_path_to_relative_path_string)
                     .collect::<Vec<String>>(),
             );
         }
@@ -569,10 +562,7 @@ impl Manager {
         range: Option<Range>,
     ) -> Result<String, LspManagerError> {
         let lang = detect_language(file_path)?;
-        let client = self
-            .get_client(lang)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lang))?;
+        let client = self.ensure_client(lang).await?;
         let full_path = get_mount_dir().join(file_path);
         let mut locked_client = client.lock().await;
         locked_client
@@ -589,6 +579,7 @@ impl Manager {
         file_path: &str,
     ) -> Result<Vec<Identifier>, LspManagerError> {
         let full_path = get_mount_dir().join(file_path);
+        self.ensure_client(detect_language(file_path)?).await?;
         let workspace_files = self.list_files().await.map_err(|e| {
             LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
         })?;
@@ -629,10 +620,7 @@ impl Manager {
                     LspManagerError::InternalError(format!("Language detection failed: {}", e))
                 })?;
 
-                let client = self
-                    .get_client(lsp_type)
-                    .await
-                    .ok_or_else(|| LspManagerError::LspClientNotFound(lsp_type))?;
+                let client = self.ensure_client(lsp_type).await?;
 
                 let mut locked_client = client.lock().await;
                 let uri = Url::from_file_path(&full_path).map_err(|_| {
@@ -663,6 +651,7 @@ impl Manager {
                 }
             }
             None => {
+                self.wait_for_pending_clients(Duration::from_secs(5)).await;
                 let clients = self.clients_snapshot().await;
                 let mut results = stream::iter(clients)
                     .map(|client| async move {
@@ -693,6 +682,7 @@ impl Manager {
             file_path, position.line, position.character
         );
 
+        self.ensure_client(detect_language(file_path)?).await?;
         let workspace_files = self.list_files().await.map_err(|e| {
             LspManagerError::InternalError(format!("Workspace file retrieval failed: {}", e))
         })?;
@@ -709,10 +699,7 @@ impl Manager {
 
         debug!("prepare_call_hierarchy: detected language {:?}", lsp_type);
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         let result = locked_client
@@ -761,10 +748,7 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         let result = locked_client
@@ -803,10 +787,7 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
 
-        let client = self
-            .get_client(lsp_type)
-            .await
-            .ok_or(LspManagerError::LspClientNotFound(lsp_type))?;
+        let client = self.ensure_client(lsp_type).await?;
         let mut locked_client = client.lock().await;
 
         let result = locked_client

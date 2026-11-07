@@ -10,4 +10,6 @@ pub use core::Manager;
 pub use error::LspManagerError;
 
 #[cfg(test)]
+mod discovery_tests;
+#[cfg(test)]
 mod language_tests;

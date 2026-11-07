@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // 3. Load config early (before logging init) to check debug settings
-    let config = LspMcpConfig::load_merged(&workspace_root);
+    let config = LspMcpConfig::load_merged(&workspace_root)?;
 
     // 4. Handle index-only mode (no logging, no server)
     if cli.index {

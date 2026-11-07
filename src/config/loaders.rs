@@ -2,7 +2,7 @@
 // ABOUTME: Loads and merges global and project-level .lsp-mcp.json config files.
 
 use super::{
-    DebugConfig, DebugConfigFile, LspMcpConfig, OutputConfigFile, OutputMode,
+    DebugConfig, DebugConfigFile, LanguageSelection, LspMcpConfig, OutputConfigFile, OutputMode,
     SemanticSearchConfigFile, ToolsConfigFile,
 };
 use log::info;
@@ -13,7 +13,8 @@ use std::path::Path;
 /// Internal config structure for deserialization.
 #[derive(Debug, Deserialize, Default, Clone)]
 pub(crate) struct LspMcpConfigFile {
-    pub languages: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_languages")]
+    pub languages: Option<Vec<crate::api_types::SupportedLanguages>>,
     pub binaries: Option<std::collections::HashMap<String, String>>,
     pub tools: Option<ToolsConfigFile>,
     pub output: Option<OutputConfigFile>,
@@ -21,49 +22,60 @@ pub(crate) struct LspMcpConfigFile {
     pub semantic_search: Option<SemanticSearchConfigFile>,
 }
 
-impl LspMcpConfig {
-    /// Load config from a specific path
-    fn load_from_path(path: &Path) -> Option<LspMcpConfigFile> {
-        if path.exists() {
-            let content = std::fs::read_to_string(path).ok()?;
-            serde_json::from_str(&content).ok()
-        } else {
-            None
-        }
-    }
-
-    /// Load global config from $HOME/.lsp-mcp/.lsp-mcp.json
-    pub fn load_global() -> Option<Self> {
-        Self::load_global_file().map(LspMcpConfigFile::resolve)
-    }
-
-    fn load_global_file() -> Option<LspMcpConfigFile> {
-        let home = dirs::home_dir()?;
-        let global_config_path = home.join(".lsp-mcp").join(".lsp-mcp.json");
-        Self::load_from_path(&global_config_path)
-    }
-
-    /// Load project config from workspace root (.lsp-mcp.json)
-    pub fn load_project(workspace_root: &Path) -> Option<Self> {
-        let config_path = workspace_root.join(".lsp-mcp.json");
-        Self::load_from_path(&config_path).map(|f| {
-            let mut config = f.resolve();
-            config.project_config_present = true;
-            config
+fn deserialize_languages<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<crate::api_types::SupportedLanguages>>, D::Error> {
+    use serde::de::Error;
+    let values = Vec::<String>::deserialize(deserializer)?;
+    values
+        .into_iter()
+        .map(|value| {
+            value.parse().map_err(|_| {
+                D::Error::custom(format!(
+                    "unknown language identifier '{value}'; use a supported language name or alias"
+                ))
+            })
         })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+impl LspMcpConfig {
+    fn load_from_path(path: &Path) -> Result<Option<LspMcpConfigFile>, Box<dyn std::error::Error>> {
+        let content = match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(format!("Failed to read config {}: {e}", path.display()).into()),
+        };
+        let config = serde_json::from_str(&content)
+            .map_err(|e| format!("Invalid config {}: {e}", path.display()))?;
+        Ok(Some(config))
     }
 
-    /// Load config from workspace root (legacy method, prefer load_merged)
-    pub fn load(workspace_root: &Path) -> Option<Self> {
-        Self::load_project(workspace_root)
+    pub fn load_project(workspace_root: &Path) -> Result<Option<Self>, Box<dyn std::error::Error>> {
+        Ok(
+            Self::load_from_path(&workspace_root.join(".lsp-mcp.json"))?.map(|f| {
+                let mut config = f.resolve();
+                config.project_config_present = true;
+                config
+            }),
+        )
     }
 
     /// Load merged config: global config with project config overrides
     ///
     /// Returns default config if neither global nor project config exists.
-    pub fn load_merged(workspace_root: &Path) -> Self {
-        let global_file = Self::load_global_file();
-        let project_file = Self::load_from_path(&workspace_root.join(".lsp-mcp.json"));
+    pub fn load_merged(workspace_root: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let global_path = dirs::home_dir().map(|home| home.join(".lsp-mcp").join(".lsp-mcp.json"));
+        Self::load_merged_with_global(workspace_root, global_path.as_deref())
+    }
+
+    pub(super) fn load_merged_with_global(
+        workspace_root: &Path,
+        global_path: Option<&Path>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let global_file = global_path.map(Self::load_from_path).transpose()?.flatten();
+        let project_file = Self::load_from_path(&workspace_root.join(".lsp-mcp.json"))?;
         let project_present = project_file.is_some();
         let merged = match (global_file, project_file) {
             (None, None) => {
@@ -87,29 +99,7 @@ impl LspMcpConfig {
         let mut config = merged.map(LspMcpConfigFile::resolve).unwrap_or_default();
 
         config.project_config_present = project_present;
-        config
-    }
-
-    /// Merge project config over this (global) config
-    #[cfg(test)]
-    pub(crate) fn merge(self, project: Self) -> Self {
-        LspMcpConfig {
-            languages: if project.languages.is_empty() {
-                self.languages
-            } else {
-                project.languages
-            },
-            binaries: {
-                let mut merged = self.binaries;
-                merged.extend(project.binaries);
-                merged
-            },
-            tools: self.tools.merge(project.tools),
-            output: project.output.or(self.output),
-            debug: project.debug.or(self.debug),
-            semantic_search: project.semantic_search.or(self.semantic_search),
-            project_config_present: self.project_config_present || project.project_config_present,
-        }
+        Ok(config)
     }
 
     pub fn get_binary(&self, language: &str) -> Option<&String> {
@@ -183,7 +173,10 @@ impl LspMcpConfigFile {
 
     fn resolve(self) -> LspMcpConfig {
         LspMcpConfig {
-            languages: self.languages.unwrap_or_default(),
+            languages: self
+                .languages
+                .map(LanguageSelection::Explicit)
+                .unwrap_or_default(),
             binaries: self.binaries.unwrap_or_default(),
             tools: self.tools.unwrap_or_default().resolve(),
             output: self.output.map(OutputConfigFile::resolve),
@@ -191,5 +184,96 @@ impl LspMcpConfigFile {
             semantic_search: self.semantic_search.map(SemanticSearchConfigFile::resolve),
             project_config_present: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+    use crate::api_types::SupportedLanguages;
+
+    #[test]
+    fn file_merge_preserves_settings_and_project_language_selection() {
+        let home = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let global = home.path().join("global.json");
+        std::fs::write(
+            &global,
+            r#"{
+            "languages":["rust"],
+            "binaries":{"rust":"/global/rust", "golang":"/global/gopls"},
+            "tools":{"enable":["health"],"disable":["documentSymbol"]},
+            "debug":{"enabled":true,"log_level":"trace"},
+            "output":{"mode":"verbose"}
+        }"#,
+        )
+        .unwrap();
+        let project = workspace.path().join(".lsp-mcp.json");
+        std::fs::write(
+            &project,
+            r#"{
+            "languages":[], "binaries":{"rust":"/project/rust"},
+            "tools":{"preset":"minimal","enable":["readSourceCode"],"disable":["health"]},
+            "debug":{"log_level":"error"}
+        }"#,
+        )
+        .unwrap();
+        let config =
+            LspMcpConfig::load_merged_with_global(workspace.path(), Some(&global)).unwrap();
+        assert_eq!(config.languages, LanguageSelection::Explicit(vec![]));
+        assert_eq!(config.get_binary("rust").unwrap(), "/project/rust");
+        assert_eq!(config.get_binary("golang").unwrap(), "/global/gopls");
+        let tools = config.enabled_tools();
+        assert!(tools.contains("readSourceCode"));
+        assert!(!tools.contains("health"));
+        assert!(!tools.contains("documentSymbol"));
+        assert!(config.debug.as_ref().unwrap().enabled);
+        assert_eq!(
+            config.debug.as_ref().unwrap().log_level,
+            crate::config::DebugLogLevel::Error
+        );
+        assert_eq!(config.output_mode(), OutputMode::Verbose);
+        assert!(config.project_config_present);
+        std::fs::write(&project, "{}").unwrap();
+        assert_eq!(
+            LspMcpConfig::load_merged_with_global(workspace.path(), Some(&global))
+                .unwrap()
+                .languages,
+            LanguageSelection::Explicit(vec![SupportedLanguages::Rust])
+        );
+        std::fs::write(&project, r#"{"languages":null}"#).unwrap();
+        assert!(
+            LspMcpConfig::load_merged_with_global(workspace.path(), None)
+                .unwrap_err()
+                .to_string()
+                .contains(".lsp-mcp.json")
+        );
+    }
+
+    #[test]
+    fn selection_and_precedence() {
+        let global: LspMcpConfigFile = serde_json::from_str(r#"{"languages":["rust"]}"#).unwrap();
+        let settings: LspMcpConfigFile = serde_json::from_str(r#"{"binaries":{}}"#).unwrap();
+        assert_eq!(
+            global.clone().merge(settings).resolve().languages,
+            LanguageSelection::Explicit(vec![SupportedLanguages::Rust])
+        );
+        let empty: LspMcpConfigFile = serde_json::from_str(r#"{"languages":[]}"#).unwrap();
+        assert_eq!(
+            global.merge(empty).resolve().languages,
+            LanguageSelection::Explicit(vec![])
+        );
+        let alias: LspMcpConfigFile =
+            serde_json::from_str(r#"{"languages":["javascript"]}"#).unwrap();
+        assert_eq!(
+            alias.resolve().languages,
+            LanguageSelection::Explicit(vec![SupportedLanguages::TypeScriptJavaScript])
+        );
+        assert!(
+            serde_json::from_str::<LspMcpConfigFile>(r#"{"languages":["bogus"]}"#)
+                .unwrap_err()
+                .to_string()
+                .contains("bogus")
+        );
     }
 }

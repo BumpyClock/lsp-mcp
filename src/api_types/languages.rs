@@ -14,14 +14,26 @@ pub struct ErrorResponse {
 
 /// Status of a language server
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum LspStatus {
     /// Language server is available and ready
     Ready,
     /// Language server is starting up or reports work in progress
     Initializing,
-    /// Language server is not available (not installed or failed to start)
-    Unavailable,
+    Disabled,
+    NotDetected,
+    MissingExecutable,
+    Failed,
+}
+
+/// Health details for a language server.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LanguageServerHealth {
+    pub status: LspStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// Response returned by the health check endpoint
@@ -32,7 +44,7 @@ pub struct HealthResponse {
     /// Version of the service
     pub version: String,
     /// Map of supported languages and their availability status
-    pub languages: HashMap<SupportedLanguages, LspStatus>,
+    pub languages: HashMap<SupportedLanguages, LanguageServerHealth>,
     /// Whether debug mode is enabled
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debug_mode: Option<bool>,
@@ -73,7 +85,7 @@ pub enum SupportedLanguages {
     /// TypeScript and JavaScript are handled by the same langserver
     #[serde(rename = "typescript_javascript")]
     #[strum(
-        serialize = "typescript",
+        to_string = "typescript",
         serialize = "javascript",
         serialize = "typescriptjavascript"
     )]

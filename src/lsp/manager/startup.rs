@@ -1,23 +1,28 @@
-// ABOUTME: LSP client creation and startup logic for language server initialization
-// ABOUTME: Provides factory method for creating language-specific LSP clients
-
 use super::core::{Manager, CLIENT_CONCURRENCY};
 use super::detection::detect_languages_in_workspace;
-use crate::api_types::SupportedLanguages;
-use crate::config::LspMcpConfig;
+use super::error::LspManagerError;
+use crate::api_types::{LanguageServerHealth, LspStatus, SupportedLanguages};
+use crate::config::{LanguageSelection, LspMcpConfig};
 use crate::lsp::client::LspClient;
+use crate::lsp::process::ProcessHealth;
 use crate::lsp::registry::LanguageMetadata;
+use crate::lsp::{PendingRequests, ProcessHandler};
 use futures::{stream, StreamExt};
-use log::{debug, info, warn};
+use log::{info, warn};
 use notify_debouncer_mini::DebouncedEvent;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::error::Error;
-use std::str::FromStr;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
-/// Creates an LSP client for the given language using the registry factory
+#[derive(Clone)]
+pub(super) struct ServerState {
+    pub health: LanguageServerHealth,
+    runtime: Option<(PendingRequests, ProcessHandler)>,
+}
+
 pub async fn create_lsp_client(
     lsp: SupportedLanguages,
     workspace_path: &str,
@@ -25,46 +30,266 @@ pub async fn create_lsp_client(
     binary: Option<&str>,
 ) -> Result<Box<dyn LspClient>, Box<dyn Error + Send + Sync>> {
     let metadata = LanguageMetadata::get(lsp)
-        .ok_or_else(|| format!("No registry entry found for language {:?}", lsp))?;
-
+        .ok_or_else(|| format!("No registry entry found for language {lsp:?}"))?;
     (metadata.factory)(workspace_path, events_rx, binary).await
 }
 
+fn allows(config: &LspMcpConfig, language: SupportedLanguages) -> bool {
+    match &config.languages {
+        LanguageSelection::Auto => true,
+        LanguageSelection::Explicit(languages) => languages.contains(&language),
+    }
+}
+
 impl Manager {
-    /// Returns languages currently being initialized
     pub async fn pending_languages(&self) -> Vec<SupportedLanguages> {
-        self.pending_clients.lock().await.iter().copied().collect()
+        self.server_health
+            .read()
+            .await
+            .iter()
+            .filter_map(|(language, state)| {
+                (state.health.status == LspStatus::Initializing).then_some(*language)
+            })
+            .collect()
     }
 
-    /// Checks if a specific language is still initializing
-    pub async fn is_language_pending(&self, lang: SupportedLanguages) -> bool {
-        self.pending_clients.lock().await.contains(&lang)
+    pub async fn is_language_pending(&self, language: SupportedLanguages) -> bool {
+        self.server_health
+            .read()
+            .await
+            .get(&language)
+            .is_some_and(|state| state.health.status == LspStatus::Initializing)
     }
 
-    /// Waits for all pending language servers to initialize with a timeout.
-    ///
-    /// Returns true if all pending clients finished initializing within the timeout,
-    /// or false if the timeout was reached with some clients still pending.
+    /// Wait for discovery and the startup tasks it selected, without polling.
     pub async fn wait_for_pending_clients(&self, timeout: Duration) -> bool {
-        let start = std::time::Instant::now();
-        let poll_interval = Duration::from_millis(100);
-
-        loop {
-            let pending = self.pending_clients.lock().await;
-            if pending.is_empty() {
-                return true;
+        tokio::time::timeout(timeout, async {
+            let _discovery = self.discovery_lock.lock().await;
+            for language in self.pending_languages().await {
+                let _guard = self.startup_locks[&language].lock().await;
             }
-            drop(pending); // Release lock before sleeping
+        })
+        .await
+        .is_ok()
+    }
 
-            if start.elapsed() >= timeout {
-                log::debug!(
-                    "wait_for_pending_clients: timeout reached with {} clients still pending",
-                    self.pending_clients.lock().await.len()
+    /// Read live progress and process state without acquiring the request mutex or starting servers.
+    pub async fn language_health(&self) -> HashMap<SupportedLanguages, LanguageServerHealth> {
+        let config = self.config.read().await.clone();
+        let states = self.server_health.read().await.clone();
+        let clients = self.lsp_clients.read().await.clone();
+        let discovering = self.discovery_lock.try_lock().is_err();
+        let mut result = HashMap::new();
+        for metadata in LanguageMetadata::all() {
+            let command = config
+                .get_binary(&metadata.id.to_string())
+                .cloned()
+                .unwrap_or_else(|| metadata.default_binary.to_owned());
+            let mut health = if !allows(&config, metadata.id) {
+                LanguageServerHealth {
+                    status: LspStatus::Disabled,
+                    command: Some(command),
+                    reason: Some("Excluded by the configured languages list".into()),
+                }
+            } else if let Some(state) = states.get(&metadata.id) {
+                state.health.clone()
+            } else if clients.contains_key(&metadata.id) {
+                LanguageServerHealth {
+                    status: LspStatus::Ready,
+                    command: Some(command),
+                    reason: None,
+                }
+            } else if discovering {
+                LanguageServerHealth {
+                    status: LspStatus::Initializing,
+                    command: Some(command),
+                    reason: Some("Workspace language discovery in progress".into()),
+                }
+            } else {
+                LanguageServerHealth {
+                    status: LspStatus::NotDetected,
+                    command: Some(command),
+                    reason: Some("No workspace file or request has selected this language".into()),
+                }
+            };
+            if health.status == LspStatus::Ready {
+                if let Some((progress, process)) = states
+                    .get(&metadata.id)
+                    .and_then(|state| state.runtime.as_ref())
+                {
+                    if !process.is_alive().await {
+                        health.status = LspStatus::Failed;
+                        health.reason = Some(match &*process.health_receiver().borrow() {
+                            ProcessHealth::Unhealthy(reason) => reason.clone(),
+                            _ => "Language server process exited".into(),
+                        });
+                    } else if progress.is_loading().await {
+                        health.status = LspStatus::Initializing;
+                        health.reason = Some("Server reports work in progress".into());
+                    }
+                }
+            }
+            result.insert(metadata.id, health);
+        }
+        result
+    }
+
+    async fn schedule_language(&self, language: SupportedLanguages) {
+        let config = self.config.read().await.clone();
+        if !allows(&config, language) || self.get_client(language).await.is_some() {
+            return;
+        }
+        // The task owns the language's startup slot. Waiting requests share it,
+        // and cancellation of a requester cannot cancel initialization for others.
+        let Ok(guard) = self.startup_locks[&language].clone().try_lock_owned() else {
+            return;
+        };
+        if self.get_client(language).await.is_some() {
+            return;
+        }
+        let metadata = LanguageMetadata::get(language).expect("registered language");
+        let binary = config.get_binary(&language.to_string()).map(String::as_str);
+        let command = binary.unwrap_or(metadata.default_binary).to_owned();
+        let resolved = match metadata.resolve_binary(binary, Path::new(&self.root_path)) {
+            Ok(path) => path,
+            Err(reason) => {
+                warn!("{reason}");
+                self.server_health.write().await.insert(
+                    language,
+                    ServerState {
+                        health: LanguageServerHealth {
+                            status: LspStatus::MissingExecutable,
+                            command: Some(command),
+                            reason: Some(reason),
+                        },
+                        runtime: None,
+                    },
                 );
-                return false;
+                return;
             }
+        };
+        let command = resolved.to_string_lossy().into_owned();
+        self.server_health.write().await.insert(
+            language,
+            ServerState {
+                health: LanguageServerHealth {
+                    status: LspStatus::Initializing,
+                    command: Some(command.clone()),
+                    reason: None,
+                },
+                runtime: None,
+            },
+        );
+        let clients = self.lsp_clients.clone();
+        let health = self.server_health.clone();
+        let events = self.watch_events_sender.subscribe();
+        let root = self.root_path.clone();
+        let permits = self.startup_permits.clone();
+        tokio::spawn(async move {
+            let _guard = guard;
+            let _permit = permits
+                .acquire_owned()
+                .await
+                .expect("startup semaphore remains open");
+            let result = async {
+                let mut client = create_lsp_client(language, &root, events, Some(&command))
+                    .await
+                    .map_err(|error| format!("Failed to spawn '{command}': {error}"))?;
+                let initialized = async {
+                    client.initialize(root.clone()).await.map_err(|error| {
+                        format!("Initialization failed for '{command}': {error}")
+                    })?;
+                    client.setup_workspace(&root).await.map_err(|error| {
+                        format!("Workspace setup failed for '{command}': {error}")
+                    })?;
+                    Ok::<_, String>(())
+                }
+                .await;
+                if let Err(error) = initialized {
+                    let _ = client.get_process().kill().await;
+                    return Err(error);
+                }
+                let runtime = (
+                    client.get_pending_requests().clone(),
+                    client.get_process().clone(),
+                );
+                clients
+                    .write()
+                    .await
+                    .insert(language, Arc::new(Mutex::new(client)));
+                Ok::<_, String>(runtime)
+            }
+            .await;
+            let (status, reason, runtime) = match result {
+                Ok(runtime) => {
+                    info!("{language} language server is ready ({command})");
+                    (LspStatus::Ready, None, Some(runtime))
+                }
+                Err(reason) => {
+                    warn!("{reason}");
+                    (LspStatus::Failed, Some(reason), None)
+                }
+            };
+            health.write().await.insert(
+                language,
+                ServerState {
+                    health: LanguageServerHealth {
+                        status,
+                        command: Some(command),
+                        reason,
+                    },
+                    runtime,
+                },
+            );
+        });
+    }
 
-            tokio::time::sleep(poll_interval).await;
+    /// Acquire a selected client, starting it if a file request introduces its language.
+    pub async fn ensure_client(
+        &self,
+        language: SupportedLanguages,
+    ) -> Result<Arc<Mutex<Box<dyn LspClient>>>, LspManagerError> {
+        if !allows(&*self.config.read().await, language) {
+            return Err(LspManagerError::LspStartupFailed {
+                language,
+                reason: "Disabled by the configured languages list".into(),
+            });
+        }
+        if let Some(client) = self.get_client(language).await {
+            let runtime = self
+                .server_health
+                .read()
+                .await
+                .get(&language)
+                .and_then(|state| state.runtime.clone());
+            if let Some((_, process)) = runtime {
+                if process.is_alive().await {
+                    return Ok(client);
+                }
+                return Err(self.client_unavailable_error(language).await);
+            } else {
+                return Ok(client);
+            }
+        }
+        self.schedule_language(language).await;
+        let _guard = self.startup_locks[&language].lock().await;
+        if let Some(client) = self.get_client(language).await {
+            return Ok(client);
+        }
+        Err(self.client_unavailable_error(language).await)
+    }
+
+    async fn discover_and_start(&self, workspace_path: String, selection: LanguageSelection) {
+        let languages = match selection {
+            LanguageSelection::Auto => {
+                tokio::task::spawn_blocking(move || detect_languages_in_workspace(&workspace_path))
+                    .await
+                    .expect("workspace discovery task completes")
+            }
+            LanguageSelection::Explicit(languages) => languages,
+        };
+        for language in languages {
+            self.schedule_language(language).await;
         }
     }
 
@@ -72,150 +297,54 @@ impl Manager {
         &mut self,
         workspace_path: &str,
         config: Option<&LspMcpConfig>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let lsps = match config {
-            Some(cfg) => cfg
-                .languages
-                .iter()
-                .filter_map(|s| SupportedLanguages::from_str(s).ok())
-                .collect(),
-            None => detect_languages_in_workspace(workspace_path),
-        };
-
-        let mut seen = HashSet::new();
-        let manager = &*self;
-        let mut starts = stream::iter(lsps.into_iter().filter(|lsp| seen.insert(*lsp)))
-            .map(|lsp| async move {
-                if manager.get_client(lsp).await.is_some() {
-                    return false;
-                }
-
-                let binary = config
-                    .and_then(|c| c.get_binary(&lsp.to_string().to_lowercase()))
-                    .map(|s| s.as_str());
-
-                debug!("Starting {:?} LSP", lsp);
-                let client_result = create_lsp_client(
-                    lsp,
-                    workspace_path,
-                    manager.watch_events_sender.subscribe(),
-                    binary,
-                )
-                .await;
-
-                match client_result {
-                    Ok(mut client) => match client.initialize(workspace_path.to_string()).await {
-                        Ok(_) => {
-                            debug!("Setting up workspace for {:?}", lsp);
-                            if let Err(e) = client.setup_workspace(workspace_path).await {
-                                warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
-                                return false;
-                            }
-                            manager
-                                .lsp_clients
-                                .write()
-                                .await
-                                .insert(lsp, Arc::new(Mutex::new(client)));
-                            true
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to initialize {:?} language server: {}. Skipping",
-                                lsp, e
-                            );
-                            false
-                        }
-                    },
-                    Err(e) => {
-                        warn!("Failed to start {:?} language server: {}. Skipping", lsp, e);
-                        false
-                    }
-                }
+    ) -> Result<(), Box<dyn Error>> {
+        let config = config.cloned().unwrap_or_default();
+        let selection = config.languages.clone();
+        *self.config.write().await = config;
+        self.discover_and_start(workspace_path.to_owned(), selection)
+            .await;
+        let pending = self.pending_languages().await;
+        let startup_locks = &self.startup_locks;
+        let mut waits = stream::iter(pending)
+            .map(|language| async move {
+                let _guard = startup_locks[&language].lock().await;
             })
             .buffer_unordered(CLIENT_CONCURRENCY);
-        let mut started_count = 0;
-        while let Some(started) = starts.next().await {
-            started_count += usize::from(started);
-        }
-
-        if started_count == 0 && config.map_or(false, |c| !c.languages.is_empty()) {
-            return Err("No language servers could be started from config".into());
+        while waits.next().await.is_some() {}
+        if matches!(&self.config.read().await.languages, LanguageSelection::Explicit(languages) if !languages.is_empty())
+            && self.lsp_clients.read().await.is_empty()
+        {
+            let reasons: Vec<_> = self
+                .server_health
+                .read()
+                .await
+                .values()
+                .filter_map(|state| state.health.reason.clone())
+                .collect();
+            return Err(format!(
+                "No configured language servers could start: {}",
+                reasons.join("; ")
+            )
+            .into());
         }
         Ok(())
     }
 
-    /// Starts language servers asynchronously in the background
-    ///
-    /// Unlike `start_langservers`, this method returns immediately after spawning
-    /// background tasks for each language server. Language servers become available
-    /// as they complete initialization. Check `pending_languages()` or `is_language_pending()`
-    /// to determine initialization status.
+    /// Return before filesystem discovery or language-server initialization finishes.
     pub async fn start_langservers_async(
-        &self,
+        self: &Arc<Self>,
         workspace_path: &str,
         config: Option<LspMcpConfig>,
     ) {
-        let lsps: Vec<SupportedLanguages> = match &config {
-            Some(cfg) => cfg
-                .languages
-                .iter()
-                .filter_map(|s| SupportedLanguages::from_str(s).ok())
-                .collect(),
-            None => detect_languages_in_workspace(workspace_path),
-        };
-
-        for lsp in lsps {
-            if self.get_client(lsp).await.is_some() {
-                continue;
-            }
-
-            self.pending_clients.lock().await.insert(lsp);
-
-            let binary = config
-                .as_ref()
-                .and_then(|c| c.get_binary(&lsp.to_string().to_lowercase()))
-                .cloned();
-
-            let lsp_clients = self.lsp_clients.clone();
-            let pending_clients = self.pending_clients.clone();
-            let events_rx = self.watch_events_sender.subscribe();
-            let ws_path = workspace_path.to_string();
-
-            tokio::spawn(async move {
-                debug!("Starting {:?} LSP in background", lsp);
-                let binary_ref = binary.as_deref();
-                let client_result = create_lsp_client(lsp, &ws_path, events_rx, binary_ref).await;
-
-                match client_result {
-                    Ok(mut client) => match client.initialize(ws_path.clone()).await {
-                        Ok(_) => {
-                            debug!("Setting up workspace for {:?}", lsp);
-                            if let Err(e) = client.setup_workspace(&ws_path).await {
-                                warn!("Failed to setup workspace for {:?}: {}. Skipping", lsp, e);
-                                pending_clients.lock().await.remove(&lsp);
-                                return;
-                            }
-                            lsp_clients
-                                .write()
-                                .await
-                                .insert(lsp, Arc::new(Mutex::new(client)));
-                            pending_clients.lock().await.remove(&lsp);
-                            info!("{:?} language server is now ready", lsp);
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to initialize {:?} language server: {}. Skipping",
-                                lsp, e
-                            );
-                            pending_clients.lock().await.remove(&lsp);
-                        }
-                    },
-                    Err(e) => {
-                        warn!("Failed to start {:?} language server: {}. Skipping", lsp, e);
-                        pending_clients.lock().await.remove(&lsp);
-                    }
-                }
-            });
-        }
+        let config = config.unwrap_or_default();
+        let selection = config.languages.clone();
+        *self.config.write().await = config;
+        let guard = self.discovery_lock.clone().lock_owned().await;
+        let manager = self.clone();
+        let workspace_path = workspace_path.to_owned();
+        tokio::spawn(async move {
+            let _guard = guard;
+            manager.discover_and_start(workspace_path, selection).await;
+        });
     }
 }
