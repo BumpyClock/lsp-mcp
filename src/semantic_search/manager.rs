@@ -162,6 +162,17 @@ impl SemanticSearchManager {
             return Err(SemanticSearchError::ConfigError(msg));
         }
 
+        let index_dir = match self.config.storage_path(&self.workspace_root) {
+            Ok(path) => path,
+            Err(msg) => {
+                *self.state.write().await = SemanticSearchState::Error {
+                    message: msg.clone(),
+                };
+                return Err(SemanticSearchError::ConfigError(msg));
+            }
+        };
+        info!(directory = %index_dir.display(), "Resolved semantic index directory");
+
         let (shutdown_tx, _) = broadcast::channel(1);
         self.shutdown_tx = Some(shutdown_tx.clone());
 
@@ -177,7 +188,6 @@ impl SemanticSearchManager {
         };
 
         // Initialize vector store
-        let index_dir = self.workspace_root.join(self.config.storage_path());
         let dimension = provider.dimension();
 
         let store = match create_store(&index_dir, dimension).await {
@@ -585,5 +595,28 @@ impl SemanticSearchManager {
                 warn!(error = %e, "Failed to flush index on shutdown");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn invalid_workspace_sets_error_before_embedder_initialization() {
+        let root = tempfile::tempdir().unwrap();
+        let config = SemanticSearchConfig {
+            enabled: true,
+            ..Default::default()
+        };
+        let mut manager = SemanticSearchManager::new(config, root.path().join("missing"));
+        let error = manager.start().await.unwrap_err().to_string();
+        assert!(
+            error.contains("Failed to canonicalize workspace"),
+            "{error}"
+        );
+        assert!(
+            matches!(manager.state().await, SemanticSearchState::Error { message } if error.contains(&message))
+        );
     }
 }

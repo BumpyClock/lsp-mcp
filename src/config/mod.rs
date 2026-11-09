@@ -434,7 +434,10 @@ mod tests {
             .semantic_search
             .expect("Expected semantic_search to be present");
         assert!(semantic.enabled);
-        assert_eq!(semantic.vector_store.path, ".global/semantic");
+        assert_eq!(
+            semantic.vector_store.path.as_deref(),
+            Some(".global/semantic")
+        );
         assert!(semantic.enrichment.enabled);
         assert_eq!(semantic.enrichment.model, "global-enrich");
         assert_eq!(semantic.enrichment.max_concurrency, 4);

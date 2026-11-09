@@ -44,9 +44,21 @@ pub async fn hover(
         .buffered(8)
         .collect()
         .await;
+    format_batch_result(results, output_mode)
+}
+
+fn format_batch_result(results: Vec<HoverBatchItem>, output_mode: OutputMode) -> CallToolResult {
+    let all_failed = !results.is_empty()
+        && results
+            .iter()
+            .all(|item| matches!(item, HoverBatchItem::Error { .. }));
     let batch_response = HoverBatchResponse { results };
     let resp = format_response(&batch_response, output_mode);
-    tool_result_success(resp)
+    if all_failed {
+        tool_result_error(resp)
+    } else {
+        tool_result_success(resp)
+    }
 }
 
 #[cfg(test)]
@@ -81,7 +93,7 @@ mod tests {
             None,
         )
         .await;
-        assert_ne!(result.is_error, Some(true));
+        assert_eq!(result.is_error, Some(true));
         let RawContent::Text(text) = &result.content[0].raw else {
             panic!("hover batch must return text");
         };
@@ -94,6 +106,88 @@ mod tests {
             remaining = &remaining[offset + expected.len()..];
         }
         assert_eq!(text.text.matches("Error: ").count(), 19);
+    }
+
+    #[tokio::test]
+    async fn missing_rust_server_is_reported_as_mcp_error() {
+        let workspace = tempfile::tempdir().unwrap();
+        std::fs::write(workspace.path().join("source.rs"), "fn example() {}\n").unwrap();
+        let _context =
+            crate::test_utils::TestContext::setup(workspace.path().to_str().unwrap(), false)
+                .await
+                .unwrap();
+        let manager = Arc::new(
+            Manager::new(workspace.path().to_str().unwrap())
+                .await
+                .unwrap(),
+        );
+        let mut config = crate::config::LspMcpConfig::default();
+        config.binaries.insert(
+            "rust".into(),
+            workspace
+                .path()
+                .join("uninstalled-rust-analyzer")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        manager
+            .start_langservers_async(workspace.path().to_str().unwrap(), Some(config))
+            .await;
+        let service = create_service(manager);
+        let result = hover(
+            &service,
+            OutputMode::Default,
+            r#"[{"path":"source.rs","line":1,"character":4}]"#.into(),
+            None,
+        )
+        .await;
+        assert_eq!(result.is_error, Some(true));
+        let RawContent::Text(text) = &result.content[0].raw else {
+            panic!("hover batch must return text");
+        };
+        assert!(text.text.contains("Rust"));
+        assert!(text.text.contains("rust-analyzer"));
+        assert!(text.text.contains("startup logs"));
+    }
+
+    #[test]
+    fn mixed_batches_keep_success_and_errors_in_order() {
+        use crate::api_types::{HoverContents, HoverResponse};
+
+        let result = format_batch_result(
+            vec![
+                HoverBatchItem::Error {
+                    error: "first failure".into(),
+                },
+                HoverBatchItem::Success(HoverResponse {
+                    raw_response: None,
+                    contents: Some(HoverContents::Markup("successful hover".into())),
+                    range: None,
+                    definitions: vec![],
+                    active_signature: None,
+                    active_parameter: None,
+                    nearby_symbols: vec![],
+                }),
+                HoverBatchItem::Error {
+                    error: "last failure".into(),
+                },
+            ],
+            OutputMode::Default,
+        );
+        assert_ne!(result.is_error, Some(true));
+        let RawContent::Text(text) = &result.content[0].raw else {
+            panic!("hover batch must return text");
+        };
+        let first = text.text.find("first failure").unwrap();
+        let success = text.text.find("successful hover").unwrap();
+        let last = text.text.find("last failure").unwrap();
+        assert!(first < success && success < last);
+    }
+
+    #[test]
+    fn empty_batch_is_not_an_error() {
+        let result = format_batch_result(vec![], OutputMode::Default);
+        assert_ne!(result.is_error, Some(true));
     }
 
     #[tokio::test]

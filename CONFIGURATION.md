@@ -70,6 +70,13 @@ When enabled:
 ### Binaries
 
 - `binaries`: map of language identifier to language server path. An override takes precedence over the registry default. Default executable discovery searches PATH only. It does not install servers or discover and run project-local binaries.
+  Unavailable-server errors name the default executable and retain startup failure details. Install the server if missing, check PATH or configure its binary path, and inspect startup logs if it is already installed.
+
+For TypeScript/JavaScript, `typescript-language-server` also requires a TypeScript
+installation that provides `tsserver.js`.
+
+Hover batches return an MCP error when every item fails. Mixed batches retain
+successful results and individual errors in request order.
 
 ### Semantic Search
 
@@ -89,7 +96,7 @@ Note: `semantic_search.index` and `semantic_search.search` are removed; all opti
     - `api_key_env` (default: `OPENAI_API_KEY`)
     - `dimension` (default: `1536`)
 - `semantic_search.vector_store`:
-  - `path`: storage path relative to workspace root (default: `.lsp-mcp/semanticSearch`)
+  - `path`: optional storage path. Relative paths are resolved against the workspace root; absolute paths are used directly. When omitted, the index is stored under `~/.lsp-mcp/index/<project-name>-<hash>`, where the hash identifies the canonical absolute workspace path. Symlink aliases share an index; separate clones and worktrees have separate indexes. Moving a workspace may create a new index. Existing workspace-local indexes are not migrated automatically.
 - `semantic_search.include`: list of glob patterns to include
 - `semantic_search.exclude`:
   - `files`: list of glob patterns to exclude files

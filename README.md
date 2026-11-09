@@ -62,6 +62,8 @@ The `--index` flag:
 - Shows progress: `Indexing: 150/500 files (30%)`
 - Reports final stats: chunks indexed and time elapsed
 
+By default, indexes are stored in `~/.lsp-mcp/index/<project-name>-<hash>` using the canonical workspace path. Symlink aliases share an index. Separate clones and worktrees use separate indexes. Moving a workspace may create a new index, and existing workspace-local indexes are not migrated automatically. Set `semantic_search.vector_store.path` to choose a different location. Relative paths are resolved against the workspace root.
+
 The `--force` flag deletes any existing index and rebuilds from scratch.
 
 ## GPU Acceleration (FastEmbed)

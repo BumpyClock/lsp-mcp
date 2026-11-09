@@ -2,6 +2,7 @@
 // ABOUTME: Defines embedder, vector store, indexing, and search settings.
 
 use serde::{Deserialize, Deserializer};
+use std::path::{Path, PathBuf};
 
 /// Configuration for the embedding provider.
 #[derive(Debug, Clone, Deserialize)]
@@ -190,11 +191,11 @@ impl EmbedderConfig {
 }
 
 /// Configuration for the vector store.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct VectorStoreConfig {
-    /// Storage path relative to workspace (default: .lsp-mcp/semanticSearch)
-    #[serde(default = "default_vector_store_path")]
-    pub path: String,
+    /// Optional storage path, relative to the workspace or absolute.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 /// Optional vector store configuration for config file merging.
@@ -211,21 +212,7 @@ impl VectorStoreConfigFile {
     }
 
     pub(crate) fn resolve(self) -> VectorStoreConfig {
-        VectorStoreConfig {
-            path: self.path.unwrap_or_else(default_vector_store_path),
-        }
-    }
-}
-
-fn default_vector_store_path() -> String {
-    ".lsp-mcp/semanticSearch".to_string()
-}
-
-impl Default for VectorStoreConfig {
-    fn default() -> Self {
-        VectorStoreConfig {
-            path: default_vector_store_path(),
-        }
+        VectorStoreConfig { path: self.path }
     }
 }
 
@@ -700,9 +687,41 @@ impl SemanticSearchConfig {
         Ok(())
     }
 
-    /// Get the storage path for the vector index.
-    pub fn storage_path(&self) -> &str {
-        &self.vector_store.path
+    /// Resolve the storage directory for the vector index.
+    pub fn storage_path(&self, workspace: &Path) -> Result<PathBuf, String> {
+        if let Some(path) = &self.vector_store.path {
+            return Ok(workspace.join(path));
+        }
+
+        let workspace = workspace.canonicalize().map_err(|error| {
+            format!(
+                "Failed to canonicalize workspace '{}': {}",
+                workspace.display(),
+                error
+            )
+        })?;
+        let home = dirs::home_dir()
+            .ok_or_else(|| "Failed to determine home directory for semantic index".to_string())?;
+        let name: String = workspace
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .take(64)
+            .collect();
+        let name = if name.is_empty() { "workspace" } else { &name };
+        let hash = blake3::hash(workspace.as_os_str().as_encoded_bytes());
+        Ok(home
+            .join(".lsp-mcp")
+            .join("index")
+            .join(format!("{name}-{hash}")))
     }
 
     /// Expand exclude patterns to include directory matches.
@@ -764,6 +783,55 @@ fn expand_directory_patterns(patterns: &[String]) -> Vec<String> {
 mod tests {
     use super::*;
     use uuid::Uuid;
+
+    #[test]
+    fn default_index_identity_tracks_canonical_workspace() {
+        let root = tempfile::tempdir().unwrap();
+        let first = root.path().join("first/project");
+        let second = root.path().join("second/project");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let config = SemanticSearchConfig::default();
+        let first_index = config.storage_path(&first).unwrap();
+        assert_eq!(
+            first_index,
+            config
+                .storage_path(&first.join("..").join("project"))
+                .unwrap()
+        );
+        assert_ne!(first_index, config.storage_path(&second).unwrap());
+        assert_eq!(
+            config.storage_path(Path::new(".")).unwrap(),
+            config
+                .storage_path(&std::env::current_dir().unwrap())
+                .unwrap()
+        );
+        assert_eq!(
+            first_index.parent().unwrap(),
+            dirs::home_dir().unwrap().join(".lsp-mcp/index")
+        );
+
+        #[cfg(unix)]
+        {
+            let alias = root.path().join("alias");
+            std::os::unix::fs::symlink(&first, &alias).unwrap();
+            assert_eq!(first_index, config.storage_path(&alias).unwrap());
+        }
+    }
+
+    #[test]
+    fn explicit_index_paths_keep_workspace_relative_and_absolute_behavior() {
+        let root = tempfile::tempdir().unwrap();
+        let mut config = SemanticSearchConfig::default();
+        config.vector_store.path = Some("custom/index".into());
+        assert_eq!(
+            config.storage_path(root.path()).unwrap(),
+            root.path().join("custom/index")
+        );
+        let absolute = root.path().join("absolute");
+        config.vector_store.path = Some(absolute.to_str().unwrap().into());
+        assert_eq!(config.storage_path(Path::new("unused")).unwrap(), absolute);
+    }
 
     fn random_env_var_name() -> String {
         format!(
