@@ -24,10 +24,7 @@ use crate::service::types::response::{
 use crate::service::utils::external::ExternalInfo;
 use crate::service::utils::identifiers::find_identifier_at_position;
 use crate::service::utils::pagination::paginate_items;
-use crate::service::utils::signature::{
-    batch_enrich_symbols, extract_identifier_name_from_hover, truncate_signature,
-    DEFAULT_ENRICHMENT_CONCURRENCY,
-};
+use crate::service::utils::signature::{extract_identifier_name_from_hover, truncate_signature};
 use crate::service::utils::transformations::{
     definition_item_from_location, definition_locations, definition_locations_lsp,
 };
@@ -470,9 +467,6 @@ fn convert_document_symbol(
             },
         },
         signature: normalize_symbol_detail(&doc_sym.detail),
-        exported: None,
-        jsdoc_summary: None,
-        dependencies: None,
         line_count: Some(
             doc_sym
                 .range
@@ -511,9 +505,6 @@ fn convert_symbol_information(sym_info: &lsp_types::SymbolInformation, _file_pat
             },
         },
         signature: None,
-        exported: None,
-        jsdoc_summary: None,
-        dependencies: None,
         line_count: Some(
             sym_info
                 .location
@@ -633,7 +624,7 @@ async fn rank_definition_locations(
     sort_definition_candidates(candidates)
 }
 
-/// Retrieves all symbol definitions in a file with enriched metadata.
+/// Retrieves paginated symbol declarations without per-symbol LSP queries.
 pub(crate) async fn definitions_in_file_impl(
     manager: &Arc<Manager>,
     file_path: &str,
@@ -676,15 +667,6 @@ pub(crate) async fn definitions_in_file_impl(
         None => Vec::new(),
     };
 
-    // Enrich symbols with LSP hover data using parallel processing
-    batch_enrich_symbols(
-        manager,
-        file_path,
-        &mut symbols,
-        DEFAULT_ENRICHMENT_CONCURRENCY,
-    )
-    .await;
-
     if !include_children {
         symbols = strip_symbol_children(symbols);
     }
@@ -725,7 +707,6 @@ pub(crate) async fn get_symbol_definition_impl(
             kind: normalize_kind_field(&symbol.kind),
             definition,
             signature: symbol.signature.clone(),
-            doc: symbol.jsdoc_summary.clone(),
         });
     }
 
@@ -1792,9 +1773,6 @@ mod tests {
                 },
             },
             signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
             line_count: None,
             children: None,
             snippet: None,

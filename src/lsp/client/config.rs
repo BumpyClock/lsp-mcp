@@ -3,11 +3,15 @@
 
 use std::time::Duration;
 
+pub const MAX_IN_FLIGHT_REQUESTS: usize = 8;
+
 /// Configuration for LSP client behavior
 #[derive(Clone, Debug)]
 pub struct LspClientConfig {
-    /// Timeout for individual LSP requests (default: 30 seconds)
+    /// Timeout for navigation requests, including request-slot waits.
     pub request_timeout: Duration,
+    /// Timeout for language-server initialization.
+    pub initialize_timeout: Duration,
     /// Maximum retry attempts for reconnection (default: 3)
     pub max_reconnect_attempts: u32,
     /// Base delay between reconnection attempts (default: 1 second)
@@ -20,6 +24,7 @@ impl Default for LspClientConfig {
     fn default() -> Self {
         Self {
             request_timeout: Duration::from_secs(30),
+            initialize_timeout: Duration::from_secs(30),
             max_reconnect_attempts: 3,
             reconnect_base_delay: Duration::from_secs(1),
             reconnect_max_delay: Duration::from_secs(30),

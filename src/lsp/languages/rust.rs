@@ -99,7 +99,12 @@ impl LspClient for RustAnalyzerClient {
         _root_path: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // This is required for workspace features like go to definition to work
-        self.send_request("rust-analyzer/reloadWorkspace", None)
+        self.connection()
+            .send_request(
+                "rust-analyzer/reloadWorkspace",
+                None,
+                self.get_config().initialize_timeout,
+            )
             .await?;
         Ok(())
     }

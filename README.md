@@ -41,6 +41,22 @@ The server watches workspace files for changes. If native file watching is unava
 
 Language health reports `initializing` while the server reports standard LSP work in progress, including workspace loading and indexing. It reports `ready` when that work finishes. Servers that do not report work progress become ready after initialization.
 
+## Fast navigation
+
+Use `findSymbol` to locate declarations and `documentSymbol` to outline a file. These discovery tools return names, kinds, locations, and declaration details supplied by the language server. They do not issue per-symbol hover or dependency queries. Pagination and child filtering happen before source snippets are attached.
+
+For details, call `getSymbolDefinition` with the returned file and symbol name to read the full declaration, or `hover` at a returned identifier position for type information and documentation. Set `include_children=true` on `documentSymbol` for nested members.
+
+Independent navigation requests can run concurrently over one language-server connection. Each connection allows up to eight in-flight requests. Requests retain a thirty-second deadline, including time waiting for a request slot. Initialization has a separate thirty-second deadline. Timed-out or abandoned requests attempt `$/cancelRequest`; timeouts remain errors, not empty results. Cancellation waits at most one second for the writer lock, then lets an owned frame finish without interruption. Document preparation and client acquisition precede the request deadline. An interrupted frame write invalidates the connection instead of reusing a partial protocol stream. Restart the MCP server to restore an affected language after this failure.
+
+Run the deterministic protocol checks with:
+
+```bash
+cargo build --release
+python3 scripts/verify_navigation.py target/release/lsp-mcp
+python3 scripts/verify_discovery.py target/release/lsp-mcp
+```
+
 ## Pre-building the Semantic Search Index
 
 When semantic search is enabled, the initial indexing can be resource-intensive. To avoid slowdowns during normal MCP usage, you can pre-build the index from the command line:

@@ -9,7 +9,7 @@ use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::broadcast::{channel, Receiver, Sender};
 use tokio::sync::mpsc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ExpectedMessageKey {
@@ -23,6 +23,7 @@ pub struct PendingRequests {
     notification_channels: Arc<Mutex<HashMap<ExpectedMessageKey, Sender<JsonRpcMessage>>>>,
     method_handlers: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<JsonRpcMessage>>>>,
     work_in_progress: Arc<Mutex<HashSet<ProgressToken>>>,
+    request_slots: Arc<Semaphore>,
 }
 
 impl PendingRequests {
@@ -32,7 +33,16 @@ impl PendingRequests {
             notification_channels: Arc::new(Mutex::new(HashMap::new())),
             method_handlers: Arc::new(Mutex::new(HashMap::new())),
             work_in_progress: Arc::new(Mutex::new(HashSet::new())),
+            request_slots: Arc::new(Semaphore::new(crate::lsp::client::MAX_IN_FLIGHT_REQUESTS)),
         }
+    }
+
+    pub async fn acquire_slot(&self) -> OwnedSemaphorePermit {
+        self.request_slots
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("request slots remain open")
     }
 
     pub async fn create_progress(&self, token: ProgressToken) {

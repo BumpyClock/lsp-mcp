@@ -200,9 +200,6 @@ pub struct WorkspaceSymbolInfo {
     pub match_kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub match_score: Option<f32>,
-    /// Type signature from LSP hover (e.g., "fn example() -> Result<T, E>")
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature: Option<String>,
     /// Source code snippet around the symbol definition
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<CodeContext>,
@@ -366,7 +363,6 @@ mod tests {
             container_name: None,
             match_kind: None,
             match_score: None,
-            signature: None,
             snippet: Some(snippet),
         };
 
@@ -402,7 +398,6 @@ mod tests {
             container_name: None,
             match_kind: None,
             match_score: None,
-            signature: None,
             snippet: None,
         };
 
