@@ -47,7 +47,7 @@ Use `findSymbol` to locate declarations and `documentSymbol` to outline a file. 
 
 For details, call `getSymbolDefinition` with the returned file and symbol name to read the full declaration, or `hover` at a returned identifier position for type information and documentation. Set `include_children=true` on `documentSymbol` for nested members.
 
-Independent navigation requests can run concurrently over one language-server connection. Each connection allows up to eight in-flight requests. Requests retain a thirty-second deadline, including time waiting for a request slot. Initialization has a separate thirty-second deadline. Timed-out or abandoned requests attempt `$/cancelRequest`; timeouts remain errors, not empty results. Document preparation and client acquisition precede the request deadline. An interrupted frame write invalidates the connection instead of reusing a partial protocol stream. Restart the MCP server to restore an affected language after this failure.
+Independent navigation requests can run concurrently over one language-server connection. Each connection allows up to eight in-flight requests. Requests retain a thirty-second deadline, including time waiting for a request slot. Initialization has a separate thirty-second deadline. Timed-out or abandoned requests attempt `$/cancelRequest`; timeouts remain errors, not empty results. Cancellation waits at most one second for the writer lock, then lets an owned frame finish without interruption. Document preparation and client acquisition precede the request deadline. An interrupted frame write invalidates the connection instead of reusing a partial protocol stream. Restart the MCP server to restore an affected language after this failure.
 
 Run the deterministic protocol checks with:
 

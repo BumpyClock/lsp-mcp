@@ -57,6 +57,31 @@ impl ProcessHandler {
         })
     }
 
+    /// Bound writer acquisition without interrupting an owned protocol frame.
+    pub async fn send_with_lock_timeout(
+        &self,
+        data: &str,
+        wait: std::time::Duration,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let stdin = tokio::time::timeout(wait, self.stdin.lock()).await?;
+        self.write_frame(stdin, data).await
+    }
+
+    async fn write_frame(
+        &self,
+        mut stdin: tokio::sync::MutexGuard<'_, ChildStdin>,
+        data: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        if self.is_dead.load(Ordering::SeqCst) {
+            return Err("LSP process is unavailable".into());
+        }
+        let mut frame = FrameWriteGuard(Some(self.clone()));
+        stdin.write_all(data.as_bytes()).await?;
+        stdin.flush().await?;
+        frame.0 = None;
+        Ok(())
+    }
+
     /// Check if the child process is still running
     pub async fn is_alive(&self) -> bool {
         if self.is_dead.load(Ordering::SeqCst) {
@@ -108,15 +133,8 @@ impl ProcessHandler {
 #[async_trait::async_trait]
 impl Process for ProcessHandler {
     async fn send(&mut self, data: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let mut stdin = self.stdin.lock().await;
-        if self.is_dead.load(Ordering::SeqCst) {
-            return Err("LSP process is unavailable".into());
-        }
-        let mut frame = FrameWriteGuard(Some(self.clone()));
-        stdin.write_all(data.as_bytes()).await?;
-        stdin.flush().await?;
-        frame.0 = None;
-        Ok(())
+        let stdin = self.stdin.lock().await;
+        self.write_frame(stdin, data).await
     }
 
     async fn receive(&self) -> Result<String, Box<dyn Error + Send + Sync>> {

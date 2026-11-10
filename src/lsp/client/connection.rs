@@ -22,7 +22,7 @@ impl Drop for CancelOnDrop {
             return;
         };
         let pending = self.pending.clone();
-        let mut process = self.process.clone();
+        let process = self.process.clone();
         let rpc = self.rpc.clone();
         tokio::spawn(async move {
             if let Ok(Some(_)) = pending.remove_request(id).await {
@@ -33,10 +33,11 @@ impl Drop for CancelOnDrop {
                     notification.len(),
                     notification
                 );
-                match tokio::time::timeout(Duration::from_secs(1), process.send(&message)).await {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => debug!("Failed to cancel request {}: {}", id, error),
-                    Err(_) => debug!("Cancellation of request {} timed out", id),
+                if let Err(error) = process
+                    .send_with_lock_timeout(&message, Duration::from_secs(1))
+                    .await
+                {
+                    debug!("Failed to cancel request {}: {}", id, error);
                 }
             }
         });

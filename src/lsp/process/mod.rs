@@ -155,6 +155,75 @@ mod tests {
             "expected is_alive to return false after process exits"
         );
     }
+
+    #[tokio::test]
+    async fn cleanup_write_survives_temporary_backpressure() {
+        let child = Command::new("python3")
+            .args([
+                "-c",
+                r#"
+import sys, time
+sys.stdout.write('Content-Length: 2\r\n\r\n{}')
+sys.stdout.flush()
+time.sleep(0.5)
+length = int(sys.stdin.buffer.readline().split(b':')[1])
+sys.stdin.buffer.readline()
+sys.stdin.buffer.read(length)
+sys.stdout.write('Content-Length: 2\r\n\r\n{}')
+sys.stdout.flush()
+time.sleep(60)
+"#,
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let handler = ProcessHandler::new(child).await.unwrap();
+        timeout(Duration::from_secs(5), async {
+            handler.receive().await.unwrap();
+            let body = "x".repeat(8 * 1024 * 1024);
+            let frame = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
+            let sent = handler
+                .send_with_lock_timeout(&frame, Duration::from_millis(25))
+                .await;
+            assert!(
+                sent.is_ok(),
+                "optional cleanup must not interrupt an owned frame"
+            );
+            assert_eq!(handler.receive().await.unwrap(), "{}");
+            assert!(handler.is_alive().await);
+            handler.kill().await.unwrap();
+        })
+        .await
+        .expect("cleanup transport scenario must complete");
+    }
+
+    #[tokio::test]
+    async fn cleanup_wait_for_busy_writer_is_bounded() {
+        let mut handler = ProcessHandler::new(spawn_test_process().await)
+            .await
+            .unwrap();
+        timeout(Duration::from_secs(5), async {
+            let stdin = handler.stdin.lock().await;
+            let frame = "Content-Length: 2\r\n\r\n{}";
+            let result = timeout(
+                Duration::from_secs(1),
+                handler.send_with_lock_timeout(frame, Duration::from_millis(25)),
+            )
+            .await
+            .unwrap();
+            assert!(result.is_err());
+            assert!(handler.is_alive().await);
+            drop(stdin);
+            handler.send(frame).await.unwrap();
+            assert_eq!(handler.receive().await.unwrap(), "{}");
+            handler.kill().await.unwrap();
+        })
+        .await
+        .expect("cleanup transport scenario must complete");
+    }
+
     #[tokio::test]
     async fn interrupted_frame_transmission_invalidates_the_connection() {
         let child = Command::new("python3")
