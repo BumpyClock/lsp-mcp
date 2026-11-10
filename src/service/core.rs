@@ -338,7 +338,6 @@ impl LspService {
 mod tests {
     use super::*;
     use crate::api_types::RelatedSymbols;
-    use crate::api_types::WorkspaceSymbolInfo;
     use crate::api_types::{set_thread_local_mount_dir, unset_thread_local_mount_dir};
     use crate::api_types::{CodeContext, FilePosition, FileRange, Identifier, Symbol};
     use crate::service::operations::references::{group_references_by_file, is_import_line};
@@ -352,8 +351,8 @@ mod tests {
     use crate::service::utils::external::{parse_pnpm_package_info, ExternalInfo, PackageInfo};
     use crate::service::utils::pagination::paginate_items;
     use crate::service::utils::signature::{
-        batch_hover_for_signatures, filter_sibling_exports, is_internal_builder_symbol,
-        truncate_signature, DEFAULT_MAX_SIGNATURE_LENGTH,
+        filter_sibling_exports, is_internal_builder_symbol, truncate_signature,
+        DEFAULT_MAX_SIGNATURE_LENGTH,
     };
     use crate::service::utils::transformations::{
         call_hierarchy_item_to_info, definition_item_from_location, reference_item_from_location,
@@ -708,9 +707,6 @@ mod tests {
                 range: symbol_range.clone(),
             },
             signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
             line_count: None,
             children: None,
             snippet: None,
@@ -865,91 +861,6 @@ mod tests {
             result = manager.start_langservers(workspace_root, None).await;
         }
         result
-    }
-
-    #[tokio::test]
-    async fn test_definitions_in_file_includes_mtime_and_path(
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let temp_dir = TempDir::new()?;
-        let workspace_root = temp_dir.path();
-
-        let test_file = workspace_root.join("test.rs");
-        tokio::fs::write(&test_file, "fn example() {}").await?;
-
-        let manager = Manager::new(workspace_root.to_str().unwrap()).await?;
-        let service = create_service(Arc::new(manager));
-
-        let response = service
-            .definitions_in_file("test.rs", false, false, None, None, 1)
-            .await?;
-
-        assert_eq!(response.path, "test.rs");
-        assert!(!response.mtime.is_empty());
-        assert!(
-            chrono::DateTime::parse_from_rfc3339(&response.mtime).is_ok(),
-            "mtime should be valid RFC3339: {}",
-            response.mtime
-        );
-        assert_eq!(response.limit, 200);
-        assert_eq!(response.offset, 0);
-        assert!(!response.truncated);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_definitions_in_file_enriches_symbols() -> Result<(), Box<dyn std::error::Error>> {
-        let temp_dir = TempDir::new()?;
-        let workspace_root = temp_dir.path();
-
-        let test_file = workspace_root.join("test.rs");
-        let source = r#"/// This function does something
-pub fn example(x: i32) -> String {
-    format!("{}", x)
-}
-
-fn internal_helper() {
-    println!("internal");
-}"#;
-        tokio::fs::write(&test_file, source).await?;
-
-        let manager = Manager::new(workspace_root.to_str().unwrap()).await?;
-        let service = create_service(Arc::new(manager));
-
-        let response = service
-            .definitions_in_file("test.rs", true, false, None, None, 1)
-            .await?;
-
-        let pub_fn = response
-            .symbols
-            .iter()
-            .find(|s| s.name == "example")
-            .expect("Should find 'example' function");
-
-        assert!(
-            pub_fn.line_count.is_some(),
-            "line_count should be populated"
-        );
-        let line_count = pub_fn.line_count.unwrap();
-        assert!(
-            line_count >= 3,
-            "Function should span at least 3 lines, got {}",
-            line_count
-        );
-        assert!(pub_fn.exported.is_some(), "exported should be populated");
-
-        let internal_fn = response
-            .symbols
-            .iter()
-            .find(|s| s.name == "internal_helper")
-            .expect("Should find 'internal_helper' function");
-
-        assert!(
-            internal_fn.line_count.is_some(),
-            "line_count should be populated for all symbols"
-        );
-
-        Ok(())
     }
 
     #[test]
@@ -2038,103 +1949,5 @@ fn internal_helper() {
         let result = truncate_signature(sig, Some(50));
         assert!(result.len() <= 50);
         assert!(result.ends_with("..."));
-    }
-
-    #[allow(deprecated)]
-    #[test]
-    fn workspace_symbol_info_from_lsp_initializes_signature_as_none() {
-        let uri = Url::from_file_path("/tmp/test.rs").expect("Expected file path url");
-        let range = LspRange {
-            start: LspPosition {
-                line: 5,
-                character: 2,
-            },
-            end: LspPosition {
-                line: 5,
-                character: 10,
-            },
-        };
-        let sym = SymbolInformation {
-            name: "test_func".to_string(),
-            kind: SymbolKind::FUNCTION,
-            tags: None,
-            deprecated: None,
-            location: Location { uri, range },
-            container_name: None,
-        };
-
-        let info = workspace_symbol_info_from_lsp(sym, "src/lib.rs".to_string());
-
-        assert!(
-            info.signature.is_none(),
-            "signature field must be initialized as None in workspace_symbol_info_from_lsp"
-        );
-    }
-
-    #[tokio::test]
-    async fn batch_hover_for_signatures_returns_vec_of_same_length_as_input() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let workspace_path = temp_dir.path().to_str().expect("Expected valid path");
-
-        let manager = Manager::new(workspace_path)
-            .await
-            .expect("Failed to create manager");
-
-        let positions = vec![
-            (
-                "test_file.rs",
-                Position {
-                    line: 1,
-                    character: 1,
-                },
-            ),
-            (
-                "another.rs",
-                Position {
-                    line: 2,
-                    character: 3,
-                },
-            ),
-        ];
-
-        let results = batch_hover_for_signatures(&manager, positions.clone()).await;
-
-        assert_eq!(
-            results.len(),
-            positions.len(),
-            "batch_hover_for_signatures must return same number of results as input positions"
-        );
-    }
-
-    #[test]
-    fn workspace_symbol_assigns_signatures_to_filtered_symbols() {
-        let mut symbol1 = WorkspaceSymbolInfo {
-            name: "func1".to_string(),
-            kind: "function".to_string(),
-            location: FilePosition {
-                path: "src/lib.rs".to_string(),
-                position: Position {
-                    line: 10,
-                    character: 5,
-                },
-            },
-            container_name: None,
-            match_kind: Some("exact".to_string()),
-            match_score: Some(1.0),
-            signature: None,
-            snippet: None,
-        };
-
-        let signatures = vec![Some("fn func1() -> i32".to_string())];
-
-        for (symbol, sig) in std::iter::once(&mut symbol1).zip(signatures.into_iter()) {
-            symbol.signature = sig;
-        }
-
-        assert_eq!(
-            symbol1.signature,
-            Some("fn func1() -> i32".to_string()),
-            "signature must be assigned to symbol from batch hover results"
-        );
     }
 }

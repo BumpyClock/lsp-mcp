@@ -19,7 +19,6 @@ use crate::service::types::errors::{PositionError, ServiceError};
 use crate::service::types::response::{McpIdentifierResponse, McpListFilesResponse};
 use crate::service::utils::identifiers::find_identifier_at_position;
 use crate::service::utils::pagination::paginate_items;
-use crate::service::utils::signature::batch_hover_for_signatures;
 use crate::service::utils::transformations::workspace_symbol_info_from_lsp;
 
 /// Finds identifiers matching the given name in a file.
@@ -143,16 +142,6 @@ pub(crate) async fn workspace_symbol_impl(
         );
     }
 
-    // Fetch signatures for all filtered symbols in batch
-    let positions: Vec<_> = filtered_symbols
-        .iter()
-        .map(|s| (s.location.path.as_str(), s.location.position.clone()))
-        .collect();
-    let signatures = batch_hover_for_signatures(manager, positions).await;
-    for (symbol, sig) in filtered_symbols.iter_mut().zip(signatures) {
-        symbol.signature = sig;
-    }
-
     stream::iter(filtered_symbols.iter_mut())
         .for_each_concurrent(8, |symbol| async move {
             if let Some(line) = read_symbol_line(
@@ -170,13 +159,11 @@ pub(crate) async fn workspace_symbol_impl(
         .await;
 
     filtered_symbols = dedupe_workspace_symbols(filtered_symbols);
-
     let raw_response = if include_raw_response {
         serde_json::to_value(&filtered_symbols).ok()
     } else {
         None
     };
-
     let (mut symbols, pagination) = paginate_items(filtered_symbols, limit, offset);
 
     if context_lines > 0 {
@@ -268,7 +255,6 @@ fn workspace_symbol_info_from_ast_match(ast_match: &AstGrepMatch) -> WorkspaceSy
         container_name: None,
         match_kind: None,
         match_score: None,
-        signature: None,
         snippet: None,
     }
 }
@@ -529,7 +515,6 @@ mod tests {
             info.location.position.character, 6,
             "negative: character mismatch"
         );
-        assert!(info.signature.is_none(), "negative: signature must be None");
 
         unset_thread_local_mount_dir();
     }
@@ -567,7 +552,6 @@ mod tests {
             container_name: None,
             match_kind: None,
             match_score: None,
-            signature: None,
             snippet: None,
         };
 
@@ -602,7 +586,6 @@ mod tests {
             container_name: None,
             match_kind: None,
             match_score: None,
-            signature: None,
             snippet: None,
         };
 
@@ -628,7 +611,6 @@ mod tests {
             container_name: None,
             match_kind: None,
             match_score: None,
-            signature: None,
             snippet: None,
         };
 
@@ -663,7 +645,6 @@ mod tests {
             container_name: None,
             match_kind: Some("exact".to_string()),
             match_score: Some(1.0),
-            signature: None,
             snippet: None,
         };
         let reexport = WorkspaceSymbolInfo {
@@ -679,7 +660,6 @@ mod tests {
             container_name: None,
             match_kind: Some("exact".to_string()),
             match_score: Some(1.0),
-            signature: None,
             snippet: None,
         };
 
@@ -713,7 +693,6 @@ mod tests {
             container_name: None,
             match_kind: Some("exact".to_string()),
             match_score: Some(1.0),
-            signature: None,
             snippet: None,
         };
         let second = WorkspaceSymbolInfo {
@@ -729,7 +708,6 @@ mod tests {
             container_name: None,
             match_kind: Some("exact".to_string()),
             match_score: Some(1.0),
-            signature: None,
             snippet: None,
         };
 

@@ -188,7 +188,8 @@ Optional params: `limit`, `path`, `file_pattern`, `exclude`, `min_score`, `per_f
 impl LspMcpServer {
     #[tool(
         name = "documentSymbol",
-        description = "Symbols defined in a file (top-level only by default; set include_children for nesting)"
+        description = "Fast declaration outline (top-level by default; include_children for nesting). Use getSymbolDefinition for bodies or hover for type/docs.",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn definitions_in_file(
         &self,
@@ -224,7 +225,8 @@ impl LspMcpServer {
 
     #[tool(
         name = "goToDefinition",
-        description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5)."
+        description = "Definition of symbol at position. Returns signature, source code (first ~100 lines), and related symbols (max 5).",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn find_definition(
         &self,
@@ -261,7 +263,8 @@ impl LspMcpServer {
 
     #[tool(
         name = "getSymbolDefinition",
-        description = "Full definition for a symbol by name"
+        description = "Full definition for a symbol by name",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn get_symbol_definition(
         &self,
@@ -294,7 +297,8 @@ impl LspMcpServer {
 
     #[tool(
         name = "findReferences",
-        description = "References to symbol by name. Summary by default; set detail=true for per-reference output."
+        description = "References to symbol by name. Summary by default; set detail=true for per-reference output.",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn find_references(
         &self,
@@ -332,7 +336,8 @@ impl LspMcpServer {
 
     #[tool(
         name = "hover",
-        description = "Type/doc info at position; use for quick context. Requires: requests (JSON array of {path, line, character} objects)"
+        description = "Type/doc info at position; use for quick context. Requires: requests (JSON array of {path, line, character} objects)",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn hover(
         &self,
@@ -361,7 +366,11 @@ impl LspMcpServer {
         Ok(self.wrap_output(request_id, output))
     }
 
-    #[tool(name = "findSymbol", description = "Search symbols by name")]
+    #[tool(
+        name = "findSymbol",
+        description = "Fast symbol lookup with locations. Use getSymbolDefinition for bodies or hover for type/docs.",
+        annotations(read_only_hint = true, destructive_hint = false)
+    )]
     async fn workspace_symbol(
         &self,
         Parameters(params): Parameters<WorkspaceSymbolParams>,
@@ -395,7 +404,8 @@ impl LspMcpServer {
 
     #[tool(
         name = "goToImplementation",
-        description = "Implementations of interface/trait"
+        description = "Implementations of interface/trait",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn go_to_implementation(
         &self,
@@ -430,7 +440,8 @@ impl LspMcpServer {
 
     #[tool(
         name = "callHierarchy",
-        description = "Incoming or outgoing calls at position. External deps included by default. Set externals=false to exclude."
+        description = "Incoming or outgoing calls at position. External deps included by default. Set externals=false to exclude.",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn call_hierarchy(
         &self,
@@ -469,7 +480,8 @@ impl LspMcpServer {
 
     #[tool(
         name = "findReferencedSymbols",
-        description = "Symbols referenced by definition. External deps included by default. Set externals=false to exclude."
+        description = "Symbols referenced by definition. External deps included by default. Set externals=false to exclude.",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn find_referenced_symbols(
         &self,
@@ -488,7 +500,11 @@ impl LspMcpServer {
         Ok(output)
     }
 
-    #[tool(name = "findIdentifier", description = "Identifiers by name in file")]
+    #[tool(
+        name = "findIdentifier",
+        description = "Identifiers by name in file",
+        annotations(read_only_hint = true, destructive_hint = false)
+    )]
     async fn find_identifier(
         &self,
         Parameters(params): Parameters<FindIdentifierParams>,
@@ -507,7 +523,11 @@ impl LspMcpServer {
         Ok(output)
     }
 
-    #[tool(name = "listFiles", description = "List workspace files")]
+    #[tool(
+        name = "listFiles",
+        description = "List workspace files",
+        annotations(read_only_hint = true, destructive_hint = false)
+    )]
     async fn list_files(
         &self,
         Parameters(params): Parameters<ListFilesParams>,
@@ -517,7 +537,11 @@ impl LspMcpServer {
         Ok(output)
     }
 
-    #[tool(name = "readSourceCode", description = "Read source code from file")]
+    #[tool(
+        name = "readSourceCode",
+        description = "Read source code from file",
+        annotations(read_only_hint = true, destructive_hint = false)
+    )]
     async fn read_source_code(
         &self,
         Parameters(params): Parameters<ReadSourceCodeParams>,
@@ -535,7 +559,11 @@ impl LspMcpServer {
         Ok(output)
     }
 
-    #[tool(name = "health", description = "Service status")]
+    #[tool(
+        name = "health",
+        description = "Service status",
+        annotations(read_only_hint = true, destructive_hint = false)
+    )]
     async fn health(&self) -> Result<CallToolResult, McpError> {
         let request_id = new_request_id();
         tracing::debug!(
@@ -563,7 +591,8 @@ impl LspMcpServer {
 
     #[tool(
         name = "getDiagnostics",
-        description = "Diagnostics for file or workspace"
+        description = "Diagnostics for file or workspace",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn get_diagnostics(
         &self,
@@ -685,7 +714,8 @@ Restart your agent for new settings to take effect."#,
 
     #[tool(
         name = "semanticSearch",
-        description = "Search code semantically using natural language queries. Returns ranked code chunks based on embedding similarity."
+        description = "Search code semantically using natural language queries. Returns ranked code chunks based on embedding similarity.",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn semantic_search_tool(
         &self,
@@ -733,7 +763,8 @@ Restart your agent for new settings to take effect."#,
 
     #[tool(
         name = "codemap",
-        description = "Query codebase dependency graph. Modes: overview (high-level map), impact (reverse deps), context (local subgraph)"
+        description = "Query codebase dependency graph. Modes: overview (high-level map), impact (reverse deps), context (local subgraph)",
+        annotations(read_only_hint = true, destructive_hint = false)
     )]
     async fn codemap_tool(
         &self,

@@ -3,6 +3,7 @@
 
 use super::capabilities::create_default_capabilities;
 use super::config::LspClientConfig;
+use super::{Connection, LspResponse};
 use crate::lsp::json_rpc::{JsonRpc, JsonRpcHandler};
 use crate::lsp::process::{Process, ProcessHandler};
 use crate::lsp::reconnect::{DocumentTracker, SpawnConfig};
@@ -39,7 +40,12 @@ pub trait LspClient: Send {
         let params = self.get_initialize_params(root_path).await?;
 
         let result = self
-            .send_request("initialize", Some(serde_json::to_value(params)?))
+            .connection()
+            .send_request(
+                "initialize",
+                Some(serde_json::to_value(params)?),
+                self.get_config().initialize_timeout,
+            )
             .await?;
         let init_result: InitializeResult = serde_json::from_value(result)?;
         debug!("Initialization successful: {:?}", init_result);
@@ -64,40 +70,12 @@ pub trait LspClient: Send {
         })
     }
 
-    async fn send_request(
-        &mut self,
-        method: &str,
-        params: Option<serde_json::Value>,
-    ) -> Result<serde_json::Value, Box<dyn Error + Send + Sync>> {
-        let (id, request) = self.get_json_rpc().create_request(method, params);
-
-        let mut response_receiver = self.get_pending_requests().add_request(id).await?;
-
-        let message = format!("Content-Length: {}\r\n\r\n{}", request.len(), request);
-        debug!("Message: {:?}", message);
-        self.get_process().send(&message).await?;
-
-        let timeout_duration = self.get_config().request_timeout;
-        let response = tokio::time::timeout(timeout_duration, response_receiver.recv())
-            .await
-            .map_err(|_| {
-                format!(
-                    "Request '{}' timed out after {:?}",
-                    method, timeout_duration
-                )
-            })?
-            .map_err(|e| format!("Failed to receive response: {}", e))?;
-
-        if let Some(result) = response.result {
-            Ok(result)
-        } else if let Some(error) = response.error.clone() {
-            error!("Recieved error: {:?}", response);
-            if error.message.starts_with("KeyError") {
-                return Ok(serde_json::Value::Array(vec![]));
-            }
-            Err(error.into())
-        } else {
-            Ok(serde_json::Value::Null)
+    fn connection(&mut self) -> Connection {
+        Connection {
+            rpc: self.get_json_rpc().clone(),
+            pending: self.get_pending_requests().clone(),
+            process: self.get_process().clone(),
+            config: self.get_config().clone(),
         }
     }
 
@@ -226,11 +204,11 @@ pub trait LspClient: Send {
         self.get_process().send(&message).await
     }
 
-    async fn text_document_definition(
+    async fn prepare_definition_request(
         &mut self,
         file_path: &str,
         position: Position,
-    ) -> Result<GotoDefinitionResponse, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<GotoDefinitionResponse>, Box<dyn Error + Send + Sync>> {
         debug!(
             "Requesting goto definition for {}, line {}, character {}",
             file_path, position.line, position.character
@@ -249,28 +227,18 @@ pub trait LspClient: Send {
             partial_result_params: PartialResultParams::default(),
         };
 
-        let result = self
-            .send_request(
-                "textDocument/definition",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        let goto_resp: GotoDefinitionResponse = if result.is_null() {
-            GotoDefinitionResponse::Array(Vec::new())
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!("Received goto definition response");
-        Ok(goto_resp)
+        self.connection().request(
+            "textDocument/definition",
+            params,
+            GotoDefinitionResponse::Array(Vec::new()),
+        )
     }
 
-    async fn text_document_reference(
+    async fn prepare_reference_request(
         &mut self,
         file_path: &str,
         position: Position,
-    ) -> Result<Vec<Location>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Vec<Location>>, Box<dyn Error + Send + Sync>> {
         self.ensure_document_open(file_path).await?;
 
         let params = ReferenceParams {
@@ -287,27 +255,15 @@ pub trait LspClient: Send {
             },
         };
 
-        let result = self
-            .send_request(
-                "textDocument/references",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        let ref_resp: Vec<Location> = if result.is_null() {
-            Vec::new()
-        } else {
-            serde_json::from_value(result)?
-        };
-        debug!("Received references response");
-        Ok(ref_resp)
+        self.connection()
+            .request("textDocument/references", params, Vec::new())
     }
 
-    async fn text_document_hover(
+    async fn prepare_hover_request(
         &mut self,
         file_path: &str,
         position: Position,
-    ) -> Result<Option<lsp_types::Hover>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Option<lsp_types::Hover>>, Box<dyn Error + Send + Sync>> {
         debug!(
             "Requesting hover for {}, line {}, character {}",
             file_path, position.line, position.character
@@ -325,25 +281,15 @@ pub trait LspClient: Send {
             work_done_progress_params: WorkDoneProgressParams::default(),
         };
 
-        let result = self
-            .send_request("textDocument/hover", Some(serde_json::to_value(params)?))
-            .await?;
-
-        let hover_resp: Option<lsp_types::Hover> = if result.is_null() {
-            None
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!("Received hover response");
-        Ok(hover_resp)
+        self.connection()
+            .request("textDocument/hover", params, None)
     }
 
-    async fn text_document_signature_help(
+    async fn prepare_signature_help_request(
         &mut self,
         file_path: &str,
         position: Position,
-    ) -> Result<Option<SignatureHelp>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Option<SignatureHelp>>, Box<dyn Error + Send + Sync>> {
         debug!(
             "Requesting signature help for {}, line {}, character {}",
             file_path, position.line, position.character
@@ -362,27 +308,14 @@ pub trait LspClient: Send {
             context: None,
         };
 
-        let result = self
-            .send_request(
-                "textDocument/signatureHelp",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        let sig_help: Option<SignatureHelp> = if result.is_null() {
-            None
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!("Received signature help response");
-        Ok(sig_help)
+        self.connection()
+            .request("textDocument/signatureHelp", params, None)
     }
 
-    async fn text_document_document_symbol(
+    async fn prepare_document_symbol_request(
         &mut self,
         file_path: &str,
-    ) -> Result<Option<DocumentSymbolResponse>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Option<DocumentSymbolResponse>>, Box<dyn Error + Send + Sync>> {
         debug!("Requesting document symbols for {}", file_path);
 
         self.ensure_document_open(file_path).await?;
@@ -395,34 +328,15 @@ pub trait LspClient: Send {
             partial_result_params: PartialResultParams::default(),
         };
 
-        let result = self
-            .send_request(
-                "textDocument/documentSymbol",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        let symbols: Option<DocumentSymbolResponse> = if result.is_null() {
-            None
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!(
-            "Received document symbol response: {:?} symbols",
-            symbols.as_ref().map(|s| match s {
-                DocumentSymbolResponse::Flat(v) => v.len(),
-                DocumentSymbolResponse::Nested(v) => v.len(),
-            })
-        );
-        Ok(symbols)
+        self.connection()
+            .request("textDocument/documentSymbol", params, None)
     }
 
-    async fn text_document_selection_range(
+    async fn prepare_selection_range_request(
         &mut self,
         file_path: &str,
         positions: Vec<Position>,
-    ) -> Result<Option<Vec<SelectionRange>>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Option<Vec<SelectionRange>>>, Box<dyn Error + Send + Sync>> {
         debug!("Requesting selection ranges for {}", file_path);
 
         self.ensure_document_open(file_path).await?;
@@ -436,32 +350,16 @@ pub trait LspClient: Send {
             partial_result_params: PartialResultParams::default(),
         };
 
-        let result = self
-            .send_request(
-                "textDocument/selectionRange",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        let ranges: Option<Vec<SelectionRange>> = if result.is_null() {
-            None
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!(
-            "Received selection range response: {:?} ranges",
-            ranges.as_ref().map(|r| r.len())
-        );
-        Ok(ranges)
+        self.connection()
+            .request("textDocument/selectionRange", params, None)
     }
 
-    async fn text_document_code_action(
+    async fn prepare_code_action_request(
         &mut self,
         file_path: &str,
         range: Range,
         diagnostics: Vec<lsp_types::Diagnostic>,
-    ) -> Result<Option<Vec<CodeActionOrCommand>>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Option<Vec<CodeActionOrCommand>>>, Box<dyn Error + Send + Sync>> {
         debug!(
             "Requesting code actions for {}, range {:?}",
             file_path, range
@@ -483,30 +381,14 @@ pub trait LspClient: Send {
             partial_result_params: PartialResultParams::default(),
         };
 
-        let result = self
-            .send_request(
-                "textDocument/codeAction",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        let code_actions: Option<Vec<CodeActionOrCommand>> = if result.is_null() {
-            None
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!(
-            "Received code action response: {:?} actions",
-            code_actions.as_ref().map(|a| a.len())
-        );
-        Ok(code_actions)
+        self.connection()
+            .request("textDocument/codeAction", params, None)
     }
 
-    async fn workspace_symbol(
+    async fn prepare_workspace_symbol_request(
         &mut self,
         query: &str,
-    ) -> Result<Vec<lsp_types::SymbolInformation>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Vec<lsp_types::SymbolInformation>>, Box<dyn Error + Send + Sync>> {
         debug!("Requesting workspace symbols for query: {}", query);
 
         let params = lsp_types::WorkspaceSymbolParams {
@@ -515,25 +397,15 @@ pub trait LspClient: Send {
             partial_result_params: PartialResultParams::default(),
         };
 
-        let result = self
-            .send_request("workspace/symbol", Some(serde_json::to_value(params)?))
-            .await?;
-
-        let symbols: Vec<lsp_types::SymbolInformation> = if result.is_null() {
-            Vec::new()
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!("Received {} workspace symbols", symbols.len());
-        Ok(symbols)
+        self.connection()
+            .request("workspace/symbol", params, Vec::new())
     }
 
-    async fn text_document_implementation(
+    async fn prepare_implementation_request(
         &mut self,
         file_path: &str,
         position: Position,
-    ) -> Result<GotoDefinitionResponse, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<GotoDefinitionResponse>, Box<dyn Error + Send + Sync>> {
         debug!(
             "Requesting implementation for {}, line {}, character {}",
             file_path, position.line, position.character
@@ -552,28 +424,19 @@ pub trait LspClient: Send {
             partial_result_params: PartialResultParams::default(),
         };
 
-        let result = self
-            .send_request(
-                "textDocument/implementation",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        let impl_resp: GotoDefinitionResponse = if result.is_null() {
-            GotoDefinitionResponse::Array(Vec::new())
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!("Received implementation response");
-        Ok(impl_resp)
+        self.connection().request(
+            "textDocument/implementation",
+            params,
+            GotoDefinitionResponse::Array(Vec::new()),
+        )
     }
 
-    async fn prepare_call_hierarchy(
+    async fn prepare_call_hierarchy_request(
         &mut self,
         file_path: &str,
         position: Position,
-    ) -> Result<Option<Vec<lsp_types::CallHierarchyItem>>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Option<Vec<lsp_types::CallHierarchyItem>>>, Box<dyn Error + Send + Sync>>
+    {
         debug!(
             "Preparing call hierarchy for {}, line {}, character {}",
             file_path, position.line, position.character
@@ -591,37 +454,15 @@ pub trait LspClient: Send {
             work_done_progress_params: WorkDoneProgressParams::default(),
         };
 
-        let result = self
-            .send_request(
-                "textDocument/prepareCallHierarchy",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        debug!("prepareCallHierarchy raw response: {}", result);
-
-        let items: Option<Vec<lsp_types::CallHierarchyItem>> = if result.is_null() {
-            None
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        if let Some(ref items) = items {
-            for (i, item) in items.iter().enumerate() {
-                debug!(
-                    "prepareCallHierarchy item[{}]: name={}, kind={:?}, uri={}, data={:?}",
-                    i, item.name, item.kind, item.uri, item.data
-                );
-            }
-        }
-        debug!("Received call hierarchy prepare response");
-        Ok(items)
+        self.connection()
+            .request("textDocument/prepareCallHierarchy", params, None)
     }
 
-    async fn call_hierarchy_incoming_calls(
+    async fn prepare_call_hierarchy_incoming_calls_request(
         &mut self,
         item: &lsp_types::CallHierarchyItem,
-    ) -> Result<Vec<lsp_types::CallHierarchyIncomingCall>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Vec<lsp_types::CallHierarchyIncomingCall>>, Box<dyn Error + Send + Sync>>
+    {
         debug!("Requesting incoming calls for {}", item.name);
 
         let params = lsp_types::CallHierarchyIncomingCallsParams {
@@ -630,27 +471,15 @@ pub trait LspClient: Send {
             partial_result_params: PartialResultParams::default(),
         };
 
-        let result = self
-            .send_request(
-                "callHierarchy/incomingCalls",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        let calls: Vec<lsp_types::CallHierarchyIncomingCall> = if result.is_null() {
-            Vec::new()
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!("Received {} incoming calls", calls.len());
-        Ok(calls)
+        self.connection()
+            .request("callHierarchy/incomingCalls", params, Vec::new())
     }
 
-    async fn call_hierarchy_outgoing_calls(
+    async fn prepare_call_hierarchy_outgoing_calls_request(
         &mut self,
         item: &lsp_types::CallHierarchyItem,
-    ) -> Result<Vec<lsp_types::CallHierarchyOutgoingCall>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<LspResponse<Vec<lsp_types::CallHierarchyOutgoingCall>>, Box<dyn Error + Send + Sync>>
+    {
         debug!("Requesting outgoing calls for {}", item.name);
         debug!(
             "outgoing_calls CallHierarchyItem: name={}, kind={:?}, uri={}, data={:?}",
@@ -668,29 +497,8 @@ pub trait LspClient: Send {
             serde_json::to_string(&params).unwrap_or_else(|_| "failed to serialize".to_string())
         );
 
-        let result = self
-            .send_request(
-                "callHierarchy/outgoingCalls",
-                Some(serde_json::to_value(params)?),
-            )
-            .await?;
-
-        debug!("outgoing_calls raw LSP response: {}", result);
-
-        let calls: Vec<lsp_types::CallHierarchyOutgoingCall> = if result.is_null() {
-            Vec::new()
-        } else {
-            serde_json::from_value(result)?
-        };
-
-        debug!("Received {} outgoing calls", calls.len());
-        for (i, call) in calls.iter().enumerate() {
-            debug!(
-                "  outgoing call[{}]: to={}, uri={}, from_ranges={:?}",
-                i, call.to.name, call.to.uri, call.from_ranges
-            );
-        }
-        Ok(calls)
+        self.connection()
+            .request("callHierarchy/outgoingCalls", params, Vec::new())
     }
 
     fn get_process(&mut self) -> &mut ProcessHandler;

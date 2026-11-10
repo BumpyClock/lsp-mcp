@@ -31,30 +31,64 @@ struct MockClient {
 
 #[async_trait::async_trait]
 impl LspClient for MockClient {
-    async fn workspace_symbol(
+    async fn prepare_workspace_symbol_request(
         &mut self,
         _query: &str,
-    ) -> Result<Vec<lsp_types::SymbolInformation>, Box<dyn Error + Send + Sync>> {
-        let active = self.stats.active.fetch_add(1, Ordering::SeqCst) + 1;
-        self.stats.peak.fetch_max(active, Ordering::SeqCst);
-        let _active = ActiveQuery(self.stats.clone());
-        self.events.send(self.name.clone()).unwrap();
-        self.permits.acquire().await.unwrap().forget();
-        if self.fail_query {
-            return Err("query failure".into());
-        }
-        #[allow(deprecated)]
-        Ok(vec![lsp_types::SymbolInformation {
-            name: "shared".into(),
-            kind: lsp_types::SymbolKind::FUNCTION,
-            tags: None,
-            deprecated: None,
-            location: Location {
-                uri: Url::parse(&format!("file:///{}.rs", self.name)).unwrap(),
-                range: Range::default(),
-            },
-            container_name: None,
-        }])
+    ) -> Result<
+        crate::lsp::client::LspResponse<Vec<lsp_types::SymbolInformation>>,
+        Box<dyn Error + Send + Sync>,
+    > {
+        let stats = self.stats.clone();
+        let events = self.events.clone();
+        let name = self.name.clone();
+        let permits = self.permits.clone();
+        let fail_query = self.fail_query;
+        Ok(Box::pin(async move {
+            let active = stats.active.fetch_add(1, Ordering::SeqCst) + 1;
+            stats.peak.fetch_max(active, Ordering::SeqCst);
+            let _active = ActiveQuery(stats.clone());
+            events.send(name.clone()).unwrap();
+            permits.acquire().await.unwrap().forget();
+            if fail_query {
+                return Err("query failure".into());
+            }
+            #[allow(deprecated)]
+            Ok(vec![lsp_types::SymbolInformation {
+                name: "shared".into(),
+                kind: lsp_types::SymbolKind::FUNCTION,
+                tags: None,
+                deprecated: None,
+                location: Location {
+                    uri: Url::parse(&format!("file:///{}.rs", name)).unwrap(),
+                    range: Range::default(),
+                },
+                container_name: None,
+            }])
+        }))
+    }
+
+    async fn prepare_document_symbol_request(
+        &mut self,
+        _path: &str,
+    ) -> Result<
+        crate::lsp::client::LspResponse<Option<DocumentSymbolResponse>>,
+        Box<dyn Error + Send + Sync>,
+    > {
+        Ok(Box::pin(async {
+            #[allow(deprecated)]
+            Ok(Some(DocumentSymbolResponse::Nested(vec![
+                lsp_types::DocumentSymbol {
+                    name: "example".into(),
+                    detail: Some("fn example()".into()),
+                    kind: lsp_types::SymbolKind::FUNCTION,
+                    tags: None,
+                    deprecated: None,
+                    range: Range::default(),
+                    selection_range: Range::default(),
+                    children: None,
+                },
+            ])))
+        }))
     }
 
     fn get_process(&mut self) -> &mut ProcessHandler {
@@ -142,6 +176,41 @@ impl Fixture {
             _root: root,
         }
     }
+}
+
+#[tokio::test]
+async fn declaration_page_reports_file_identity_mtime_and_pagination() {
+    let fixture = Fixture::new().await;
+    let root = fixture._root.path();
+    let file = std::fs::File::open(root.join("client0/source.rs")).unwrap();
+    file.set_times(
+        std::fs::FileTimes::new()
+            .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000)),
+    )
+    .unwrap();
+    let client = fixture
+        .manager
+        .get_client(SupportedLanguages::Python)
+        .await
+        .unwrap();
+    fixture
+        .manager
+        .lsp_clients
+        .write()
+        .await
+        .insert(SupportedLanguages::Rust, client);
+    crate::api_types::set_thread_local_mount_dir(root);
+    let service = crate::service::create_service(Arc::new(fixture.manager));
+    let result = service
+        .definitions_in_file("client0/source.rs", false, false, Some(1), Some(1), 0)
+        .await;
+    crate::api_types::unset_thread_local_mount_dir();
+    let page = result.unwrap();
+    assert_eq!(page.path, "client0/source.rs");
+    assert_eq!(page.mtime, "2023-11-14T22:13:20+00:00");
+    assert_eq!((page.limit, page.offset), (1, 1));
+    assert!(page.symbols.is_empty());
+    assert!(!page.truncated);
 }
 
 #[tokio::test]

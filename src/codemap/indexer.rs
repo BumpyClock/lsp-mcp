@@ -292,9 +292,6 @@ impl CodemapIndexer {
                                 },
                             },
                             signature: None,
-                            exported: None,
-                            jsdoc_summary: None,
-                            dependencies: None,
                             line_count: None,
                             children: None,
                             snippet: None,
@@ -344,11 +341,11 @@ impl CodemapIndexer {
                     },
                 },
                 signature: None,
-                exported: None,
-                jsdoc_summary: None,
-                dependencies: None,
                 line_count: None,
-                children: symbol.children.as_ref().map(|children| self.flatten_document_symbols(path, children)),
+                children: symbol
+                    .children
+                    .as_ref()
+                    .map(|children| self.flatten_document_symbols(path, children)),
                 snippet: None,
             };
             result.push(api_symbol);
@@ -386,7 +383,7 @@ impl CodemapIndexer {
                     container_name: None,
                     file_version,
                     indexed_at: now,
-                    is_public_api: symbol.exported.unwrap_or(false),
+                    is_public_api: false,
                 }
             })
             .collect()

@@ -155,4 +155,26 @@ mod tests {
             "expected is_alive to return false after process exits"
         );
     }
+    #[tokio::test]
+    async fn interrupted_frame_transmission_invalidates_the_connection() {
+        let child = Command::new("python3")
+            .args(["-c", "import time; time.sleep(60)"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut handler = ProcessHandler::new(child).await.unwrap();
+        let body = "x".repeat(8 * 1024 * 1024);
+        let frame = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
+        assert!(timeout(Duration::from_millis(25), handler.send(&frame))
+            .await
+            .is_err());
+        assert!(
+            !matches!(*handler.health_receiver().borrow(), ProcessHealth::Healthy),
+            "a partial frame must not leave the connection reusable"
+        );
+        assert!(handler.send("Content-Length: 2\r\n\r\n{}").await.is_err());
+        handler.kill().await.unwrap();
+    }
 }

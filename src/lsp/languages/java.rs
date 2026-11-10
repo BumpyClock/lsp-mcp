@@ -70,7 +70,12 @@ impl LspClient for JdtlsClient {
         let params = self.get_initialize_params(root_path).await?;
 
         let result = self
-            .send_request("initialize", Some(serde_json::to_value(params)?))
+            .connection()
+            .send_request(
+                "initialize",
+                Some(serde_json::to_value(params)?),
+                self.get_config().initialize_timeout,
+            )
             .await?;
         let init_result: InitializeResult = serde_json::from_value(result)?;
         debug!("Initialization successful: {:?}", init_result);

@@ -54,10 +54,6 @@ impl ToMarkdown for WorkspaceSymbolResponse {
                 external_marker
             ));
 
-            if let Some(ref sig) = symbol.signature {
-                output.push_str(&format!("    `{}`\n", escape_inline_code(sig)));
-            }
-
             if let Some(ref snippet) = symbol.snippet {
                 format_snippet(&snippet.source_code, "  ", &mut output);
             }
@@ -144,13 +140,6 @@ fn format_symbol_recursive(symbol: &Symbol, depth: usize, root_path: &str, outpu
         output.push_str(&format!("{}  `{}`\n", indent, escape_inline_code(sig)));
     }
 
-    if let Some(ref summary) = symbol.jsdoc_summary {
-        let line = summary.lines().next().unwrap_or("").trim();
-        if !line.is_empty() {
-            output.push_str(&format!("{}  {}\n", indent, line));
-        }
-    }
-
     if let Some(ref snippet) = symbol.snippet {
         format_snippet(&snippet.source_code, &indent, output);
     }
@@ -210,9 +199,6 @@ mod tests {
                 },
             },
             signature,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
             line_count: None,
             children: None,
             snippet: None,
@@ -224,7 +210,6 @@ mod tests {
         kind: &str,
         path: &str,
         line: u32,
-        signature: Option<String>,
     ) -> WorkspaceSymbolInfo {
         WorkspaceSymbolInfo {
             name: name.to_string(),
@@ -236,7 +221,6 @@ mod tests {
             container_name: None,
             match_kind: None,
             match_score: None,
-            signature,
             snippet: None,
         }
     }
@@ -391,9 +375,6 @@ mod tests {
                 },
             },
             signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
             line_count: None,
             children: Some(vec![
                 create_symbol("methodA", "method", 15, None),
@@ -455,7 +436,6 @@ mod tests {
                 "variable",
                 "src/app/store.ts",
                 22,
-                None,
             )],
             limit: 100,
             offset: 0,
@@ -484,7 +464,6 @@ mod tests {
                 "variable",
                 "src/stores/main.ts",
                 line,
-                None,
             )],
             limit: 100,
             offset: 0,
@@ -520,7 +499,6 @@ mod tests {
                 "function",
                 "node_modules/@reduxjs/toolkit/dist/index.d.mts",
                 1847,
-                None,
             )],
             limit: 100,
             offset: 0,
@@ -536,37 +514,12 @@ mod tests {
     }
 
     #[test]
-    fn workspace_symbol_response_includes_signature_when_present() {
-        let signature = "export const store: Store<RootState>".to_string();
-        let response = WorkspaceSymbolResponse {
-            raw_response: None,
-            symbols: vec![create_workspace_symbol(
-                "store",
-                "variable",
-                "src/app/store.ts",
-                22,
-                Some(signature.clone()),
-            )],
-            limit: 100,
-            offset: 0,
-            truncated: false,
-        };
-
-        let markdown = response.to_markdown();
-
-        assert!(
-            markdown.contains(&format!("`{}`", signature)),
-            "negative: signature must be formatted as inline code"
-        );
-    }
-
-    #[test]
     fn workspace_symbol_response_shows_pagination_info_when_truncated() {
         let response = WorkspaceSymbolResponse {
             raw_response: None,
             symbols: vec![
-                create_workspace_symbol("store1", "variable", "src/app/store1.ts", 10, None),
-                create_workspace_symbol("store2", "variable", "src/app/store2.ts", 20, None),
+                create_workspace_symbol("store1", "variable", "src/app/store1.ts", 10),
+                create_workspace_symbol("store2", "variable", "src/app/store2.ts", 20),
             ],
             limit: 2,
             offset: 0,
@@ -643,7 +596,7 @@ mod tests {
 
     #[test]
     fn workspace_symbol_response_includes_container_name_when_present() {
-        let mut symbol = create_workspace_symbol("methodA", "method", "src/app.ts", 15, None);
+        let mut symbol = create_workspace_symbol("methodA", "method", "src/app.ts", 15);
         symbol.container_name = Some("MyClass".to_string());
 
         let response = WorkspaceSymbolResponse {
@@ -688,9 +641,6 @@ mod tests {
                 },
             },
             signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
             line_count: None,
             children: None,
             snippet: None,
@@ -720,9 +670,6 @@ mod tests {
                 },
             },
             signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
             line_count: None,
             children: Some(vec![grandchild]),
             snippet: None,
@@ -752,9 +699,6 @@ mod tests {
                 },
             },
             signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
             line_count: None,
             children: Some(vec![child]),
             snippet: None,
@@ -1019,8 +963,7 @@ mod tests {
             source_code: "pub fn example\tvalue() -> i32".to_string(),
         };
 
-        let mut symbol =
-            create_workspace_symbol("example\tvalue", "function", "src/lib.rs", 10, None);
+        let mut symbol = create_workspace_symbol("example\tvalue", "function", "src/lib.rs", 10);
         symbol.snippet = Some(snippet);
 
         let response = WorkspaceSymbolResponse {

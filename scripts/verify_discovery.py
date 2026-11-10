@@ -24,22 +24,31 @@ def lsp_send(message):
     sys.stdout.buffer.flush()
 
 
+def lsp_read():
+    source = sys.stdin.buffer
+    headers = {}
+    while True:
+        line = source.readline()
+        if not line:
+            return None
+        if not line.strip():
+            break
+        key, value = line.decode().split(":", 1)
+        headers[key.lower()] = value.strip()
+    try:
+        return json.loads(source.read(int(headers["content-length"])))
+    except (ValueError, KeyError) as error:
+        raise AssertionError("invalid LSP request framing") from error
+
+
 def fake_server():
     root = Path.cwd()
     with (root / ".fake-starts").open("a") as log:
         log.write("start\n")
-    source = sys.stdin.buffer
     while True:
-        headers = {}
-        while True:
-            line = source.readline()
-            if not line:
-                return
-            if not line.strip():
-                break
-            key, value = line.decode().split(":", 1)
-            headers[key.lower()] = value.strip()
-        message = json.loads(source.read(int(headers["content-length"])))
+        message = lsp_read()
+        if message is None:
+            return
         if "id" not in message:
             continue
         method = message.get("method")

@@ -135,14 +135,6 @@ impl ToMarkdown for SymbolDefinitionResponse {
                 output.push_str(&format!("Signature: `{}`\n", escape_inline_code(signature)));
             }
 
-            if let Some(ref doc) = def.doc {
-                if !doc.is_empty() {
-                    output.push_str("\nDocumentation\n");
-                    output.push_str(doc);
-                    output.push('\n');
-                }
-            }
-
             let language = detect_language(path);
             let source = format_source_with_line_numbers(
                 &def.definition.source_code,
@@ -309,7 +301,6 @@ mod tests {
                     source_code: source.clone(),
                 },
                 signature: Some(format!("{}()", random_irregular_string())),
-                doc: Some(random_irregular_string()),
             }],
             truncated: false,
         };
@@ -410,9 +401,6 @@ mod tests {
             },
             file_range: create_file_range("src/module.ts", line, line + 5),
             signature: None,
-            exported: None,
-            jsdoc_summary: None,
-            dependencies: None,
             line_count: None,
             children: None,
             snippet: None,

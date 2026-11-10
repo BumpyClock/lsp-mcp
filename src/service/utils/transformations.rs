@@ -141,7 +141,6 @@ pub(crate) fn workspace_symbol_info_from_lsp(
         container_name: sym.container_name,
         match_kind: None,
         match_score: None,
-        signature: None,
         snippet: None,
     }
 }

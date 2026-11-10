@@ -112,12 +112,12 @@ impl FilteredLspMcpServer {
             "getSymbolDefinition" => "Full definition for a symbol by name",
             "getDiagnostics" => "Diagnostics for file/workspace; use for errors and warnings",
             "goToImplementation" => "Implementation at position; use for interface/trait impls",
-            "documentSymbol" => "Symbols defined in a file; use to outline structure",
+            "documentSymbol" => "Fast declaration outline; use getSymbolDefinition for bodies or hover for type/docs",
             "semanticSearch" => {
                 "Semantic code search; use descriptive natural language queries (not keywords)"
             }
             "findReferencedSymbols" => "Symbols referenced by definition; use to see deps",
-            "findSymbol" => "Search symbols by name; use to locate definitions",
+            "findSymbol" => "Fast symbol lookup with locations; use getSymbolDefinition for bodies or hover for type/docs",
             "hover" => "Type/doc info at position; use for quick context",
             "listFiles" => "List workspace files; use to discover paths",
             "readSourceCode" => "Read source from file; use for exact text",

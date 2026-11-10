@@ -112,14 +112,19 @@ impl Manager {
         })?;
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        locked_client
-            .text_document_document_symbol(full_path_str)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Document symbol retrieval failed: {}", e))
-            })
+        async {
+            let response = client
+                .lock()
+                .await
+                .prepare_document_symbol_request(full_path_str)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| {
+            LspManagerError::InternalError(format!("Document symbol retrieval failed: {}", e))
+        })
     }
 
     pub async fn selection_range(
@@ -134,14 +139,19 @@ impl Manager {
         })?;
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        locked_client
-            .text_document_selection_range(full_path_str, positions)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Selection range retrieval failed: {}", e))
-            })
+        async {
+            let response = client
+                .lock()
+                .await
+                .prepare_selection_range_request(full_path_str, positions)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| {
+            LspManagerError::InternalError(format!("Selection range retrieval failed: {}", e))
+        })
     }
 
     pub(crate) async fn get_symbols_from_positions(
@@ -187,13 +197,18 @@ impl Manager {
         })?;
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
-        let mut definition = locked_client
-            .text_document_definition(full_path_str, position)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Definition retrieval failed: {}", e))
-            })?;
+        let mut definition = async {
+            let response = client
+                .lock()
+                .await
+                .prepare_definition_request(full_path_str, position)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| {
+            LspManagerError::InternalError(format!("Definition retrieval failed: {}", e))
+        })?;
 
         match &mut definition {
             GotoDefinitionResponse::Array(locations) => {
@@ -277,14 +292,17 @@ impl Manager {
             LspManagerError::InternalError(format!("Language detection failed: {}", e))
         })?;
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        locked_client
-            .text_document_reference(full_path_str, position)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Reference retrieval failed: {}", e))
-            })
+        async {
+            let response = client
+                .lock()
+                .await
+                .prepare_reference_request(full_path_str, position)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| LspManagerError::InternalError(format!("Reference retrieval failed: {}", e)))
     }
 
     pub async fn hover(
@@ -299,12 +317,17 @@ impl Manager {
         })?;
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        locked_client
-            .text_document_hover(full_path_str, position)
-            .await
-            .map_err(|e| LspManagerError::InternalError(format!("Hover retrieval failed: {}", e)))
+        async {
+            let response = client
+                .lock()
+                .await
+                .prepare_hover_request(full_path_str, position)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| LspManagerError::InternalError(format!("Hover retrieval failed: {}", e)))
     }
 
     pub async fn signature_help(
@@ -319,14 +342,19 @@ impl Manager {
         })?;
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        locked_client
-            .text_document_signature_help(full_path_str, position)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Signature help retrieval failed: {}", e))
-            })
+        async {
+            let response = client
+                .lock()
+                .await
+                .prepare_signature_help_request(full_path_str, position)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| {
+            LspManagerError::InternalError(format!("Signature help retrieval failed: {}", e))
+        })
     }
 
     pub async fn code_action(
@@ -351,14 +379,17 @@ impl Manager {
         })?;
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        locked_client
-            .text_document_code_action(full_path_str, range, diagnostics)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Code action retrieval failed: {}", e))
-            })
+        async {
+            let response = client
+                .lock()
+                .await
+                .prepare_code_action_request(full_path_str, range, diagnostics)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| LspManagerError::InternalError(format!("Code action retrieval failed: {}", e)))
     }
 
     pub async fn workspace_symbol(
@@ -369,7 +400,14 @@ impl Manager {
 
         let clients = self.clients_snapshot().await;
         let mut results = stream::iter(clients)
-            .map(|client| async move { client.lock().await.workspace_symbol(query).await })
+            .map(|client| async move {
+                let response = client
+                    .lock()
+                    .await
+                    .prepare_workspace_symbol_request(query)
+                    .await?;
+                response.await
+            })
             .buffered(CLIENT_CONCURRENCY)
             .boxed();
         let mut all_symbols = Vec::new();
@@ -408,14 +446,19 @@ impl Manager {
         })?;
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        let mut implementations = locked_client
-            .text_document_implementation(full_path_str, position)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Implementation retrieval failed: {}", e))
-            })?;
+        let mut implementations = async {
+            let response = client
+                .lock()
+                .await
+                .prepare_implementation_request(full_path_str, position)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| {
+            LspManagerError::InternalError(format!("Implementation retrieval failed: {}", e))
+        })?;
 
         match &mut implementations {
             GotoDefinitionResponse::Array(locations) => {
@@ -499,28 +542,40 @@ impl Manager {
         };
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
+        let had_references = !references_to_symbols.is_empty();
         let mut definitions = Vec::new();
-
-        for ast_match in references_to_symbols.iter() {
-            match locked_client
-                .text_document_definition(full_path_str, lsp_types::Position::from(ast_match))
-                .await
-            {
-                Ok(definition) => {
-                    definitions.push((ast_match.clone(), definition));
+        let mut requests = stream::iter(references_to_symbols)
+            .map(|ast_match| {
+                let client = client.clone();
+                async move {
+                    let result = async {
+                        let response = client
+                            .lock()
+                            .await
+                            .prepare_definition_request(
+                                full_path_str,
+                                lsp_types::Position::from(&ast_match),
+                            )
+                            .await?;
+                        response.await
+                    }
+                    .await;
+                    (ast_match, result)
                 }
-                Err(e) => {
-                    log::warn!(
-                        "Definition retrieval failed for reference: {}, error: {}",
-                        ast_match.meta_variables.single.name.text,
-                        e
-                    );
-                }
+            })
+            .buffered(crate::lsp::client::MAX_IN_FLIGHT_REQUESTS);
+        while let Some((ast_match, result)) = requests.next().await {
+            match result {
+                Ok(definition) => definitions.push((ast_match, definition)),
+                Err(error) => log::warn!(
+                    "Definition retrieval failed for reference {}: {}",
+                    ast_match.meta_variables.single.name.text,
+                    error
+                ),
             }
         }
 
-        if definitions.is_empty() && !references_to_symbols.is_empty() {
+        if definitions.is_empty() && had_references {
             return Err(LspManagerError::InternalError(
                 "Failed to retrieve any definitions for the referenced symbols".to_string(),
             ));
@@ -700,14 +755,19 @@ impl Manager {
         debug!("prepare_call_hierarchy: detected language {:?}", lsp_type);
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        let result = locked_client
-            .prepare_call_hierarchy(full_path_str, position)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Call hierarchy preparation failed: {}", e))
-            })?;
+        let result = async {
+            let response = client
+                .lock()
+                .await
+                .prepare_call_hierarchy_request(full_path_str, position)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| {
+            LspManagerError::InternalError(format!("Call hierarchy preparation failed: {}", e))
+        })?;
 
         debug!(
             "prepare_call_hierarchy raw response: {:?}",
@@ -749,14 +809,19 @@ impl Manager {
         })?;
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        let result = locked_client
-            .call_hierarchy_incoming_calls(item)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Incoming calls retrieval failed: {}", e))
-            })?;
+        let result = async {
+            let response = client
+                .lock()
+                .await
+                .prepare_call_hierarchy_incoming_calls_request(item)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| {
+            LspManagerError::InternalError(format!("Incoming calls retrieval failed: {}", e))
+        })?;
 
         debug!("incoming_calls raw response: {} calls", result.len());
         for (i, call) in result.iter().enumerate() {
@@ -788,14 +853,19 @@ impl Manager {
         })?;
 
         let client = self.ensure_client(lsp_type).await?;
-        let mut locked_client = client.lock().await;
 
-        let result = locked_client
-            .call_hierarchy_outgoing_calls(item)
-            .await
-            .map_err(|e| {
-                LspManagerError::InternalError(format!("Outgoing calls retrieval failed: {}", e))
-            })?;
+        let result = async {
+            let response = client
+                .lock()
+                .await
+                .prepare_call_hierarchy_outgoing_calls_request(item)
+                .await?;
+            response.await
+        }
+        .await
+        .map_err(|e| {
+            LspManagerError::InternalError(format!("Outgoing calls retrieval failed: {}", e))
+        })?;
 
         debug!("outgoing_calls raw response: {} calls", result.len());
         for (i, call) in result.iter().enumerate() {

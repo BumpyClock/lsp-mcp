@@ -26,6 +26,22 @@ pub struct ProcessHandler {
     is_dead: Arc<AtomicBool>,
 }
 
+/// A cancelled or failed write may have transmitted only part of an LSP frame.
+struct FrameWriteGuard(Option<ProcessHandler>);
+
+impl Drop for FrameWriteGuard {
+    fn drop(&mut self) {
+        if let Some(handler) = self.0.take() {
+            handler.report_unhealthy("LSP frame transmission interrupted".into());
+            tokio::spawn(async move {
+                if let Err(error) = handler.kill().await {
+                    log::warn!("Failed to stop interrupted LSP connection: {}", error);
+                }
+            });
+        }
+    }
+}
+
 impl ProcessHandler {
     pub async fn new(mut child: Child) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let stdin = child.stdin.take().ok_or("Failed to open stdin")?;
@@ -93,8 +109,13 @@ impl ProcessHandler {
 impl Process for ProcessHandler {
     async fn send(&mut self, data: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut stdin = self.stdin.lock().await;
+        if self.is_dead.load(Ordering::SeqCst) {
+            return Err("LSP process is unavailable".into());
+        }
+        let mut frame = FrameWriteGuard(Some(self.clone()));
         stdin.write_all(data.as_bytes()).await?;
         stdin.flush().await?;
+        frame.0 = None;
         Ok(())
     }
 
